@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halo Island · semua feature, Free → Pro</title>
+<!-- Self-contained: no external assets. Every frame is a pure function of t (seek(t)),
+     so the live preview (requestAnimationFrame) and the frame-by-frame render match.
+     Scene times come from the SC table in the script; mockups/render_full.py reads window.DURATION. -->
+<style>
+  :root {
+    --ibg: #0B0D12; --ifg: #F2F5FA; --tb: rgba(30,30,30,.82); --tbfg: #f2f2f2; --cap: #F2F5FA;
+    --acc: #F5A524; --gold1: #F6D58E; --gold2: #C9932F; --free: #6FDDB0;
+    font-family: Outfit, "Segoe UI Variable Display", "Segoe UI", "Noto Sans CJK JP", system-ui, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  #stage { position: fixed; left: 50%; top: 50%; width: 1920px; height: 1080px; overflow: hidden;
+           transform-origin: 50% 50%; transform: translate(-50%, -50%); }
+  .abs, .a { position: absolute; }
+  .wall { inset: -40px; position: absolute; }
+  #wallDark { background:
+      radial-gradient(1300px 900px at 18% 88%, rgba(201,124,52,.55), transparent 62%),
+      radial-gradient(1100px 1000px at 86% 14%, rgba(30,112,106,.72), transparent 60%),
+      radial-gradient(900px 700px at 55% 55%, rgba(60,48,90,.35), transparent 70%), #0a0e13; }
+  #wallLight { background:
+      radial-gradient(1300px 900px at 18% 88%, rgba(246,196,150,.95), transparent 62%),
+      radial-gradient(1100px 1000px at 86% 14%, rgba(170,212,196,.95), transparent 60%),
+      radial-gradient(900px 700px at 55% 55%, rgba(222,214,236,.7), transparent 70%), #eef0ea; opacity: 0; }
+  .dim { opacity: .58; }
+  .tab { font-variant-numeric: tabular-nums; }
+  .nw { white-space: nowrap; }
+
+  /* Taskbar */
+  #taskbar { left: 0; right: 0; bottom: 0; height: 50px; background: var(--tb); color: var(--tbfg);
+             backdrop-filter: blur(30px); border-top: 1px solid rgba(255,255,255,.06); }
+  #taskbar .mid { position: absolute; left: 50%; top: 7px; transform: translateX(-50%); display: flex; gap: 6px; }
+  #taskbar .ti { width: 36px; height: 36px; border-radius: 6px; display: grid; place-items: center; }
+  #taskbar .tray { position: absolute; right: 14px; top: 0; height: 50px; display: flex; align-items: center; gap: 14px; font-size: 13px; }
+  #taskbar .clock { text-align: right; line-height: 1.3; }
+
+  /* Segment rail, top left */
+  #rail { left: 28px; top: 24px; display: flex; gap: 8px; font-size: 15px; color: var(--cap); }
+  #rail span { padding: 5px 12px; border-radius: 14px; background: rgba(128,128,128,.14); opacity: .5; }
+  #rail span.on { opacity: 1; background: rgba(128,128,128,.28); }
+
+  /* The island */
+  #island { left: 50%; top: 14px; background: var(--ibg); color: var(--ifg); overflow: hidden; transform-origin: 50% 0; }
+  #premBg { inset: 0; opacity: 0; }
+  #premBg div { position: absolute; inset: 0; }
+  .L { position: absolute; left: 50%; top: 0; transform-origin: 50% 0; }
+  .ch { display: inline-block; padding: 4px 11px; border-radius: 13px; font-size: 13px; background: rgba(255,255,255,.08); margin-right: 6px; }
+  .ch.on { background: var(--acc); color: #1a1204; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.16); overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 3px; background: var(--acc); }
+  .rb { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); }
+  .sw { width: 46px; height: 26px; border-radius: 13px; position: absolute; background: rgba(128,128,128,.35); }
+  .sw .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+  .slot { position: absolute; border-radius: 20px; background: rgba(255,255,255,.07); padding: 14px 16px; box-sizing: border-box; overflow: hidden; }
+  .slot .k { font-size: 12px; opacity: .55; letter-spacing: .3px; }
+  .slot .v { font-size: 26px; font-weight: 600; margin-top: 4px; }
+  .slot .s { font-size: 13px; opacity: .65; margin-top: 2px; }
+  .row { position: absolute; left: 0; right: 0; height: 38px; border-radius: 12px; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 16px; box-sizing: border-box; }
+  .row .ic { width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.1); display: grid; place-items: center; font-size: 11px; flex: none; }
+  .row .tx { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .tm { font-size: 13px; opacity: .5; }
+  .row mark { background: rgba(245,165,36,.3); color: inherit; border-radius: 3px; }
+  .cover { border-radius: 18px; overflow: hidden; background:
+      radial-gradient(circle at 50% 62%, #ffd27a 0 17%, transparent 18%),
+      linear-gradient(180deg, #ff8a4c 0%, #e2566b 48%, #3a2a5e 49%, #1c1838 100%); }
+  .cover2 { background: radial-gradient(circle at 30% 30%, #f7e08a 0 9%, transparent 10%),
+      linear-gradient(160deg, #1f3b4d 0%, #102028 60%, #f2b84b 61%, #b5612d 100%); }
+  .wb { width: 4px; border-radius: 2px; background: var(--acc); }
+  .kar { -webkit-background-clip: text; background-clip: text; color: transparent; white-space: nowrap; }
+
+  /* Captions */
+  .cap { left: 0; right: 0; top: 700px; text-align: center; color: var(--cap); }
+  .cap .tagrow { display: flex; justify-content: center; align-items: center; gap: 14px; font-size: 20px; }
+  .tag { padding: 6px 16px; border-radius: 18px; font-weight: 700; letter-spacing: 1.5px; font-size: 18px; }
+  .tag.free { background: rgba(111,221,176,.16); color: var(--free); box-shadow: inset 0 0 0 1.5px var(--free); }
+  .tag.pro { background: linear-gradient(135deg, var(--gold1), var(--gold2)); color: #2a1c05; }
+  .cap h2 { margin: 18px 0 0; font-size: 72px; font-weight: 600; letter-spacing: -1.5px; line-height: 1.05; }
+  .cap p { margin: 14px auto 0; font-size: 30px; opacity: .74; max-width: 1300px; }
+  .hdr { left: 0; right: 0; top: 380px; text-align: center; color: #F2F5FA; }
+  .hdr .tag { font-size: 64px; padding: 14px 54px; border-radius: 60px; letter-spacing: 6px; display: inline-block; }
+  .hdr p { font-size: 36px; margin: 34px 0 0; opacity: .8; }
+
+  /* Halo mascot showcase */
+  #halo { inset: 0; color: var(--cap); text-align: center; }
+  #halo h2 { position: absolute; left: 0; right: 0; top: 150px; margin: 0; font-size: 60px; font-weight: 600; letter-spacing: -1px; }
+  #halo .sub { position: absolute; left: 0; right: 0; top: 228px; font-size: 26px; opacity: .65; }
+  #bigHalo { position: absolute; left: 648px; top: 300px; }
+  #hState { position: absolute; left: 0; right: 0; top: 534px; font-size: 46px; font-weight: 600; }
+  #hSpec { position: absolute; left: 0; right: 0; top: 598px; font-size: 26px; opacity: .65; }
+  #hChips { position: absolute; left: 0; right: 0; top: 660px; display: flex; justify-content: center; gap: 12px; font-size: 20px; }
+  #hChips span { padding: 8px 18px; border-radius: 20px; background: rgba(128,128,128,.16); opacity: .5; }
+  #hChips span.on { opacity: 1; background: rgba(128,128,128,.34); }
+  #hMode { position: absolute; left: 0; right: 0; top: 740px; font-size: 20px; opacity: .6; }
+
+  /* Desktop extras */
+  #game { inset: 0; background: linear-gradient(180deg, #1b2a3a 0%, #44566a 46%, #c98b5a 62%, #2a2420 63%, #15120f 100%); }
+  #game svg { position: absolute; inset: 0; }
+  .win { border-radius: 12px; background: rgba(32,34,38,.86); color: #ececec; box-shadow: 0 24px 70px rgba(0,0,0,.4);
+         border: 1px solid rgba(255,255,255,.08); overflow: hidden; }
+  .win .tb { height: 38px; display: flex; align-items: center; padding: 0 16px; font-size: 14px; opacity: .8; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .sl { position: absolute; height: 6px; border-radius: 3px; background: rgba(255,255,255,.14); }
+  .sl i { position: absolute; top: -7px; width: 20px; height: 20px; border-radius: 50%; background: #fff; margin-left: -10px; }
+  .dev { width: 280px; height: 230px; text-align: center; color: #F2F5FA; }
+  .dev .scr { margin: 0 auto; width: 240px; height: 140px; border-radius: 10px; background: rgba(20,24,30,.85); border: 2px solid rgba(255,255,255,.18); position: relative; }
+  .dev .nm { font-size: 22px; margin-top: 14px; font-weight: 600; }
+  .dev .it { font-size: 15px; opacity: .7; padding: 8px 18px; text-align: left; line-height: 1.7; }
+  .key { display: inline-block; min-width: 54px; padding: 10px 16px; border-radius: 12px; background: #f4f4f4; color: #222; font-size: 24px; font-weight: 600;
+         box-shadow: 0 5px 0 #bdbdbd, 0 12px 30px rgba(0,0,0,.35); text-align: center; }
+
+  /* Compare card, intro, outro */
+  #veil { inset: 0; background: #05070a; }
+  .card { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #f5f5f5; }
+  .card h1 { margin: 0; font-size: 124px; font-weight: 600; letter-spacing: -3px; line-height: 1; }
+  .card p { margin: 22px 0 0; font-size: 32px; opacity: .65; letter-spacing: .5px; }
+  .card .sub { font-size: 24px; opacity: .5; margin-top: 12px; }
+  .card .pillw { margin-bottom: 40px; }
+  .card .msg { margin-top: 44px; font-size: 38px; font-weight: 600; color: var(--gold1); }
+  #cmp { left: 260px; top: 150px; width: 1400px; color: #F2F5FA; }
+  #cmp h3 { margin: 0 0 30px; text-align: center; font-size: 60px; font-weight: 600; letter-spacing: -1px; }
+  #cmp .cols { display: flex; gap: 40px; }
+  #cmp .col { flex: 1; border-radius: 28px; padding: 30px 40px; background: rgba(255,255,255,.05); box-shadow: inset 0 0 0 1.5px rgba(111,221,176,.35); }
+  #cmp .col.pro { box-shadow: inset 0 0 0 2px rgba(232,182,90,.75); background: rgba(232,182,90,.06); }
+  #cmp .col .tag { display: inline-block; font-size: 24px; margin-bottom: 18px; }
+  #cmp li { font-size: 25px; line-height: 1.68; list-style: none; }
+  #cmp ul { margin: 0; padding: 0; }
+  #cmp li::before { content: "✓"; margin-right: 14px; color: var(--free); font-weight: 700; }
+  #cmp .pro li::before { color: var(--gold1); }
+  #cmp .pro li.all { opacity: .7; }
+  #cmp .foot { text-align: center; margin-top: 30px; font-size: 34px; font-weight: 600; }
+
+  #cursor { left: 0; top: 0; width: 30px; height: 30px; pointer-events: none; transform-origin: 3px 2px; }
+  #clickDot { width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wallDark" class="wall"></div>
+  <div id="wallLight" class="wall"></div>
+
+  <!-- PRO 1: a game running fullscreen borderless under the overlay -->
+  <div id="game" class="abs">
+    <svg viewBox="0 0 1920 1080" width="1920" height="1080">
+      <path d="M0 690 L220 560 L380 640 L560 480 L760 610 L940 520 L1120 640 L1320 470 L1520 600 L1700 520 L1920 620 L1920 1080 L0 1080Z" fill="#2c2a33"/>
+      <path d="M0 760 L300 690 L620 760 L980 700 L1340 770 L1660 700 L1920 750 L1920 1080 L0 1080Z" fill="#1c1a1f"/>
+      <g id="gTarget"><rect x="1180" y="600" width="44" height="88" rx="10" fill="#7a3b2c"/><circle cx="1202" cy="586" r="18" fill="#7a3b2c"/></g>
+      <g stroke="#fff" stroke-width="3" opacity=".85"><path d="M960 520v18M960 562v18M930 550h18M972 550h18"/></g>
+      <rect x="40" y="820" width="200" height="200" rx="16" fill="rgba(0,0,0,.45)" stroke="rgba(255,255,255,.3)"/>
+      <circle cx="140" cy="920" r="6" fill="#F5A524"/>
+      <text x="1840" y="1010" text-anchor="end" font-size="64" font-weight="700" fill="#fff" font-family="Outfit">30 / 120</text>
+      <rect x="40" y="1036" width="420" height="14" rx="7" fill="rgba(0,0,0,.45)"/><rect x="40" y="1036" width="310" height="14" rx="7" fill="#6FDDB0"/>
+    </svg>
+  </div>
+
+  <!-- FREE 4: a file on the desktop to drop on the shelf -->
+  <div id="dragFile" class="abs" style="width:110px;text-align:center;color:#F2F5FA;font-size:15px">
+    <svg width="64" height="78" viewBox="0 0 64 78"><path d="M4 4h38l18 18v52H4z" fill="#f2f2f2"/><path d="M42 4v18h18" fill="#cfcfcf"/><rect x="12" y="44" width="40" height="18" rx="4" fill="#e2566b"/><text x="32" y="58" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="Outfit">PDF</text></svg>
+    <div>laporan.pdf</div>
+  </div>
+
+  <!-- FREE 10: the copy shortcut -->
+  <div id="keys" class="abs" style="left:1340px;top:150px"><span class="key">Ctrl</span> <span style="color:#fff;font-size:26px">+</span> <span class="key">C</span></div>
+
+  <!-- FREE 1: hover label -->
+  <div id="hovLab" class="abs" style="left:760px;top:190px;width:400px;text-align:center;color:#F2F5FA;font-size:22px">
+    <div id="hovTx">hover 220 ms → kembang</div>
+    <div class="bar" style="width:220px;margin:10px auto 0"><div id="hovBar"></div></div>
+  </div>
+
+  <!-- PRO 3: the phone on the other end -->
+  <div id="phone" class="abs" style="left:1500px;top:220px;width:220px;height:440px;border-radius:36px;background:#101318;box-shadow:0 0 0 6px #2a2e36,0 30px 70px rgba(0,0,0,.5);color:#F2F5FA;overflow:hidden">
+    <div style="position:absolute;left:80px;top:12px;width:60px;height:18px;border-radius:9px;background:#000"></div>
+    <div style="position:absolute;left:20px;top:56px;font-size:18px;font-weight:600">Halo Drop</div>
+    <div style="position:absolute;left:20px;top:82px;font-size:12px;opacity:.6">Disambung ke PC Rumah</div>
+    <div id="phImg" style="position:absolute;left:20px;top:116px;width:180px;height:120px;border-radius:14px" class="cover"></div>
+    <div id="phImgL" style="position:absolute;left:20px;top:242px;font-size:13px;opacity:.75">IMG_2041.jpg · dihantar</div>
+    <div id="phPdf" style="position:absolute;left:20px;top:280px;width:180px;height:56px;border-radius:14px;background:rgba(255,255,255,.08);display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box;font-size:14px">
+      <span style="width:28px;height:34px;border-radius:4px;background:#e2566b;display:grid;place-items:center;font-size:9px;font-weight:700">PDF</span>laporan.pdf</div>
+    <div id="phPdfL" style="position:absolute;left:20px;top:342px;font-size:13px;opacity:.75">diterima dari PC</div>
+    <div style="position:absolute;left:20px;right:20px;bottom:24px;height:44px;border-radius:22px;background:var(--acc);color:#1a1204;display:grid;place-items:center;font-size:15px;font-weight:600">Hantar fail</div>
+  </div>
+  <div id="flyFile" class="abs" style="width:64px;height:64px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.4)"></div>
+
+  <!-- PRO 6: custom theme builder -->
+  <div id="builder" class="abs win" style="left:150px;top:250px;width:540px;height:340px">
+    <div class="tb">Theme Builder</div>
+    <div class="a" style="left:24px;top:60px;font-size:15px;opacity:.7">Warna</div>
+    <div class="sl" id="hueTrack" style="left:120px;top:68px;width:390px;background:linear-gradient(90deg,hsl(0,60%,50%),hsl(60,60%,50%),hsl(120,60%,50%),hsl(180,60%,50%),hsl(240,60%,50%),hsl(300,60%,50%),hsl(360,60%,50%))"><i id="hueKnob"></i></div>
+    <div class="a" style="left:24px;top:108px;font-size:15px;opacity:.7">Bucu</div>
+    <div class="sl" style="left:120px;top:116px;width:390px"><i id="radKnob"></i></div>
+    <div class="a" style="left:24px;top:156px;font-size:15px;opacity:.7">Kaca</div>
+    <div class="sw" style="left:120px;top:150px"><div id="glassKnob" class="knob"></div></div>
+    <div class="a" style="left:24px;top:206px;font-size:15px;opacity:.7">Pratonton</div>
+    <div id="bPrev" class="a" style="left:120px;top:200px;width:300px;height:56px;border-radius:28px;display:flex;align-items:center;justify-content:center;gap:10px;color:#fff;font-size:18px">
+      <svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="2" width="5" height="16" rx="2.5" fill="#fff"/><rect x="12" y="2" width="5" height="16" rx="2.5" fill="#fff"/></svg>Teh Tarik</div>
+    <div class="a" style="left:120px;top:282px;padding:9px 20px;border-radius:18px;background:var(--acc);color:#1a1204;font-size:15px;font-weight:600">Simpan tema</div>
+  </div>
+
+  <!-- PRO 7: two PCs and the cloud between them -->
+  <div id="cloudScene" class="abs" style="inset:0">
+    <div class="abs dev" style="left:330px;top:300px"><div class="scr"><div class="a" style="left:80px;top:46px;width:80px;height:24px;border-radius:12px;background:#0B0D12;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div></div>
+      <div class="nm">PC Rumah</div></div>
+    <div class="abs dev" style="left:1310px;top:300px"><div class="scr"><div class="a" style="left:80px;top:46px;width:80px;height:24px;border-radius:12px;background:#0B0D12;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></div></div>
+      <div class="nm">PC Pejabat</div>
+      <div class="it"><span id="cs1">○</span> Tema &nbsp; <span id="cs2">○</span> Widget &nbsp; <span id="cs3">○</span> Hotkey</div></div>
+    <svg class="abs" style="left:0;top:0" width="1920" height="1080">
+      <path d="M620 370 Q790 300 900 360" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2" stroke-dasharray="6 8"/>
+      <path d="M1020 360 Q1130 300 1300 370" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="2" stroke-dasharray="6 8"/>
+      <path d="M900 420a40 40 0 0 1 8-79 56 56 0 0 1 106 10 36 36 0 0 1 -6 69z" fill="rgba(242,245,250,.9)"/>
+      <circle id="cd1" r="7" fill="#F5A524"/><circle id="cd2" r="7" fill="#F5A524"/><circle id="cd3" r="7" fill="#F5A524"/>
+    </svg>
+  </div>
+
+  <div id="taskbar" class="abs">
+    <div class="mid">
+      <div class="ti"><svg width="22" height="22" viewBox="0 0 22 22"><rect x="1" y="1" width="9.5" height="9.5" rx="1.5" fill="#4cc2ff"/><rect x="11.5" y="1" width="9.5" height="9.5" rx="1.5" fill="#4cc2ff"/><rect x="1" y="11.5" width="9.5" height="9.5" rx="1.5" fill="#4cc2ff"/><rect x="11.5" y="11.5" width="9.5" height="9.5" rx="1.5" fill="#4cc2ff"/></svg></div>
+      <div class="ti"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg></div>
+      <div class="ti"><svg width="24" height="20" viewBox="0 0 24 20"><path d="M1 4a2 2 0 012-2h6l2 2h10a2 2 0 012 2v10a2 2 0 01-2 2H3a2 2 0 01-2-2z" fill="#f2c94c"/></svg></div>
+      <div class="ti"><svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="#2f9e6e"/><circle cx="11" cy="11" r="4" fill="#d9f5e8"/></svg></div>
+      <div class="ti"><svg width="20" height="22" viewBox="0 0 20 22"><rect x="1" y="1" width="18" height="20" rx="2" fill="#5b8def"/><path d="M5 7h10M5 11h10M5 15h6" stroke="#fff" stroke-width="1.6"/></svg></div>
+    </div>
+    <div class="tray">
+      <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="25" height="11" rx="5.5" fill="#0B0D12" stroke="rgba(255,255,255,.35)"/><rect x="9" y="3" width="2.4" height="6" rx="1.2" fill="#F2F5FA"/><rect x="14.6" y="3" width="2.4" height="6" rx="1.2" fill="#F2F5FA"/></svg>
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 5a12 12 0 0116 0M4 8a7.5 7.5 0 0110 0M7 11a3 3 0 014 0"/></svg>
+      <svg width="18" height="14" viewBox="0 0 18 14" fill="currentColor"><path d="M1 5h3l5-4v12L4 9H1z"/><path d="M12 4a4 4 0 010 6M14.5 2a7 7 0 010 10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      <div class="clock"><div>9:41 AM</div><div>11/11/2026</div></div>
+    </div>
+  </div>
+
+  <div id="halo" class="abs">
+    <h2>Kenali Halo</h2>
+    <div class="sub">Maskot rasmi Halo Island · dua mata kapsul, tiada cincin, tiada glow, tiada mulut</div>
+    <div id="bigHalo"></div>
+    <div id="hState"></div>
+    <div id="hSpec"></div>
+    <div id="hChips"><span>1 · Jaga</span><span>2 · Mengantuk</span><span>3 · Tidur</span><span>4 · Melambai</span><span>5 · Ikut pointer</span></div>
+    <div id="hMode"></div>
+  </div>
+
+  <div id="caps"></div>
+
+  <div id="island" class="abs">
+    <div id="premBg" class="abs"><div id="pb0"></div><div id="pb1"></div><div id="pb2"></div><div id="pb3"></div></div>
+
+    <div id="lIdle" class="L" style="width:143px;height:44px"><div id="mIsl"></div></div>
+
+    <div id="lHover" class="L" style="width:560px;height:132px">
+      <div class="a tab" style="left:34px;top:16px;font-size:60px;font-weight:600">9:41</div>
+      <div class="a dim" style="left:38px;top:92px;font-size:17px">Rabu, 11 Nov</div>
+      <div class="a nw" style="left:250px;top:30px;font-size:19px;display:flex;align-items:center;gap:12px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 2.5v4M16 2.5v4"/></svg>Mesyuarat pasukan · 10:00</div>
+      <div class="a nw" style="left:250px;top:76px;font-size:19px;display:flex;align-items:center;gap:12px">
+        <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="9" cy="9" r="5" fill="#F5A524"/><path d="M6 20h12a4 4 0 000-8 6 6 0 00-11-1 4.5 4.5 0 00-1 9z" fill="currentColor"/></svg>31° · Berawan</div>
+    </div>
+
+    <div id="lMusic" class="L" style="width:760px;height:236px">
+      <div id="mCover" class="a cover" style="left:24px;top:26px;width:150px;height:150px"></div>
+      <div id="mCover2" class="a cover cover2" style="left:24px;top:26px;width:150px;height:150px"></div>
+      <div id="mTitle" class="a nw" style="left:198px;top:22px;font-size:26px;font-weight:600">Senja di Pantai Timur</div>
+      <div id="mArt" class="a nw dim" style="left:198px;top:56px;font-size:17px">Lofi Sessions</div>
+      <div class="a" style="left:556px;top:22px;width:180px;height:30px;border-radius:15px;background:rgba(255,255,255,.08);font-size:14px">
+        <div id="segK" class="a" style="top:3px;width:84px;height:24px;border-radius:12px;background:rgba(255,255,255,.22)"></div>
+        <div class="a" style="left:0;width:90px;top:6px;text-align:center">Romaji</div><div class="a" style="left:90px;width:90px;top:6px;text-align:center">Kana</div>
+      </div>
+      <div id="eq" class="a" style="left:690px;top:62px;height:24px;display:flex;align-items:center;gap:3px"></div>
+      <div id="srcs" class="a nw" style="left:198px;top:88px"><span class="ch">Spotify</span><span class="ch">Apple Music</span><span class="ch">YouTube</span><span class="ch">Browser</span></div>
+      <div id="lyJ" class="a kar" style="left:198px;top:122px;font-size:23px;font-weight:600"></div>
+      <div id="lyR" class="a kar" style="left:198px;top:154px;font-size:16px"></div>
+      <div class="a bar" style="left:198px;top:196px;width:330px"><div id="mFill" style="background:var(--ifg)"></div></div>
+      <div class="a dim tab" style="left:198px;top:206px;width:330px;font-size:12px;display:flex;justify-content:space-between"><span id="mPos"></span><span id="mLen"></span></div>
+      <div class="a" style="left:566px;top:176px;display:flex;align-items:center;gap:22px">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="currentColor"><path d="M4 3h2.5v16H4zM19 3v16L8 11z"/></svg>
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--ifg);color:var(--ibg);display:grid;place-items:center">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><rect x="3" y="2" width="4.2" height="14" rx="1.2"/><rect x="10.8" y="2" width="4.2" height="14" rx="1.2"/></svg></div>
+        <svg id="mNext" width="22" height="22" viewBox="0 0 22 22" fill="currentColor"><path d="M15.5 3H18v16h-2.5zM3 3v16l11-8z"/></svg>
+      </div>
+    </div>
+
+    <div id="lTimer" class="L" style="width:480px;height:132px">
+      <svg class="a" style="left:22px;top:20px" width="92" height="92" viewBox="0 0 88 88">
+        <circle cx="44" cy="44" r="38" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="7"/>
+        <circle id="ring" cx="44" cy="44" r="38" fill="none" style="stroke:var(--acc)" stroke-width="7" stroke-linecap="round" transform="rotate(-90 44 44)" stroke-dasharray="238.76"/>
+      </svg>
+      <div id="tLab" class="a dim nw" style="left:136px;top:24px;font-size:15px">Fokus · Pomodoro</div>
+      <div id="tBig" class="a tab nw" style="left:134px;top:42px;font-size:50px;font-weight:600;letter-spacing:-.5px">25:00</div>
+      <div id="tFast" class="a nw" style="left:136px;top:104px;font-size:12px;opacity:.45">dipercepat untuk video</div>
+      <div class="a" style="right:24px;top:46px;display:flex;gap:12px">
+        <div class="rb"><svg width="16" height="16" viewBox="0 0 18 18" fill="currentColor"><rect x="3" y="2" width="4.2" height="14" rx="1.2"/><rect x="10.8" y="2" width="4.2" height="14" rx="1.2"/></svg></div>
+        <div class="rb" style="background:rgba(245,165,36,.22);color:var(--acc)"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect width="14" height="14" rx="3"/></svg></div>
+      </div>
+    </div>
+
+    <div id="lTodo" class="L" style="width:760px;height:230px">
+      <div class="a dim" style="left:28px;top:18px;font-size:15px">To-do · hari ini</div>
+      <div class="a" style="left:374px;top:20px;width:1px;height:190px;background:rgba(255,255,255,.12)"></div>
+      <div class="a dim" style="left:398px;top:18px;font-size:15px">Shelf</div>
+    </div>
+
+    <div id="lPrayer" class="L" style="width:700px;height:160px">
+      <div class="a dim nw" style="left:28px;top:18px;font-size:15px">Waktu Solat · Kuala Lumpur</div>
+      <div class="a nw" style="left:28px;top:40px;font-size:36px;font-weight:600">Asar <span style="font-weight:400;opacity:.8">4:27 PM</span></div>
+      <div id="pLeft" class="a nw tab" style="right:28px;top:48px;font-size:24px;color:var(--acc);font-weight:600">lagi 12 min</div>
+      <div class="a bar" style="left:28px;top:96px;width:644px;height:4px"><div id="pFill"></div></div>
+      <div id="pRow" class="a" style="left:18px;top:110px;width:664px;display:flex"></div>
+    </div>
+
+    <div id="lBatt" class="L" style="width:380px;height:44px">
+      <svg class="a" style="left:20px;top:12px" width="20" height="20" viewBox="0 0 20 20"><path d="M11 1L3 12h6l-1 7 8-11h-6z" fill="#6FDDB0"/></svg>
+      <div class="a nw" style="left:50px;top:12px;font-size:16px;font-weight:500">Mengecas</div>
+      <div id="bPct" class="a tab" style="left:250px;top:12px;font-size:16px;font-weight:600">82%</div>
+      <svg class="a" style="left:304px;top:12px" width="54" height="22" viewBox="0 0 54 22"><rect x="1" y="1" width="46" height="20" rx="6" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6"/><rect x="49" y="7" width="3" height="8" rx="1.5" fill="currentColor" opacity=".5"/><rect id="bFill" x="4" y="4" width="33" height="14" rx="3.5" fill="#6FDDB0"/></svg>
+    </div>
+
+    <div id="lHead" class="L" style="width:520px;height:44px">
+      <svg class="a" style="left:20px;top:10px" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="2.5" y="14" width="5" height="7" rx="2" fill="currentColor"/><rect x="16.5" y="14" width="5" height="7" rx="2" fill="currentColor"/></svg>
+      <div class="a nw" style="left:56px;top:12px;font-size:16px;font-weight:500">Buds Pro disambung</div>
+      <div class="a nw tab dim" style="left:262px;top:12px;font-size:15px">L 90% · R 88% · Kes 64%</div>
+    </div>
+
+    <div id="lTheme" class="L" style="width:600px;height:132px">
+      <svg id="icSun" class="a" style="left:26px;top:16px" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13" cy="13" r="5"/><path d="M13 1.5v3M13 21.5v3M1.5 13h3M21.5 13h3M4.9 4.9l2.1 2.1M19 19l2.1 2.1M4.9 21.1L7 19M19 7l2.1-2.1"/></svg>
+      <svg id="icMoon" class="a" style="left:26px;top:16px" width="26" height="26" viewBox="0 0 26 26" fill="currentColor"><path d="M17.5 3.5A10 10 0 1022.5 17 8 8 0 0117.5 3.5z"/></svg>
+      <div id="thLab" class="a nw" style="left:66px;top:18px;font-size:18px;font-weight:500">Dark · ikut Windows</div>
+      <div class="sw" style="left:528px;top:16px"><div id="thKnob" class="knob" style="background:var(--acc)"></div></div>
+      <div id="swRow" class="a" style="left:0;top:58px;width:600px;height:70px"></div>
+    </div>
+
+    <div id="lWidgets" class="L" style="width:640px;height:170px">
+      <div class="a dim nw" style="left:26px;top:14px;font-size:14px">Widgets · 2 slot</div>
+      <div id="ws1" class="slot" style="left:24px;top:40px;width:288px;height:112px">
+        <div class="k">CUACA · KUALA LUMPUR</div><div class="v" style="display:flex;align-items:center;gap:10px">31°
+          <svg width="34" height="28" viewBox="0 0 24 20"><circle cx="9" cy="7" r="5" fill="#F5A524"/><path d="M6 19h12a4 4 0 000-8 6 6 0 00-11-1 4.5 4.5 0 00-1 9z" fill="currentColor"/></svg></div><div class="s">Berawan · hujan petang</div></div>
+      <div id="ws2" class="slot" style="left:328px;top:40px;width:288px;height:112px">
+        <div class="k">KALENDAR</div><div class="v tab">3:00 PM</div><div class="s">Mesyuarat pelanggan · Bilik 2</div></div>
+    </div>
+
+    <div id="lWater" class="L" style="width:500px;height:120px">
+      <svg class="a" style="left:28px;top:20px" width="56" height="78" viewBox="0 0 56 78">
+        <defs><clipPath id="dropClip"><path d="M28 3C20 18 6 34 6 50a22 22 0 0044 0C50 34 36 18 28 3z"/></clipPath></defs>
+        <path d="M28 3C20 18 6 34 6 50a22 22 0 0044 0C50 34 36 18 28 3z" fill="rgba(255,255,255,.1)" stroke="#5EC8E8" stroke-width="2.5"/>
+        <rect id="dropFill" x="0" y="40" width="56" height="40" fill="#5EC8E8" clip-path="url(#dropClip)"/>
+      </svg>
+      <div class="a nw" style="left:104px;top:20px;font-size:22px;font-weight:600">Masa minum air</div>
+      <div id="wCnt" class="a nw tab dim" style="left:104px;top:52px;font-size:16px">4 / 8 gelas hari ini</div>
+      <div id="wDots" class="a" style="left:104px;top:82px;display:flex;gap:8px"></div>
+      <div id="wBtn" class="a" style="left:362px;top:38px;width:114px;height:44px;border-radius:22px;background:#5EC8E8;color:#06202a;display:grid;place-items:center;font-size:16px;font-weight:600">Dah minum</div>
+    </div>
+
+    <div id="lClip" class="L" style="width:620px;height:270px">
+      <div class="a dim nw" style="left:26px;top:14px;font-size:14px">Clipboard · 5 terakhir</div>
+      <div id="clipRows" class="a" style="left:16px;top:42px;width:588px;height:212px;overflow:hidden"></div>
+    </div>
+
+    <div id="lOver" class="L" style="width:600px;height:44px">
+      <div class="a nw tab" style="left:22px;top:11px;font-size:17px;font-weight:600"><span style="opacity:.6;font-weight:400">FPS</span> <span id="oFps" style="color:#6FDDB0">144</span></div>
+      <svg class="a" style="left:118px;top:12px" width="64" height="20"><polyline id="oSpark" fill="none" stroke="#6FDDB0" stroke-width="1.6"/></svg>
+      <div class="a nw tab" style="left:204px;top:12px;font-size:16px"><span class="dim">GPU</span> <span id="oGpu">67%</span> <span class="dim">·</span> <span id="oTmp">62°C</span></div>
+      <div class="a nw tab" style="left:376px;top:12px;font-size:16px"><span class="dim">CPU</span> <span id="oCpu">38%</span></div>
+      <div class="a nw tab" style="left:476px;top:12px;font-size:16px"><span class="dim">RAM</span> 9.4G</div>
+    </div>
+
+    <div id="lSys" class="L" style="width:920px;height:320px">
+      <div class="a nw" style="left:30px;top:18px;font-size:20px;font-weight:600">System Monitor <span class="dim" style="font-weight:400;font-size:15px">· 8 core · 16 GB</span></div>
+      <div class="a nw tab" style="right:30px;top:14px;font-size:15px;text-align:right"><span class="dim">Power</span> <span id="sW" style="font-size:26px;font-weight:600;color:var(--acc)">42 W</span></div>
+      <div class="a dim" style="left:30px;top:56px;font-size:13px">Setiap core</div>
+      <div id="cores" class="a" style="left:30px;top:78px;width:270px;height:220px"></div>
+      <div class="a dim" style="left:330px;top:56px;font-size:13px">CPU · sejarah 60 min</div>
+      <svg class="a" style="left:330px;top:78px" width="300" height="200" viewBox="0 0 300 200">
+        <path d="M0 50H300M0 100H300M0 150H300" stroke="rgba(255,255,255,.07)"/>
+        <path id="hArea" fill="rgba(245,165,36,.18)"/><polyline id="hLine" fill="none" style="stroke:var(--acc)" stroke-width="2"/>
+      </svg>
+      <div class="a dim tab" style="left:330px;top:284px;width:300px;font-size:12px;display:flex;justify-content:space-between"><span>-60 min</span><span>sekarang</span></div>
+      <div class="a dim" style="left:660px;top:56px;font-size:13px">Proses teratas</div>
+      <div id="procs" class="a" style="left:660px;top:80px;width:230px"></div>
+    </div>
+
+    <div id="lPhone" class="L" style="width:640px;height:150px">
+      <svg class="a" style="left:24px;top:30px" width="110" height="90" viewBox="0 0 110 90">
+        <rect x="2" y="12" width="34" height="62" rx="7" fill="none" stroke="currentColor" stroke-width="2.4"/>
+        <rect x="62" y="16" width="46" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M76 62h18M85 50v12" stroke="currentColor" stroke-width="2.4"/>
+        <g id="pArrow"><path d="M40 43h18M52 37l6 6-6 6" fill="none" style="stroke:var(--acc)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
+      </svg>
+      <div class="a nw" style="left:154px;top:20px;font-size:22px;font-weight:600">Phone Drop <span id="pDir" class="dim" style="font-weight:400;font-size:17px">· Telefon → PC</span></div>
+      <div id="pFile" class="a nw tab" style="left:154px;top:56px;font-size:17px">IMG_2041.jpg · 3.2 MB</div>
+      <div class="a bar" style="left:154px;top:90px;width:460px;height:6px"><div id="pProg"></div></div>
+      <div id="pStat" class="a nw dim" style="left:154px;top:108px;font-size:14px">Wi-Fi, data mudah alih atau mana-mana network</div>
+    </div>
+
+    <div id="lClipPro" class="L" style="width:700px;height:300px">
+      <div class="a dim nw" style="left:26px;top:14px;font-size:14px">Clipboard · sejarah penuh</div>
+      <div class="a nw tab" style="right:26px;top:12px;font-size:15px;color:var(--gold1)">2,184 item · tanpa had</div>
+      <div class="a" style="left:18px;top:42px;width:664px;height:42px;border-radius:21px;background:rgba(255,255,255,.09);display:flex;align-items:center;gap:10px;padding:0 16px;box-sizing:border-box;font-size:17px">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="6"/><path d="M13 13l5 5"/></svg>
+        <span id="cpQ"></span><span id="cpCaret" style="width:2px;height:20px;background:var(--ifg);margin-left:-8px"></span><span id="cpPh" class="dim">Cari dalam clipboard…</span></div>
+      <div id="cpAll" class="a" style="left:18px;top:94px;width:664px;height:200px"></div>
+      <div id="cpHit" class="a" style="left:18px;top:94px;width:664px;height:200px"></div>
+    </div>
+
+    <div id="lWPro" class="L" style="width:960px;height:190px">
+      <div id="wpN" class="a dim nw" style="left:0;right:0;top:12px;font-size:14px;text-align:center">Widgets Pro · 4 slot</div>
+      <div id="wpSlots"></div>
+    </div>
+
+    <div id="lTPro" class="L" style="width:640px;height:140px;color:#fff">
+      <div class="a nw" style="left:28px;top:20px;font-size:15px;opacity:.75">Tema Premium</div>
+      <div id="tpName" class="a nw" style="left:28px;top:44px;font-size:38px;font-weight:600">Zamrud</div>
+      <div id="tpSub" class="a nw" style="left:30px;top:96px;font-size:15px;opacity:.7">1 / 12 tema premium</div>
+      <div id="tpEyes" class="a" style="right:28px;top:34px"></div>
+    </div>
+
+    <div id="lCloud" class="L" style="width:600px;height:120px">
+      <svg class="a" style="left:24px;top:28px" width="70" height="60" viewBox="0 0 70 60"><path d="M18 52a16 16 0 013-32 22 22 0 0142 6 13 13 0 01-3 26z" fill="none" stroke="currentColor" stroke-width="3"/><path id="cCheck" d="M24 36l8 8 14-16" fill="none" style="stroke:var(--acc)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="a nw" style="left:114px;top:20px;font-size:22px;font-weight:600">Cloud Sync <span class="ch" style="font-weight:400;margin-left:6px">pilihan</span></div>
+      <div id="cSub" class="a nw dim" style="left:114px;top:60px;font-size:16px">Mati · tetapan kekal dalam PC ini</div>
+      <div class="sw" style="left:524px;top:46px"><div id="cKnob" class="knob"></div></div>
+    </div>
+  </div>
+
+  <div id="rail" class="abs"><span>A · Intro</span><span>B · Halo</span><span>C · FREE</span><span>D · PRO</span><span>E · Free vs Pro</span></div>
+
+  <div id="clickDot" class="abs"></div>
+  <svg id="cursor" class="abs" viewBox="0 0 30 30"><path d="M3 2v21l5.2-5 3.4 8 3.6-1.6-3.4-7.8H19z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
+
+  <div id="veil" class="abs"></div>
+  <div id="intro" class="abs card"><div id="mIntro" class="pillw"></div><h1>Halo Island</h1><p>by kolijijani</p><div class="sub">Semua feature · Free → Pro</div></div>
+  <div id="hFreeCard" class="abs hdr"><span class="tag free">FREE</span><p>10 feature asas · lengkap untuk kegunaan harian</p></div>
+  <div id="hProCard" class="abs hdr"><span class="tag pro">PRO</span><p>7 feature untuk power user · semua FREE kekal percuma</p></div>
+  <div id="cmp" class="abs">
+    <h3>Free vs Pro</h3>
+    <div class="cols">
+      <div class="col"><span class="tag free">FREE</span><ul>
+        <li>Island &amp; hover expand</li><li>Music + lirik sync (romaji/kana)</li><li>Focus timer</li><li>To-do + Shelf</li>
+        <li>Waktu solat</li><li>Bateri &amp; headphones peek</li><li>Light/dark + 5 tema</li><li>Widgets · 2 slot</li>
+        <li>Peringatan minum air</li><li>Clipboard · 5 item</li></ul></div>
+      <div class="col pro"><span class="tag pro">PRO</span><ul>
+        <li class="all">Semua dalam FREE, ditambah:</li><li>Overlay games · FPS/GPU/CPU</li><li>System monitor penuh + watt</li><li>Phone Drop dua hala</li>
+        <li>Clipboard tanpa had + cari</li><li>Widgets 4–6 slot + eksklusif</li><li>Tema premium + theme builder</li><li>Cloud sync antara PC</li></ul></div>
+    </div>
+    <div class="foot">Free dah lengkap — Pro untuk power user.</div>
+  </div>
+  <div id="outro" class="abs card"><div id="mOutro" class="pillw"></div><h1>Halo Island</h1><p>A living notch for Windows · by kolijijani</p>
+    <div class="msg">Free dah lengkap — Pro untuk power user.</div></div>
+</div>
+
+<script>
+// ---- Scene table: one row per scene, in order. Start times are summed from the durations.
+const SC = [
+  { id: "intro", seg: 0, d: 4.0 },
+  { id: "halo", seg: 1, d: 10.0 },
+  { id: "hFree", seg: 2, d: 1.2 },
+  { id: "island", seg: 2, d: 3.6, tag: "free", title: "Island & Hover", desc: "Notch kecil di tengah atas. Hover 220 ms, ia kembang; alih tetikus, ia sorok sendiri." },
+  { id: "music", seg: 2, d: 4.4, tag: "free", title: "Music", shape: [760, 236, 46], desc: "Kawal Spotify, Apple Music, YouTube dan browser. Lirik ikut lagu, dalam romaji atau kana." },
+  { id: "timer", seg: 2, d: 3.5, tag: "free", title: "Focus Timer", shape: [480, 132, 40], desc: "Kiraan detik fokus terus dalam island, dengan cincin progres." },
+  { id: "todo", seg: 2, d: 3.9, tag: "free", title: "To-do + Shelf", shape: [760, 230, 46], desc: "Tanda tugasan siap, dan seret fail ke shelf untuk diambil semula nanti." },
+  { id: "prayer", seg: 2, d: 3.5, tag: "free", title: "Prayer Times", shape: [700, 160, 44], desc: "Waktu solat ikut lokasi, dengan kiraan ke waktu seterusnya." },
+  { id: "battery", seg: 2, d: 3.6, tag: "free", title: "Battery & Peek", shape: [380, 44, 22], keys: [[1.8, [520, 44, 22]]], desc: "Bateri, cas dan headphones muncul sekejap, kemudian hilang sendiri." },
+  { id: "themes", seg: 2, d: 3.9, tag: "free", title: "Themes", shape: [600, 132, 40], desc: "Light atau dark ikut Windows, dengan 5 tema standard." },
+  { id: "widgets", seg: 2, d: 3.5, tag: "free", title: "Widgets", shape: [640, 170, 44], desc: "2 slot widget percuma: cuaca, kalendar dan lain-lain." },
+  { id: "water", seg: 2, d: 3.5, tag: "free", title: "Water Reminder", shape: [500, 120, 40], desc: "Peringatan minum air yang lembut, dengan kiraan gelas sehari." },
+  { id: "clip", seg: 2, d: 3.6, tag: "free", title: "Clipboard", shape: [620, 270, 46], desc: "Sejarah 5 item terakhir. Klik untuk tampal semula." },
+  { id: "hPro", seg: 3, d: 1.2 },
+  { id: "overlay", seg: 3, d: 3.8, tag: "pro", title: "Overlay Games", shape: [600, 44, 22], desc: "FPS, GPU dan CPU di atas game fullscreen borderless." },
+  { id: "sysmon", seg: 3, d: 4.0, tag: "pro", title: "System Monitor", shape: [920, 320, 48], desc: "Setiap core, sejarah panjang, proses teratas dan kuasa dalam watt." },
+  { id: "phone", seg: 3, d: 4.2, tag: "pro", title: "Phone Drop", shape: [640, 150, 44], desc: "Hantar dan terima fail dua hala, dari mana-mana network." },
+  { id: "clipPro", seg: 3, d: 3.6, tag: "pro", title: "Clipboard Unlimited", shape: [700, 300, 48], desc: "Sejarah tanpa had, dan cari apa saja yang pernah disalin." },
+  { id: "wPro", seg: 3, d: 3.8, tag: "pro", title: "Widgets Pro", shape: [660, 190, 48], keys: [[1.7, [960, 190, 48]]], desc: "4 hingga 6 slot, dengan world clock, fasa bulan dan countdown." },
+  { id: "tPro", seg: 3, d: 4.2, tag: "pro", title: "Tema Premium + Theme Builder", shape: [640, 140, 44], desc: "Pilih tema premium, atau bina tema sendiri: warna, bucu dan kaca." },
+  { id: "cloud", seg: 3, d: 3.6, tag: "pro", title: "Cloud Sync", shape: [600, 120, 40], desc: "Segerak tetapan antara PC. Pilihan: boleh dimatikan bila-bila masa." },
+  { id: "compare", seg: 4, d: 4.8 },
+  { id: "outro", seg: 4, d: 4.0 },
+];
+let acc0 = 0;
+for (const s of SC) { s.t0 = acc0; s.t1 = acc0 += s.d; }
+const D = acc0;
+window.DURATION = D;
+window.SCENES = SC.map(s => ({ id: s.id, seg: "ABCDE"[s.seg], t0: +s.t0.toFixed(2), t1: +s.t1.toFixed(2), title: s.title || "" }));
+const S = Object.fromEntries(SC.map(s => [s.id, s]));
+
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const eoc = x => 1 - Math.pow(1 - x, 3);
+const spring = x => x >= 1 ? 1 : 1 - Math.exp(-7 * x) * Math.cos(9 * x);   // ~9% overshoot, settles by 1
+const ramp = (t, a, d) => eio(clamp((t - a) / d));
+const win = (t, a, b, f = .3) => ramp(t, a, f) * (1 - ramp(t, b - f, f));
+const mix = (c1, c2, k) => c1.map((v, i) => Math.round(lerp(v, c2[i], k)));
+const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const noise = (i, t) => .5 + .25 * Math.sin(t * (1.7 + i * .37) + i * 2.1) + .25 * Math.sin(t * (3.1 + i * .23) + i * 5.3);
+const show = (el, o) => { el.style.opacity = o; el.style.visibility = o > .001 ? "visible" : "hidden"; return o; };
+const u = (id, t) => t - S[id].t0;                       // scene-local time
+const inS = (id, t, f = .3) => win(t, S[id].t0 + .1, S[id].t1, f);
+const txt = (el, s) => { if (el.textContent !== s) el.textContent = s; };
+
+// ---- Halo mascot. Geometry in notch px on a 104×32 pill, as docs/A2Z-07 "Keputusan":
+// two 8×16 capsules, full radius, 10 px apart, centred. No ring, no glow, no mouth.
+const PAL = { pill: [hex("#0B0D12"), hex("#F3F5F9")], eye: [hex("#F2F5FA"), hex("#141821")] };
+function mkMascot(host, scale, pill = true) {
+  host.innerHTML = `<svg viewBox="0 0 104 32" width="${104 * scale}" height="${32 * scale}" style="display:block;overflow:visible">
+    ${pill ? '<rect class="p" x=".5" y=".5" width="103" height="31" rx="15.5" stroke-width=".6"/>' : ""}
+    <rect class="e"/><rect class="e"/>
+    <path class="c" fill="none" stroke-width="2.5" stroke-linecap="round"/><path class="c" fill="none" stroke-width="2.5" stroke-linecap="round"/>
+    <g class="h"><rect x="-2" y="-9" width="4" height="9" rx="2"/></g></svg>`;
+  const q = s => host.querySelectorAll(s);
+  return { p: q(".p")[0], e: q(".e"), c: q(".c"), h: q(".h")[0] };
+}
+// st: { L, w, h, dy, fx, fy, arc: "", "u" or "n", arcO, hand, handO }
+function drawMascot(m, st) {
+  const eye = rgb(mix(PAL.eye[0], PAL.eye[1], st.L));
+  if (m.p) { m.p.setAttribute("fill", rgb(mix(PAL.pill[0], PAL.pill[1], st.L))); m.p.setAttribute("stroke", rgba(hex("#D5DAE3"), st.L)); }
+  const capO = 1 - (st.arcO || 0);
+  m.e.forEach((r, i) => {
+    const ex = 52 + (i ? 9 : -9) + (st.fx || 0), cy = 16 + (st.dy || 0) + (st.fy || 0);
+    r.setAttribute("x", ex - st.w / 2); r.setAttribute("y", cy - st.h / 2);
+    r.setAttribute("width", st.w); r.setAttribute("height", st.h);
+    r.setAttribute("rx", Math.min(st.w, st.h) / 2); r.setAttribute("fill", eye); r.setAttribute("opacity", capO);
+  });
+  m.c.forEach((p, i) => {
+    const ex = 52 + (i ? 9 : -9);
+    // ∪ (sleep): centre-line radius 3.75×2.75 around y 15. ∩ (wave): 3.75 around y 19.
+    p.setAttribute("d", st.arc === "n" ? `M${ex - 3.75} 19A3.75 3.75 0 0 1 ${ex + 3.75} 19` : `M${ex - 3.75} 15A3.75 2.75 0 0 0 ${ex + 3.75} 15`);
+    p.setAttribute("stroke", eye); p.setAttribute("opacity", st.arc ? st.arcO : 0);
+  });
+  m.h.setAttribute("transform", `translate(77 23) rotate(${st.hand || 0})`);
+  m.h.setAttribute("fill", eye); m.h.setAttribute("opacity", st.handO || 0);
+}
+const blinkH = (t, tb) => { const k = (t - tb) / .12; return k > 0 && k < 1 ? lerp(16, 2, 1 - Math.abs(2 * k - 1)) : 16; };   // 120 ms
+const awake = (L, h = 16) => ({ L, w: 8, h, dy: 0 });
+// Wave one-shot (1.2 s): happy ∩ eyes and a 4×9 hand tilting ±20° twice.
+function waveSt(L, k) {
+  const o = clamp(k * 8) * clamp((1 - k) * 8);
+  return { L, w: 8, h: 16, arc: "n", arcO: o, hand: -20 * Math.cos(k * Math.PI * 4), handO: o };
+}
+
+const mIsl = mkMascot($("mIsl"), 1.375, false);   // island 44 px tall = notch 32 × 1.375
+const mBig = mkMascot($("bigHalo"), 6);
+const mIntro = mkMascot($("mIntro"), 2.6);
+const mOutro = mkMascot($("mOutro"), 2.6);
+const mTp = mkMascot($("tpEyes"), 1.6, false);
+
+// Halo segment: the five states, local time u.
+const HB = { blink: 1.7, doze: 2.6, sleep: 4.2, light: 5.6, wave: 6.2, follow: 7.6 };
+function haloAt(uu, L, cur) {
+  if (uu < HB.doze) return awake(L, blinkH(uu, HB.blink));
+  if (uu < HB.sleep) { const k = eio(clamp((uu - HB.doze) / .6)); return { L, w: lerp(8, 12, k), h: lerp(16, 4, k), dy: 2 * k }; }
+  if (uu < HB.wave) { const k = clamp((uu - HB.sleep) / .25); return { L, w: 12, h: 4, dy: 2, arc: "u", arcO: k }; }
+  if (uu < HB.wave + 1.2) return waveSt(L, (uu - HB.wave) / 1.2);
+  const st = awake(L);
+  if (uu >= HB.follow && cur) {
+    const vx = cur[0] - 960, vy = cur[1] - 396, d = Math.hypot(vx, vy) || 1, m = Math.min(2, d / 60);
+    st.fx = vx / d * m; st.fy = vy / d * m;
+  }
+  return st;
+}
+const HSTATE = [
+  ["Jaga · awake", "Kapsul tegak 8×16 px, radius 4, jarak 10 px · kerdip 120 ms"],
+  ["Mengantuk · doze", "Kapsul mendatar 12×4 px, turun 2 px · peralihan 600 ms"],
+  ["Tidur · sleep", "Dua lengkung ∪ nipis, garis 2.5 px · frame statik"],
+  ["Melambai · wave", "Lengkung ∩ + tangan kapsul 4×9 di kanan, condong ±20° dua kali"],
+  ["Ikut pointer", "Kedua kapsul beralih maks 2 px ke arah kursor"],
+];
+const hIdx = uu => uu < HB.doze ? 0 : uu < HB.sleep ? 1 : uu < HB.wave ? 2 : uu < HB.follow ? 3 : 4;
+
+// ---- Island shapes. Each scene springs the island to its shape (idle pill when it has none).
+const IDLE = [143, 44, 22];
+const K = [];
+for (const s of SC) {
+  if (s.id === "island") { K.push([s.t0, IDLE, .6], [s.t0 + 1.02, [560, 132, 40], .65], [s.t0 + 2.75, IDLE, .6]); continue; }
+  K.push([s.t0, s.shape || IDLE, .6]);
+  for (const [r, sh] of s.keys || []) K.push([s.t0 + r, sh, .6]);
+}
+function shape(t) {
+  let cur = IDLE;
+  for (const [t0, sh, d] of K) {
+    if (t < t0) break;
+    const k = spring(clamp((t - t0) / d));
+    cur = cur.map((v, j) => lerp(v, sh[j], k));
+  }
+  return cur;
+}
+function idleO(t) {   // the mascot layer shows while the island rests at the idle pill
+  let i = -1;
+  for (let j = 0; j < K.length; j++) if (K[j][0] <= t) i = j;
+  if (i < 0 || K[i][1] !== IDLE) return 0;
+  const next = K[i + 1] ? K[i + 1][0] : 1e9;
+  return ramp(t, K[i][0] + .1, .3) * (1 - ramp(t, next - .15, .15));
+}
+
+// ---- Cursor: per-scene paths [u, x, y] (screen px of the tip) and clicks (u).
+const CUR = {
+  halo: { p: [[7.5, 1500, 720], [8.2, 620, 330], [8.9, 1330, 300], [9.6, 980, 720]], c: [] },
+  island: { p: [[.1, 1250, 560], [.8, 990, 40], [2.3, 990, 40], [2.8, 1250, 520]], c: [] },
+  music: { p: [[.3, 1500, 640], [1.6, 1268, 52], [2.2, 1268, 52], [2.9, 1267, 212], [3.4, 1267, 212], [4.2, 1500, 560]], c: [2.0, 3.2] },
+  todo: { p: [[.15, 760, 520], [.6, 617, 78], [1.0, 617, 126], [1.5, 1460, 520], [2.4, 1238, 128], [3.2, 1420, 560]], c: [.65, 1.05, 1.55, 2.45] },
+  water: { p: [[.2, 1300, 520], [1.2, 1128, 72], [2.2, 1128, 72], [2.8, 1320, 520]], c: [1.6] },
+  cloud: { p: [[.1, 1320, 620], [.6, 1208, 74], [1.0, 1208, 74], [1.5, 1400, 640]], c: [.7] },
+};
+function cursorAt(t) {
+  for (const id in CUR) {
+    const s = S[id], uu = t - s.t0, { p, c } = CUR[id];
+    if (uu < p[0][0] - .3 || uu > p[p.length - 1][0] + .3) continue;
+    let x = p[0][1], y = p[0][2];
+    for (let i = 1; i < p.length; i++) {
+      const [a, x0, y0] = p[i - 1], [b, x1, y1] = p[i];
+      if (uu >= a) { const k = eio(clamp((uu - a) / (b - a))); x = lerp(x0, x1, k); y = lerp(y0, y1, k); }
+    }
+    const o = win(uu, p[0][0] - .3, p[p.length - 1][0] + .3, .3);
+    const press = c.reduce((m, ci) => Math.max(m, win(uu, ci - .04, ci + .18, .08)), 0);
+    const last = c.filter(ci => uu >= ci).pop();
+    return { x, y, o, press, dot: last === undefined ? 1 : clamp((uu - last) / .45), uu };
+  }
+  return null;
+}
+
+// ---- Captions and static content built once.
+const caps = $("caps");
+const counter = { free: 0, pro: 0 }, total = { free: 0, pro: 0 };
+SC.forEach(s => s.tag && total[s.tag]++);
+SC.forEach(s => {
+  if (!s.tag) return;
+  const n = ++counter[s.tag], el = document.createElement("div");
+  el.className = "abs cap";
+  el.innerHTML = `<div class="tagrow"><span class="tag ${s.tag}">${s.tag.toUpperCase()}</span><span style="opacity:.6">${String(n).padStart(2, "0")} / ${total[s.tag]}</span></div><h2></h2><p></p>`;
+  el.querySelector("h2").textContent = s.title;
+  el.querySelector("p").textContent = s.desc;
+  caps.appendChild(el); s.cap = el;
+});
+
+const eqBars = [];
+for (let i = 0; i < 6; i++) { const b = document.createElement("div"); b.className = "wb"; b.style.width = "3px"; $("eq").appendChild(b); eqBars.push(b); }
+
+const TODO = ["Siapkan slaid pitch", "Balas emel Aina", "Beli susu & roti"];
+const todoEls = TODO.map((s, i) => {
+  const el = document.createElement("div");
+  el.className = "a nw"; el.style.cssText = `left:26px;top:${50 + i * 48}px;display:flex;align-items:center;gap:14px;font-size:19px`;
+  el.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-opacity=".5" stroke-width="2"/><circle class="f" cx="12" cy="12" r="10" style="fill:var(--acc)"/><path class="k" d="M7.5 12.5l3 3 6-6.5" fill="none" stroke="#1a1204" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="position:relative">${s}<i style="position:absolute;left:0;top:52%;height:2px;background:currentColor;opacity:.6"></i></span>`;
+  $("lTodo").appendChild(el); return el;
+});
+const SHELF = [["PNG", "#5EC8E8", "logo.png"], ["TXT", "#9AA3AE", "nota.txt"], ["PDF", "#e2566b", "laporan.pdf"]];
+const shelfEls = SHELF.map(([k, c, n], i) => {
+  const el = document.createElement("div");
+  el.className = "a"; el.style.cssText = `left:${398 + i * 116}px;top:50px;width:104px;height:150px;border-radius:18px;background:rgba(255,255,255,.07);text-align:center;font-size:13px`;
+  el.innerHTML = `<div style="margin:18px auto 10px;width:54px;height:66px;border-radius:8px;background:${c};display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff">${k}</div><div class="nw">${n}</div>`;
+  $("lTodo").appendChild(el); return el;
+});
+
+const PRAY = [["Subuh", "5:52"], ["Zohor", "1:08"], ["Asar", "4:27"], ["Maghrib", "7:13"], ["Isyak", "8:24"]];
+$("pRow").innerHTML = PRAY.map(([n, tm], i) => `<div style="flex:1;text-align:center;padding:6px 0;border-radius:12px;${i === 2 ? "background:rgba(245,165,36,.18);color:var(--acc)" : ""}"><div style="font-size:13px;opacity:.7">${n}</div><div class="tab" style="font-size:17px;font-weight:600">${tm}</div></div>`).join("");
+
+const THEMES = [["Halo", "#F5A524"], ["Lautan", "#2BB3C0"], ["Hutan", "#4CAF7A"], ["Senja", "#F26B5B"], ["Mono", "#9AA3AE"]];
+$("swRow").innerHTML = THEMES.map(([n, c], i) => `<div class="a" style="left:${48 + i * 112}px;top:0;width:60px;text-align:center"><div class="swc" style="margin:0 auto;width:34px;height:34px;border-radius:50%;background:${c};box-shadow:0 0 0 0 var(--ifg)"></div><div style="font-size:13px;margin-top:6px;opacity:.75">${n}</div></div>`).join("");
+const swEls = [...document.querySelectorAll(".swc")];
+
+for (let i = 0; i < 8; i++) { const d = document.createElement("div"); d.style.cssText = "width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 2px #5EC8E8"; $("wDots").appendChild(d); }
+const wDots = [...$("wDots").children];
+
+const CLIP0 = [["T", "https://kolijijani.com/halo", "2 min"], ["T", "Mesyuarat jam 3 petang", "8 min"], ["#", "#F5A524", "15 min"], ["F", "invois-1123.pdf", "32 min"], ["T", "Terima kasih banyak!", "1 j"]];
+const CLIPN = ["T", "No. 12, Jalan Ampang, KL", "baru"];
+const clipEls = [CLIPN, ...CLIP0].map(([ic, tx, tm]) => {
+  const r = document.createElement("div"); r.className = "row";
+  r.innerHTML = `<span class="ic">${ic}</span><span class="tx"></span><span class="tm">${tm}</span>`;
+  r.querySelector(".tx").textContent = tx; $("clipRows").appendChild(r); return r;
+});
+
+const coreEls = [];
+for (let i = 0; i < 8; i++) {
+  const c = document.createElement("div");
+  c.className = "a"; c.style.cssText = `left:${i * 33}px;top:0;width:24px;height:220px`;
+  c.innerHTML = `<div style="position:absolute;left:0;bottom:22px;width:24px;height:170px;border-radius:6px;background:rgba(255,255,255,.08)"></div><div class="v" style="position:absolute;left:0;bottom:22px;width:24px;border-radius:6px;background:var(--acc)"></div><div style="position:absolute;left:0;bottom:0;width:24px;text-align:center;font-size:11px;opacity:.55">C${i}</div><div class="p tab" style="position:absolute;left:-6px;width:36px;text-align:center;font-size:11px"></div>`;
+  $("cores").appendChild(c); coreEls.push(c);
+}
+const PROCS = [["chrome.exe", 18], ["Code.exe", 11], ["obs64.exe", 7], ["Teams.exe", 4]];
+$("procs").innerHTML = PROCS.map(([n]) => `<div style="height:48px;font-size:15px"><div style="display:flex;justify-content:space-between"><span>${n}</span><span class="tab pp"></span></div><div class="bar" style="margin-top:6px;height:4px"><div class="pb"></div></div></div>`).join("");
+const procP = [...document.querySelectorAll("#procs .pp")], procB = [...document.querySelectorAll("#procs .pb")];
+
+const CPALL = [["T", "Draf emel kepada pembekal", "1 min"], ["F", "screenshot-0931.png", "6 min"], ["T", "kolijijani@contoh.my", "20 min"], ["T", "SELECT * FROM orders", "2 j"], ["F", "invois-1123.pdf", "3 hari"]];
+const CPHIT = [["F", "<mark>inv</mark>ois-1123.pdf", "3 hari"], ["T", "Hantar <mark>inv</mark>ois Oktober", "2 minggu"], ["F", "<mark>inv</mark>entori-stor.xlsx", "4 bulan"]];
+const rowsHtml = list => list.map(([ic, tx, tm], i) => `<div class="row" style="top:${i * 40}px"><span class="ic">${ic}</span><span class="tx">${tx}</span><span class="tm">${tm}</span></div>`).join("");
+$("cpAll").innerHTML = rowsHtml(CPALL); $("cpHit").innerHTML = rowsHtml(CPHIT);
+
+const WP = [
+  ["KALENDAR", "3:00 PM", "Mesyuarat"], ["WORLD CLOCK", "", ""], ["BULAN", "", "Sabit · 78%"],
+  ["COUNTDOWN", "", "Cuti sekolah"], ["CUACA", "31°", "Berawan"], ["SAHAM", "+1.8%", "KLCI 1,624"],
+];
+$("wpSlots").innerHTML = WP.map(([k, v, s], i) => `<div class="slot wps" style="left:${18 + i * 156}px;top:38px;width:144px;height:136px"><div class="k">${k}</div>${
+  i === 1 ? `<div class="tab" style="font-size:15px;line-height:1.55;margin-top:6px"><div>KL <b id="wc0" style="float:right"></b></div><div>Tokyo <b id="wc1" style="float:right"></b></div><div>London <b id="wc2" style="float:right"></b></div></div>`
+  : i === 2 ? `<svg width="48" height="48" viewBox="0 0 48 48" style="margin:8px 0 2px"><circle cx="24" cy="24" r="20" fill="#2a2e36"/><path d="M24 4a20 20 0 010 40 14 20 0 000-40z" fill="#F2F5FA"/></svg><div class="s">${s}</div>`
+  : i === 3 ? `<div id="wcd" class="v tab" style="font-size:24px">23h</div><div id="wcd2" class="s tab"></div><div class="s">${s}</div>`
+  : `<div class="v">${v}</div><div class="s">${s}</div>`}</div>`).join("");
+const wpEls = [...document.querySelectorAll(".wps")];
+
+const PREM = [["Zamrud", "linear-gradient(120deg,#0d2a24,#1f5c4a 55%,#123a33)"], ["Pasir", "linear-gradient(120deg,#2b1d10,#6a4720 55%,#3a2814)"], ["Bata", "linear-gradient(120deg,#2a0f0c,#6b2a1f 55%,#3a1611)"]];
+PREM.forEach(([, g], i) => $("pb" + i).style.background = g);
+const LYR = [
+  ["夜明けの光へ 走り出そう", "yoake no hikari e hashiridasou", "よあけのひかりへ はしりだそう"],
+  ["君と見た空 忘れない", "kimi to mita sora wasurenai", "きみとみたそら わすれない"],
+  ["街の灯り 揺れている", "machi no akari yureteiru", "まちのあかり ゆれている"],
+];
+
+function seek(t) {
+  const root = document.documentElement.style;
+  // Light: during Halo's wave/follow states, and inside the Themes scene.
+  const L = ramp(t, S.halo.t0 + HB.light, .5) * (1 - ramp(t, S.hFree.t0, .5))
+          + ramp(t, S.themes.t0 + .5, .5) * (1 - ramp(t, S.themes.t0 + 3.2, .5));
+  $("wallLight").style.opacity = L;
+  const drift = Math.sin(t / D * Math.PI * 4) * 14;
+  $("wallDark").style.transform = $("wallLight").style.transform = `translate(${drift}px, ${-drift * .6}px) scale(1.02)`;
+  root.setProperty("--ibg", rgb(mix(PAL.pill[0], PAL.pill[1], L)));
+  root.setProperty("--ifg", rgb(mix(PAL.eye[0], PAL.eye[1], L)));
+  root.setProperty("--cap", rgb(mix([242, 245, 250], [20, 24, 33], L)));
+  root.setProperty("--free", rgb(mix([111, 221, 176], [18, 122, 84], L)));
+  root.setProperty("--tb", rgba(mix([30, 30, 30], [243, 243, 243], L), .82));
+  root.setProperty("--tbfg", rgb(mix([242, 242, 242], [26, 26, 26], L)));
+
+  // Accent: the Themes scene steps through the five standard themes.
+  const ut = u("themes", t), step = clamp(Math.floor((ut - 1.1) / .45), -1, 4);
+  const themeI = ut > 1.1 && ut < 3.4 ? Math.max(0, step) : 0;
+  root.setProperty("--acc", THEMES[themeI][1]);
+
+  // Segment rail.
+  const cur = SC.find(s => t >= s.t0 && t < s.t1) || SC[SC.length - 1];
+  [...$("rail").children].forEach((el, i) => el.classList.toggle("on", i === cur.seg));
+  show($("rail"), win(t, S.intro.t1 - .2, S.compare.t0 + .2, .4) * (1 - inS("overlay", t, .4) * .7));
+
+  // Island.
+  const [w, h, r] = shape(t);
+  const isl = $("island");
+  const enter = spring(clamp((t - 3.4) / .8));
+  const P = ramp(t, S.hPro.t0, .5) * (1 - ramp(t, S.compare.t0, .4));     // PRO: gold edge
+  isl.style.width = `${w}px`; isl.style.height = `${h}px`; isl.style.borderRadius = `${r}px`;
+  isl.style.opacity = clamp((t - 3.4) / .35);
+  isl.style.boxShadow = `0 10px 34px rgba(0,0,0,${.35 - .2 * L}), inset 0 0 0 ${lerp(1, 2, P)}px ${P > .01 ? `rgba(232,182,90,${.9 * P})` : L > .5 ? "rgba(0,0,0,.1)" : "rgba(255,255,255,.07)"}`;
+  const hovK = win(u("island", t), .8, 2.8, .25);
+  isl.style.transform = `translateX(-50%) translateY(${lerp(-70, 0, enter)}px) scale(${1 + .04 * hovK})`;
+
+  const lay = (id, o) => { const el = $(id); show(el, o); el.style.transform = `translateX(-50%) scale(${lerp(.94, 1, o)})`; };
+  lay("lIdle", idleO(t));
+  const ui = u("island", t);
+  lay("lHover", win(ui, 1.1, 2.8, .3));
+  for (const [id, lid] of [["music", "lMusic"], ["timer", "lTimer"], ["todo", "lTodo"], ["prayer", "lPrayer"], ["themes", "lTheme"], ["widgets", "lWidgets"], ["water", "lWater"], ["clip", "lClip"], ["overlay", "lOver"], ["sysmon", "lSys"], ["phone", "lPhone"], ["clipPro", "lClipPro"], ["wPro", "lWPro"], ["tPro", "lTPro"], ["cloud", "lCloud"]])
+    lay(lid, inS(id, t));
+  const ub = u("battery", t);
+  lay("lBatt", win(ub, .15, 1.85, .25)); lay("lHead", win(ub, 1.95, S.battery.d, .3));
+
+  // Mascot on the idle island: awake, a blink every ~5 s; in the Halo segment it mirrors the big one.
+  const uh = u("halo", t), cpos = cursorAt(t);
+  const hp = uh >= 0 && uh < S.halo.d ? haloAt(uh, L, cpos && cpos.o > 0 ? [cpos.x, cpos.y] : null) : awake(L, blinkH((t + 1.3) % 5, 0));
+  drawMascot(mIsl, hp);
+
+  // B · Halo showcase.
+  show($("halo"), win(t, S.halo.t0, S.halo.t1, .45));
+  if (uh > -.5 && uh < S.halo.d + .5) {
+    drawMascot(mBig, hp);
+    $("bigHalo").style.transform = `translateY(${(1 - ramp(uh, 0, .7)) * 30}px)`;
+    const hi = hIdx(uh);
+    txt($("hState"), `${hi + 1} · ${HSTATE[hi][0]}`); txt($("hSpec"), HSTATE[hi][1]);
+    [...$("hChips").children].forEach((el, i) => el.classList.toggle("on", i === hi));
+    txt($("hMode"), L > .5 ? "Light · pill #F3F5F9 · mata #141821" : "Dark · pill #0B0D12 · mata #F2F5FA");
+  }
+
+  // C1 · hover label.
+  show($("hovLab"), Math.max(win(ui, .7, 1.6, .2), win(ui, 2.4, 3.3, .2)));
+  txt($("hovTx"), ui < 2 ? "hover 220 ms → kembang" : "tinggalkan → sorok sendiri");
+  $("hovBar").style.width = `${ui < 2 ? clamp((ui - .8) / .22) * 100 : 100}%`;
+  $("hovBar").parentElement.style.visibility = ui < 2 ? "" : "hidden";
+
+  // C2 · Music.
+  const um = u("music", t), skipped = um >= 3.2, kana = um >= 2.0;
+  show($("mCover"), skipped ? 0 : 1); show($("mCover2"), skipped ? 1 : 0);
+  txt($("mTitle"), skipped ? "Lampu Kota" : "Senja di Pantai Timur");
+  txt($("mArt"), skipped ? "Midnight Tape · YouTube" : "Lofi Sessions · Spotify");
+  $("segK").style.left = `${lerp(3, 93, eio(clamp((um - 2.0) / .25)))}px`;
+  const srcI = skipped ? 2 : um < 2.0 ? Math.floor(um / .5) % 4 : 0;
+  [...$("srcs").children].forEach((el, i) => el.classList.toggle("on", i === srcI));
+  eqBars.forEach((b, i) => b.style.height = `${lerp(4, 24, .25 + .75 * Math.abs(Math.sin(t * (5.2 + i * 1.7) + i * 1.3) * Math.sin(t * (2.1 + i * .6) + i)))}px`);
+  const li = skipped ? 2 : um < 1.7 ? 0 : 1, ls = [.3, 1.7, 3.3][li], lp = clamp((um - ls) / (li === 1 ? 1.5 : 1.3)) * 100;
+  txt($("lyJ"), LYR[li][0]); txt($("lyR"), LYR[li][kana ? 2 : 1]);
+  const kar = `linear-gradient(90deg, var(--acc) ${lp}%, rgba(242,245,250,.42) ${lp}%)`;
+  $("lyJ").style.backgroundImage = kar; $("lyR").style.backgroundImage = kar;
+  const mpos = skipped ? um - 3.2 : 64 + um, mlen = skipped ? 188 : 211;
+  $("mFill").style.width = `${mpos / mlen * 100}%`; txt($("mPos"), mmss(mpos)); txt($("mLen"), mmss(mlen));
+  $("mNext").style.transform = `scale(${1 - .2 * win(um, 3.15, 3.4, .1)})`;
+
+  // C3 · Focus timer: 25:00 → 0:00, fast-forwarded.
+  const uT = u("timer", t), left = 1500 * (1 - clamp((uT - .4) / 2.4)), tDone = uT >= 2.8;
+  $("ring").style.strokeDashoffset = 238.76 * (1 - left / 1500);
+  txt($("tBig"), tDone ? "Rehat 5 min" : mmss(Math.ceil(left)));
+  $("tBig").style.color = tDone ? "var(--acc)" : "";
+  txt($("tLab"), tDone ? "Fokus · selesai, tahniah" : "Fokus · Pomodoro");
+  show($("tFast"), tDone ? 0 : .45);
+
+  // C4 · To-do + Shelf.
+  const ud = u("todo", t);
+  todoEls.forEach((el, i) => {
+    const k = i < 2 ? eoc(clamp((ud - [.65, 1.05][i]) / .2)) : 0;
+    el.querySelector(".f").setAttribute("opacity", k); el.querySelector(".k").setAttribute("opacity", k);
+    el.querySelector("i").style.width = `${k * 100}%`; el.lastChild.style.opacity = 1 - .45 * k;
+  });
+  const drop = eoc(clamp((ud - 2.45) / .3));
+  shelfEls[2].style.opacity = drop; shelfEls[2].style.transform = `scale(${lerp(.7, 1, drop)})`;
+  const df = $("dragFile"), grab = ud >= 1.55 && ud < 2.45;
+  const fx = grab && cpos ? cpos.x - 40 : 1420, fy = grab && cpos ? cpos.y - 30 : 490;
+  show(df, inS("todo", t, .25) * (ud < 2.45 ? 1 : 1 - clamp((ud - 2.45) / .15)));
+  df.style.transform = `translate(${fx}px, ${fy}px) scale(${grab ? .9 : 1}) rotate(${grab ? -4 : 0}deg)`;
+
+  // C5 · Prayer times.
+  const up = u("prayer", t);
+  txt($("pLeft"), up < 1.9 ? "lagi 12 min" : "lagi 11 min");
+  $("pFill").style.width = `${lerp(78, 80, clamp(up / 3.5))}%`;
+
+  // C6 · Battery charging, then headphones.
+  const bp = 82 + (ub > 1.1 ? 1 : 0);
+  txt($("bPct"), `${bp}%`);
+  $("bFill").setAttribute("width", 40 * bp / 100 * (.9 + .1 * Math.abs(Math.sin(ub * 3))));
+
+  // C7 · Themes.
+  show($("icSun"), L); show($("icMoon"), 1 - L);
+  txt($("thLab"), L > .5 ? "Light · ikut Windows" : "Dark · ikut Windows");
+  $("thKnob").style.transform = `translateX(${20 * L}px)`;
+  swEls.forEach((el, i) => el.style.boxShadow = `0 0 0 ${i === themeI ? 3 : 0}px var(--ibg), 0 0 0 ${i === themeI ? 5.5 : 0}px var(--ifg)`);
+
+  // C8 · Widgets.
+  const uw = u("widgets", t);
+  [$("ws1"), $("ws2")].forEach((el, i) => { const k = spring(clamp((uw - .35 - i * .25) / .6)); el.style.opacity = clamp(k * 2); el.style.transform = `scale(${lerp(.85, 1, k)})`; });
+
+  // C9 · Water.
+  const uwa = u("water", t), cups = uwa >= 1.6 ? 5 : 4;
+  txt($("wCnt"), `${cups} / 8 gelas hari ini`);
+  wDots.forEach((d, i) => d.style.background = i < cups ? "#5EC8E8" : "transparent");
+  const lvl = lerp(cups === 5 ? 46 : 40, cups === 5 ? 32 : 40, eoc(clamp((uwa - 1.6) / .6)));
+  $("dropFill").setAttribute("y", cups === 5 ? lvl : 40);
+  $("wBtn").style.transform = `scale(${1 - .08 * win(uwa, 1.56, 1.8, .1)})`;
+  txt($("wBtn"), uwa >= 1.6 ? "Bagus!" : "Dah minum");
+
+  // C10 · Clipboard: a new copy pushes the oldest of five out.
+  const uc = u("clip", t), push = eio(clamp((uc - 1.25) / .45));
+  clipEls.forEach((el, i) => {
+    const pos = i === 0 ? push - 1 : i - 1 + push;
+    el.style.top = `${pos * 42}px`;
+    el.style.opacity = i === 0 ? push : i === 5 ? 1 - push : 1;
+    el.style.background = i === 0 ? `rgba(245,165,36,${.18 * push * (1 - clamp((uc - 2.6) / .6))})` : "transparent";
+  });
+  const kk = win(uc, .7, 2.1, .2);
+  show($("keys"), kk); $("keys").style.transform = `translateY(${(1 - kk) * 10}px) scale(${1 - .05 * win(uc, 1.15, 1.35, .08)})`;
+
+  // D1 · Overlay games.
+  const uo = u("overlay", t), g = inS("overlay", t, .4);
+  show($("game"), g);
+  $("gTarget").setAttribute("transform", `translate(${Math.sin(uo * 1.3) * 60} 0)`);
+  $("taskbar").style.opacity = 1 - g;
+  const fps = Math.round(141 + 6 * noise(1, uo * 3));
+  txt($("oFps"), String(fps)); txt($("oGpu"), `${Math.round(64 + 8 * noise(2, uo * 2))}%`);
+  txt($("oTmp"), `${Math.round(61 + 3 * noise(3, uo))}°C`); txt($("oCpu"), `${Math.round(34 + 10 * noise(4, uo * 2))}%`);
+  $("oSpark").setAttribute("points", Array.from({ length: 16 }, (_, i) => `${i * 4.2},${18 - 14 * noise(1, (uo - (15 - i) * .1) * 3)}`).join(" "));
+
+  // D2 · System monitor.
+  const us = u("sysmon", t);
+  coreEls.forEach((c, i) => {
+    const v = clamp(.15 + .8 * noise(i + 7, us * 1.6) * (i === 2 ? 1.25 : 1), .05, .98);
+    c.querySelector(".v").style.height = `${170 * v}px`;
+    const p = c.querySelector(".p"); p.style.bottom = `${170 * v + 26}px`; txt(p, `${Math.round(v * 100)}`);
+  });
+  const hist = Array.from({ length: 61 }, (_, i) => [i * 5, 200 - 160 * clamp(.2 + .55 * noise(9, (i + us * 6) * .35) + .25 * Math.max(0, Math.sin((i + us * 6) * .11)))]);
+  $("hLine").setAttribute("points", hist.map(p => p.join(",")).join(" "));
+  $("hArea").setAttribute("d", `M0 200L${hist.map(p => p.join(" ")).join("L")}L300 200Z`);
+  PROCS.forEach(([, base], i) => { const v = base + 3 * noise(i + 20, us * 2); txt(procP[i], `${v.toFixed(1)}%`); procB[i].style.width = `${v * 4}%`; });
+  txt($("sW"), `${Math.round(38 + 9 * noise(30, us * 1.5))} W`);
+
+  // D3 · Phone Drop: phone → PC, then PC → phone.
+  const uP = u("phone", t), back = uP >= 2.0;
+  const pk = back ? clamp((uP - 2.2) / 1.5) : clamp((uP - .3) / 1.4);
+  $("pArrow").setAttribute("transform", back ? "translate(98 0) scale(-1 1)" : "");
+  txt($("pDir"), back ? "· PC → Telefon" : "· Telefon → PC");
+  txt($("pFile"), back ? "laporan.pdf · 1.4 MB" : "IMG_2041.jpg · 3.2 MB");
+  $("pProg").style.width = `${pk * 100}%`;
+  txt($("pStat"), pk >= 1 ? (back ? "Diterima di telefon" : "Disimpan ke Muat Turun") : "Wi-Fi, data mudah alih atau mana-mana network");
+  show($("phone"), inS("phone", t, .35));
+  $("phone").style.transform = `translateX(${(1 - ramp(uP, 0, .5)) * 60}px)`;
+  show($("phImgL"), pk >= 1 || back ? .75 : 0);
+  show($("phPdf"), back ? eoc(clamp((uP - 3.7) / .3)) : 0); show($("phPdfL"), back && pk >= 1 ? .75 : 0);
+  const ff = $("flyFile"), fk = eio(pk), a0 = back ? [1240, 110] : [1580, 300], a1 = back ? [1580, 380] : [1240, 110];
+  ff.className = back ? "abs" : "abs cover";
+  ff.style.background = back ? "#e2566b" : "";
+  show(ff, pk > 0 && pk < 1 ? inS("phone", t) : 0);
+  ff.style.transform = `translate(${lerp(a0[0], a1[0], fk) - 32}px, ${lerp(a0[1], a1[1], fk) - 32 - Math.sin(fk * Math.PI) * 90}px) rotate(${Math.sin(fk * Math.PI) * 8}deg)`;
+
+  // D4 · Clipboard unlimited + search.
+  const uq = u("clipPro", t), q = "inv".slice(0, clamp(Math.floor((uq - .6) / .22) + 1, 0, 3));
+  txt($("cpQ"), q); show($("cpPh"), q ? 0 : .6);
+  $("cpCaret").style.opacity = (Math.floor(uq * 2.5) % 2) ? 0 : 1;
+  const hk = ramp(uq, 1.35, .35);
+  show($("cpAll"), 1 - hk); show($("cpHit"), hk);
+  $("cpHit").style.transform = `translateY(${(1 - hk) * 8}px)`;
+
+  // D5 · Widgets Pro: 4 slots, then 6.
+  const uW = u("wPro", t), six = ramp(uW, 1.7, .5);
+  txt($("wpN"), uW < 1.9 ? "Widgets Pro · 4 slot" : "Widgets Pro · 6 slot");
+  wpEls.forEach((el, i) => { const k = i === 0 || i === 5 ? six : spring(clamp((uW - .3 - i * .1) / .6)); el.style.opacity = clamp(k * 1.5); el.style.transform = `scale(${lerp(.85, 1, k)})`; });
+  txt($("wc0"), `9:${String(41 + Math.floor(uW / 2)).padStart(2, "0")}`); txt($("wc1"), `10:${String(41 + Math.floor(uW / 2)).padStart(2, "0")}`); txt($("wc2"), `1:${String(41 + Math.floor(uW / 2)).padStart(2, "0")}`);
+  const cd = 23 * 86400 + 4 * 3600 + 12 * 60 + 9 - Math.floor(uW);
+  txt($("wcd"), "23 hari"); txt($("wcd2"), `${String(Math.floor(cd % 86400 / 3600)).padStart(2, "0")}:${String(Math.floor(cd % 3600 / 60)).padStart(2, "0")}:${String(cd % 60).padStart(2, "0")}`);
+
+  // D6 · Premium themes, then the custom builder.
+  const uB = u("tPro", t), pi = uB < .9 ? 0 : uB < 1.5 ? 1 : uB < 2.1 ? 2 : 3;
+  const hue = lerp(170, 28, eio(clamp((uB - 2.3) / 1.2)));
+  $("pb3").style.background = `linear-gradient(120deg, hsl(${hue},40%,14%), hsl(${hue},48%,32%) 55%, hsl(${hue},42%,20%))`;
+  [0, 1, 2, 3].forEach(i => $("pb" + i).style.opacity = i === pi ? 1 : 0);
+  show($("premBg"), inS("tPro", t, .3));
+  txt($("tpName"), pi < 3 ? PREM[pi][0] : uB < 3.6 ? "Custom" : "Teh Tarik");
+  txt($("tpSub"), pi < 3 ? `${pi + 1} / 12 tema premium` : "Dibina dengan Theme Builder");
+  drawMascot(mTp, awake(0, blinkH(uB, 1.2)));
+  show($("builder"), inS("tPro", t, .35));
+  $("builder").style.transform = `translateY(${(1 - ramp(uB, 0, .5)) * 20}px)`;
+  $("hueKnob").style.left = `${hue / 360 * 100}%`;
+  $("radKnob").style.left = `${lerp(30, 85, eio(clamp((uB - 2.6) / 1)))}%`;
+  $("glassKnob").style.transform = `translateX(${20 * ramp(uB, 3.3, .3)}px)`;
+  $("glassKnob").style.background = uB > 3.4 ? "var(--acc)" : "#fff";
+  $("bPrev").style.background = `linear-gradient(120deg, hsl(${hue},40%,14%), hsl(${hue},48%,32%))`;
+  $("bPrev").style.borderRadius = `${lerp(10, 28, eio(clamp((uB - 2.6) / 1)))}px`;
+
+  // D7 · Cloud sync (off by default; switched on).
+  const uC = u("cloud", t), cOn = ramp(uC, .7, .25);
+  $("cKnob").style.transform = `translateX(${20 * cOn}px)`;
+  $("cKnob").parentElement.style.background = cOn > .5 ? "var(--acc)" : "rgba(128,128,128,.35)";
+  txt($("cSub"), uC < .7 ? "Mati · tetapan kekal dalam PC ini" : uC < 3.0 ? "Menyegerak tetapan…" : "Tetapan disegerak · 2 PC");
+  $("cCheck").setAttribute("opacity", uC >= 3.0 ? 1 : 0);
+  show($("cloudScene"), inS("cloud", t, .35));
+  ["cd1", "cd2", "cd3"].forEach((id, i) => {
+    const k = clamp((uC - 1.0 - i * .45) / 1.4), on = uC > 1.0 + i * .45 && k < 1;
+    const x = k < .5 ? lerp(620, 900, k * 2) : lerp(1020, 1300, k * 2 - 1), y = k < .5 ? 370 - Math.sin(k * 2 * Math.PI) * 35 : 360 - Math.sin((k * 2 - 1) * Math.PI) * 35 + (k * 2 - 1) * 10;
+    $(id).setAttribute("cx", x); $(id).setAttribute("cy", y); $(id).setAttribute("opacity", on ? 1 : 0);
+    txt($("cs" + (i + 1)), uC > 2.4 + i * .45 ? "✓" : "○");
+  });
+
+  // Captions and section cards.
+  for (const s of SC) if (s.cap) {
+    const o = win(t, s.t0 + .2, s.t1 - .05, .35);
+    show(s.cap, o); s.cap.style.transform = `translateY(${(1 - ramp(t, s.t0 + .2, .5)) * 16}px)`;
+  }
+  for (const [id, el] of [["hFree", "hFreeCard"], ["hPro", "hProCard"]]) {
+    const o = win(t, S[id].t0, S[id].t1 + .1, .3);
+    show($(el), o); $(el).style.transform = `scale(${lerp(.94, 1, o)})`;
+  }
+
+  // Cursor.
+  const c = $("cursor"), dot = $("clickDot");
+  if (cpos) {
+    show(c, cpos.o); c.style.transform = `translate(${cpos.x - 3}px, ${cpos.y - 2}px) scale(${1 - .14 * cpos.press})`;
+    show(dot, cpos.dot < 1 ? (1 - cpos.dot) * cpos.o : 0);
+    dot.style.transform = `translate(${cpos.x - 17}px, ${cpos.y - 17}px) scale(${lerp(.4, 1.5, eoc(cpos.dot))})`;
+  } else { show(c, 0); show(dot, 0); }
+
+  // A · intro, E · compare + outro.
+  const ii = win(t, .2, S.intro.t1 - .2, .55);
+  show($("intro"), ii); $("intro").style.transform = `translateY(${(1 - ramp(t, .2, .8)) * 18}px)`;
+  drawMascot(mIntro, awake(0, blinkH(t, 1.8)));
+  const cm = win(t, S.compare.t0 + .1, S.compare.t1 + .1, .45);
+  show($("cmp"), cm); $("cmp").style.transform = `translateY(${(1 - cm) * 20}px)`;
+  [...document.querySelectorAll("#cmp li")].forEach((li, i) => li.style.opacity = (li.classList.contains("all") ? .7 : 1) * ramp(t, S.compare.t0 + .3 + (i % 10) * .07, .3));
+  const uo2 = u("outro", t), oo = ramp(t, S.outro.t0 + .1, .6);
+  show($("outro"), oo); $("outro").style.transform = `translateY(${(1 - oo) * 18}px)`;
+  drawMascot(mOutro, uo2 >= .7 && uo2 < 1.9 ? waveSt(0, (uo2 - .7) / 1.2) : awake(0, blinkH(uo2, 3.0)));
+  show($("veil"), Math.max(1 - ramp(t, S.intro.t1 - 1.0, .8), .78 * ramp(t, S.compare.t0, .5)));
+}
+window.seek = seek;
+
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $("stage").style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+addEventListener("resize", fit); fit();
+
+if (new URLSearchParams(location.search).has("capture")) seek(0);
+else { const t0 = performance.now(); const loop = now => { seek(((now - t0) / 1000) % D); requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
+</script>
+</body>
+</html>

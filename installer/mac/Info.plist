@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Halo Island.app's Info.plist. tools/make_mac_app.sh fills in @VERSION@ from Cargo.toml. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Halo Island</string>
+	<key>CFBundleName</key>
+	<string>Halo Island</string>
+	<key>CFBundleExecutable</key>
+	<string>halo</string>
+	<key>CFBundleIconFile</key>
+	<string>HaloStudio</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.halo.halo</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<!-- The display link and the notch APIs the island uses need macOS 14 Sonoma. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<!-- A menu bar app: no Dock icon, no menu bar of its own. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- Shown when Halo Island first asks Music or Spotify what's playing. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Halo Island shows what Music and Spotify are playing, with its lyrics, and its buttons play, pause and skip.</string>
+	<!-- Shown when Prayer times first asks where the Mac is (only while it follows the location). -->
+	<key>NSLocationUsageDescription</key>
+	<string>Prayer times uses your location to pick the nearest kab/kota. Your location stays on this Mac.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Prayer times uses your location to pick the nearest kab/kota. Your location stays on this Mac.</string>
+	<!-- Shown if macOS asks before the Downloader (or Phone drop) reaches a file in Downloads it didn't make, such as a stopped download's unfinished file. -->
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Halo Island saves the videos and sounds you download, and the files you send from your phone, in Downloads.</string>
+	<!-- Shown when Meeting notes first records the Mac's own sound (a Core Audio tap, only while a meeting is recorded). -->
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Oyen listens to the voices of your call, from your Mac's own sound, to write your meeting notes.</string>
+	<!-- Shown when Meeting notes first saves notes in Documents › Halo Island › Notes. -->
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Halo Island saves your meeting notes in Documents, in Halo Island › Notes.</string>
+	<!-- Shown when the IELTS coach or Meeting notes first records (the microphone runs only while it records). -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Oyen listens to your spoken IELTS answers and scores them, and to you in a meeting you take notes of.</string>
+</dict>
+</plist>
