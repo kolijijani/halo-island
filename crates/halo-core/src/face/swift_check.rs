@@ -1,18 +1,18 @@
-//! The cross-check with the Swift port: frames OyenKit wrote must come out of
+//! The cross-check with the Swift port: frames HaloKit wrote must come out of
 //! this port the same. Every mood at several moments and both eye sizes, the
 //! Fokus moods with their inputs, and a set of whole SVG drawings. Numbers (the
 //! head's transform, the fold, stroke widths, opacities) must agree within
 //! 1e-9, and every path's SVG text exactly. On Linux the numbers agree to the
 //! bit; another libm (Windows CI) may round a last digit differently.
 //!
-//! The fixture was written by a small Swift program built with OyenKit's own
+//! The fixture was written by a small Swift program built with HaloKit's own
 //! sources (halo-bar commit 213172663). The program is at the fixture's end,
-//! with how to run it again when OyenKit changes; its header gives the records.
+//! with how to run it again when HaloKit changes; its header gives the records.
 
 use super::svg::{self, Canvas, Style};
 use super::*;
 
-const FIXTURE: &str = include_str!("../../tests/fixtures/oyen_swift_frames.txt");
+const FIXTURE: &str = include_str!("../../tests/fixtures/face_swift_frames.txt");
 
 #[derive(Default)]
 struct Report {
@@ -168,7 +168,7 @@ fn drawn(kind: &str, f: &Frame) -> String {
             },
             bar,
             "@@",
-            Some("oyen"),
+            Some("halo"),
         ),
         "template" => svg::body(
             f,
@@ -178,7 +178,7 @@ fn drawn(kind: &str, f: &Frame) -> String {
             },
             bar,
             "@@",
-            Some("oyen"),
+            Some("halo"),
         ),
         "colour-document" => svg::document(
             f,
@@ -186,7 +186,7 @@ fn drawn(kind: &str, f: &Frame) -> String {
                 ink: &svg::css(INK),
             },
             Canvas::face(256.0),
-            "oyen",
+            "halo",
         ),
         "template-document" => svg::document(
             f,

@@ -4,9 +4,9 @@ Run the self-test at 200 % in one theme, then cut its pictures into
 site/assets/shots/<theme>/ (island only, real alpha, lossless WebP):
 
     HALO_SELFTEST_DPI=192 tools/run-selftest-wine.sh target/.../halo.exe out-classic
-    HALO_SELFTEST_DPI=192 HALO_SELFTEST_THEME=oyen tools/run-selftest-wine.sh target/.../halo.exe out-oyen
+    HALO_SELFTEST_DPI=192 HALO_SELFTEST_THEME=halo tools/run-selftest-wine.sh target/.../halo.exe out-halo
     python3 tools/site_shots.py out-classic classic
-    python3 tools/site_shots.py out-oyen oyen
+    python3 tools/site_shots.py out-halo halo
 
 The read-along picture (the Music page with the pronunciation under Korean
 lyrics) comes from a run with the sample song in Korean. Give the language as
@@ -55,8 +55,8 @@ frame (HALO_SELFTEST_LOOP=1 writes loop-media-NNN.png), pick a frame with
 notes in the air and give its name as the third argument; it becomes
 media-activity.webp:
 
-    HALO_SELFTEST_DPI=192 HALO_SELFTEST_THEME=oyen HALO_SELFTEST_LOOP=1 tools/run-selftest-wine.sh target/.../halo.exe out-oyen-loop
-    python3 tools/site_shots.py out-oyen-loop oyen loop-media-006
+    HALO_SELFTEST_DPI=192 HALO_SELFTEST_THEME=halo HALO_SELFTEST_LOOP=1 tools/run-selftest-wine.sh target/.../halo.exe out-halo-loop
+    python3 tools/site_shots.py out-halo-loop halo loop-media-006
 
 The Glass pictures come from Windows: Wine has no DirectComposition, so under
 Wine Glass only draws its smoked-glass fallback. Run the Glass self-test at
@@ -92,9 +92,9 @@ site/assets/shots/zoom/<theme>/ (ZOOM_KEEP). A 400 % island needs a bigger
 virtual screen than Wine's default:
 
     HALO_SELFTEST_DPI=384 HALO_SELFTEST_SCREEN=4096x2400x24 tools/run-selftest-wine.sh target/.../halo.exe out-classic-4x
-    HALO_SELFTEST_DPI=384 HALO_SELFTEST_SCREEN=4096x2400x24 HALO_SELFTEST_THEME=oyen tools/run-selftest-wine.sh target/.../halo.exe out-oyen-4x
+    HALO_SELFTEST_DPI=384 HALO_SELFTEST_SCREEN=4096x2400x24 HALO_SELFTEST_THEME=halo tools/run-selftest-wine.sh target/.../halo.exe out-halo-4x
     python3 tools/site_shots.py out-classic-4x classic zoom
-    python3 tools/site_shots.py out-oyen-4x oyen zoom
+    python3 tools/site_shots.py out-halo-4x halo zoom
 
 Diorama's resting pill at twice its size comes from a 400 % Diorama run the
 same way (zoom/diorama/<what>.webp):
@@ -210,7 +210,7 @@ def mac(src: Path, only: str | None = None) -> None:
     for shot in sorted(src.glob("[0-9][0-9]*-*-notch.png")):
         name = re.sub(r"^\d+-", "", shot.stem)[: -len("-notch")]
         theme = "classic"
-        for t in ("oyen", "pill"):
+        for t in ("halo", "pill"):
             if name.endswith("-" + t):
                 name, theme = name[: -len(t) - 1], t
         keep, strip = (MAC_PILL_KEEP, MAC_PILL_STRIP) if theme == "pill" else (MAC_KEEP, MAC_STRIP)
@@ -276,7 +276,7 @@ def main() -> None:
     if sys.argv[2:] in (["diorama"], ["diorama", "zoom"]):
         diorama(Path(sys.argv[1]), len(sys.argv) == 4)
         return
-    if len(sys.argv) not in (3, 4) or sys.argv[2] not in ("classic", "oyen", "pill"):
+    if len(sys.argv) not in (3, 4) or sys.argv[2] not in ("classic", "halo", "pill"):
         sys.exit(__doc__)
     src, theme = Path(sys.argv[1]), sys.argv[2]
     lang = sys.argv[3] if len(sys.argv) == 4 else None

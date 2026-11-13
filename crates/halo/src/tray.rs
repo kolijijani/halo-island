@@ -102,11 +102,11 @@ fn item(label: &str, cmd: MenuCmd, checked: bool) -> MenuItem {
     MenuItem::Item { label: label.to_string(), cmd, checked }
 }
 
-/// An idle look as the menu names it. In the Oyen theme the eyes are Oyen's own.
+/// An idle look as the menu names it. In the Halo theme the eyes are Halo's own.
 fn idle_label(s: IdleStyle, theme: Theme) -> &'static str {
     match s {
         IdleStyle::Clock => "Clock",
-        IdleStyle::Eyes if theme == Theme::Oyen => "Halo",
+        IdleStyle::Eyes if theme == Theme::Halo => "Halo",
         IdleStyle::Eyes => "Eyes",
         IdleStyle::Minimal => "Minimal",
         IdleStyle::Hidden => "Hidden until hover",
@@ -132,7 +132,7 @@ pub fn menu_items(s: &Settings, pinned: bool, recorder: bool, update: UpdateLine
         item("Keep island open", MenuCmd::TogglePinned, pinned),
         MenuItem::Sub {
             label: "Theme".into(),
-            items: vec![theme("Classic", Theme::Classic), theme("Halo", Theme::Oyen), theme("Glass", Theme::Glass), theme("Pill", Theme::Pill), theme("Diorama", Theme::Diorama)],
+            items: vec![theme("Classic", Theme::Classic), theme("Halo", Theme::Halo), theme("Glass", Theme::Glass), theme("Pill", Theme::Pill), theme("Diorama", Theme::Diorama)],
         },
         // The status bar is listed only in Pill, as on the Settings page: the
         // other themes would draw the clock for it (Diorama its picture).
@@ -424,7 +424,7 @@ mod tests {
         assert_eq!(idle_choices(&pill).last(), Some(&("Status bar".to_string(), true)));
         // Another theme draws the clock for the status bar: Clock is checked,
         // and Status comes back with Pill.
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Diorama] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Diorama] {
             let s = Settings { theme, ..pill.clone() };
             let choices = idle_choices(&s);
             assert_eq!(choices.len(), if theme == Theme::Diorama { 3 } else { 4 }, "{theme:?}");
@@ -447,7 +447,7 @@ mod tests {
     fn place(t: Theme) -> usize {
         match t {
             Theme::Classic => 0,
-            Theme::Oyen => 1,
+            Theme::Halo => 1,
             Theme::Glass => 2,
             Theme::Pill => 3,
             Theme::Diorama => 4,

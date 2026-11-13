@@ -402,7 +402,7 @@ mod tests {
         assert!(!verify(signed.payload.as_bytes(), &sig, &signed.key));
         assert!(verify(signed.payload.as_bytes(), &signed.signature, &signed.key));
         // The spare key didn't sign it.
-        let spare = update::trusted_key("f835f77c60bd2b7f").unwrap();
+        let spare = update::trusted_key("a67142ee1d7e50dc").unwrap();
         assert!(!verify(signed.payload.as_bytes(), &signed.signature, &spare));
     }
 }

@@ -1,4 +1,4 @@
-# The keys Halo Studio trusts for its update file, studio.halo.com/latest.json
+# The keys Halo Island trusts for its update file, kolijijani.github.io/halo-island/latest.json
 # (docs/updates.md). The app reads this file when it is built; tools/make_update_feed.py
 # refuses to sign with a key that isn't listed here.
 #
@@ -8,5 +8,5 @@
 # The private half of the first key is the UPDATE_FEED_KEY secret in the release
 # environment. The second one's private half is kept offline by the maintainer,
 # for when the first has to be replaced: copies already out there trust both.
-4cb3280eaea65b50 04e34017d3f66e9cffb357e2fd92a832ba6d7f875c59b8da08b4785af5c227e64528b791c3a5acd6e21deafc23cff678df4d9bd9c5d264d8d5d5338ce380261906
-f835f77c60bd2b7f 04726e0f2492fadd216f14d679f3cdebba7434046eed30f8bc7f6f7aea154a97fa9a97010f6cd482a06437bd04b76495119b2306caa42431f7074b786076fa7fc0
+bbc265637ee3b145 0450237e90a9dd97b3d3cf771b251ff73af07028080006287e6b378c180d8fc4170ade6c538b2da0eb2763910240cdfadb96109b0fdc6c8f4208143e0599533ce1
+a67142ee1d7e50dc 04d770eec8ecc046d3f66317ceb16e76c2fd4536a21614eaaa09cdadc224cac368e2e2ded43724a8fb1a21a9a235f72937ee21fecfea6853865172fb490a187675

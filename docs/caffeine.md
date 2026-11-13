@@ -122,14 +122,14 @@ An espresso drink is its shots times the beans' mg per shot. A shot is about 30 
 
 Your drinks and the add-on's settings stay on your computer, and nothing about them is sent anywhere: the add-on makes no request at all.
 
-- **Drinks:** `data.json`, under `caffeine`, in `%APPDATA%\Poni\` on Windows and `~/Library/Application Support/Poni/` on a Mac. For each drink: its kind, its shots or servings, the beans, the time, its mg and, for Your own, the name you typed. It keeps the last 14 days, at most 400 drinks; older ones are dropped as new ones come in.
+- **Drinks:** `data.json`, under `caffeine`, in `%APPDATA%\Halo\` on Windows and `~/Library/Application Support/Halo/` on a Mac. For each drink: its kind, its shots or servings, the beans, the time, its mg and, for Your own, the name you typed. It keeps the last 14 days, at most 400 drinks; older ones are dropped as new ones come in.
 - **Settings:** `settings.json` in the same folder, under `caffeine`: `bedtime` (minutes after midnight), `half_life` (hours), `bed_limit_mg`, `day_limit_mg`, `remind`, and `bean`, the beans the picker starts with.
 - **Switched off**, there's no Caffeine tab and no reminder, and nothing of the add-on runs. The drinks stay in `data.json`.
 
 ## For contributors
 
-- **The numbers and rules** are in `crates/poni-core/src/caffeine.rs`: the mg per shot (`Bean::mg_per_shot`) and per serving (`Kind::mg_each`), the curve (`in_body`, `KA`), last call (`last_call_hours`, `Today`), the reminder's time and words (`reminder_at`, `reminder_text`), the drinks (`Log`, kept for `KEEP_DAYS`) and the settings (`Prefs`, kept in range by `Prefs::sane`). `cargo test -p poni-core caffeine` runs its tests; `last_call_matches_the_2023_review` holds the 35 mg line to the review's two drinks.
-- **The page** is `crates/poni/src/pages/caffeine.rs`, a tab only while the add-on is on (`AppState::caffeine_on`).
+- **The numbers and rules** are in `crates/halo-core/src/caffeine.rs`: the mg per shot (`Bean::mg_per_shot`) and per serving (`Kind::mg_each`), the curve (`in_body`, `KA`), last call (`last_call_hours`, `Today`), the reminder's time and words (`reminder_at`, `reminder_text`), the drinks (`Log`, kept for `KEEP_DAYS`) and the settings (`Prefs`, kept in range by `Prefs::sane`). `cargo test -p halo-core caffeine` runs its tests; `last_call_matches_the_2023_review` holds the 35 mg line to the review's two drinks.
+- **The page** is `crates/halo/src/pages/caffeine.rs`, a tab only while the add-on is on (`AppState::caffeine_on`).
 - **The reminder** is a notice in `tick` at `caffeine::reminder_at`, nothing running in between.
 - **Times** are local wall-clock minutes (`LocalMinute`), so nothing depends on the time zone. The page's day starts at 06:00 (`DAY_START`).
 - **A drink keeps its mg** (`Drink::mg`), fixed when it was added: changing a table never rewrites what someone had. A kind that a newer version wrote reads as "Drink", with its mg (`Kind::Other`).

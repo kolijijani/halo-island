@@ -50,7 +50,7 @@ SetupIconFile=..\crates\halo\res\halo.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 WizardStyle=modern
-; Oyen hanging from the island on the finish page, Halo's logo in the header (both from tools/make_brand.py).
+; Halo hanging from the island on the finish page, Halo's logo in the header (both from tools/make_brand.py).
 ; Setup picks the file closest to its image area: 100%, 150% and 200% scaling.
 WizardImageFile=art\wizard-202x386.png,art\wizard-336x643.png,art\wizard-430x824.png
 WizardSmallImageFile=art\wizard-small-58.png,art\wizard-small-77.png,art\wizard-small-97.png,art\wizard-small-116.png,art\wizard-small-124.png,art\wizard-small-143.png,art\wizard-small-159.png
@@ -71,8 +71,6 @@ Source: "{#ExeSource}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [InstallDelete]
-; The shortcut the 0.1.x versions from 0.1.2 on made, before the app was renamed Halo Island.
-Type: files; Name: "{autoprograms}\Oyen Halo.lnk"
 ; Halo Island's own shortcut, before this fork took the name Halo Island.
 Type: files; Name: "{autoprograms}\Halo Island.lnk"
 

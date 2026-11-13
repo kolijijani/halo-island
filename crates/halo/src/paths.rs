@@ -22,48 +22,6 @@ pub fn data_dir() -> PathBuf {
     home_override().unwrap_or_else(|| env_dir("APPDATA").join("Halo"))
 }
 
-/// Copies `%APPDATA%\Poni` (settings, data) to `%APPDATA%\Halo` once, when
-/// Halo's folder is missing or empty. Poni's folder stays. The copy goes to a
-/// side folder first and is renamed into place, so a copy cut short is redone
-/// on the next start. `Ok(Some(n))` = n files copied, `Ok(None)` = nothing to do.
-pub fn migrate_from_poni() -> std::io::Result<Option<usize>> {
-    if home_override().is_some() {
-        return Ok(None);
-    }
-    let base = env_dir("APPDATA");
-    let (old, new) = (base.join("Poni"), base.join("Halo"));
-    let new_empty = match std::fs::read_dir(&new) {
-        Ok(mut d) => d.next().is_none(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
-        Err(e) => return Err(e),
-    };
-    if !old.is_dir() || !new_empty {
-        return Ok(None);
-    }
-    let tmp = base.join("Halo.migrating");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let n = copy_tree(&old, &tmp)?;
-    let _ = std::fs::remove_dir(&new); // empty, if it exists
-    std::fs::rename(&tmp, &new)?;
-    Ok(Some(n))
-}
-
-fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<usize> {
-    std::fs::create_dir_all(to)?;
-    let mut n = 0;
-    for e in std::fs::read_dir(from)? {
-        let e = e?;
-        let dst = to.join(e.file_name());
-        if e.file_type()?.is_dir() {
-            n += copy_tree(&e.path(), &dst)?;
-        } else {
-            std::fs::copy(e.path(), dst)?;
-            n += 1;
-        }
-    }
-    Ok(n)
-}
-
 pub fn cache_dir() -> PathBuf {
     home_override().map(|h| h.join("cache")).unwrap_or_else(|| env_dir("LOCALAPPDATA").join("Halo"))
 }
@@ -96,16 +54,12 @@ pub fn apple_music_web_token_path() -> PathBuf {
 }
 
 /// Where files sent from a phone land: `Downloads\Halo Island` (wherever the
-/// user moved Downloads to), or `Downloads\Oyen Halo` where an install from
-/// before the rename made it: Shelf items link to the files in it. Under
-/// `HALO_HOME` for the self-test.
+/// user moved Downloads to). Under `HALO_HOME` for the self-test.
 pub fn phone_inbox_dir() -> PathBuf {
     if let Some(h) = home_override() {
         return h.join("phone-drop");
     }
-    let downloads = downloads_dir().unwrap_or_else(|| env_dir("USERPROFILE").join("Downloads"));
-    let before_rename = downloads.join("Oyen Halo");
-    if before_rename.is_dir() { before_rename } else { downloads.join("Halo Island") }
+    downloads_dir().unwrap_or_else(|| env_dir("USERPROFILE").join("Downloads")).join("Halo Island")
 }
 
 /// Where the Downloader saves videos and sound: the user's Downloads folder

@@ -1,4 +1,4 @@
-//! Writes a frame of Oyen's face as SVG, the way OyenKit's `OyenSVG` does, so
+//! Writes a frame of Halo's face as SVG, the way HaloKit's `HaloSVG` does, so
 //! frames can be previewed in a browser and compared with the Swift port's
 //! text for text.
 
@@ -9,7 +9,7 @@ use super::{
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Style<'a> {
-    /// The app's Oyen: orange head, darker folded tip, ink eyes. `ink` colours
+    /// The app's Halo: orange head, darker folded tip, ink eyes. `ink` colours
     /// what floats around the head.
     Colour { ink: &'a str },
     /// One colour, for a menu bar or a tray: a solid head with the eyes as
@@ -244,7 +244,7 @@ mod tests {
     use super::*;
 
     fn idle() -> Frame {
-        frame(Mood::Oyen, 0.0, Input::default(), 1.0)
+        frame(Mood::Halo, 0.0, Input::default(), 1.0)
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
             &idle(),
             Style::Colour { ink: "#FBFBFB" },
             Canvas::face(96.0),
-            "oyen",
+            "halo",
         );
         assert!(svg.contains("fill=\"#F0892E\""));
         assert!(svg.contains("fill=\"#C9581A\""));
@@ -283,8 +283,8 @@ mod tests {
     fn shared_outlines_replace_the_long_paths() {
         let f = idle();
         let style = Style::Colour { ink: "#000" };
-        let whole = body(&f, style, Canvas::menu_bar(18.0), "oyen", None);
-        let shared = body(&f, style, Canvas::menu_bar(18.0), "oyen", Some("o"));
+        let whole = body(&f, style, Canvas::menu_bar(18.0), "halo", None);
+        let shared = body(&f, style, Canvas::menu_bar(18.0), "halo", Some("o"));
         assert!(shared.contains("<use href=\"#o-head\""));
         assert!(shared.contains("<use href=\"#o-fold\""));
         assert!(shared.len() < whole.len() / 3);

@@ -53,7 +53,7 @@ impl Msg {
     }
 
     fn text(&self, room: &str) -> String {
-        format!("oyen-drop/1\n{room}\n{}\n{}\n{}\n{}\n{}", self.t, self.sid, self.ts, self.name, self.sdp)
+        format!("halo-drop/1\n{room}\n{}\n{}\n{}\n{}\n{}", self.t, self.sid, self.ts, self.name, self.sdp)
     }
 
     fn tag(&self, secret: &Secret) -> [u8; 32] {
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn contract_vector() {
         let m = Msg::signed(&vector(), "offer", SID, "Pixel 10", SDP, TS);
-        assert_eq!(m.mac, "3QYhMYuCNPzit2tYBw0ejDAQsE1vxoO4DQERkznV8o8");
+        assert_eq!(m.mac, "I4BNjNlhyfrRCg6uQz_5IE28qeZBUc8YIQEdeF48heo");
         assert_eq!(m.verify(&vector(), TS + 1000), Ok(()));
     }
 

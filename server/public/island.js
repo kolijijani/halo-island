@@ -125,7 +125,7 @@ if (document.fonts) {
   if (document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => requestAnimationFrame(fit));
 }
 
-/** Swap an Oyen picture, with a little pop; `move` = 'hop' plays a happy jump. */
+/** Swap an Halo picture, with a little pop; `move` = 'hop' plays a happy jump. */
 export function pose(id, name, move = '') {
   const img = $(id);
   if (!img) return;
@@ -148,7 +148,7 @@ export function pose(id, name, move = '') {
   }
 }
 
-/** Oyen carries the files while they travel. */
+/** Halo carries the files while they travel. */
 export function carrying(id, on) {
   const img = $(id);
   if (img) img.classList.toggle('carrying', on);

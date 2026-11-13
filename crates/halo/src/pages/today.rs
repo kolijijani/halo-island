@@ -60,7 +60,7 @@ const RING_ICON: f32 = 12.0;
 /// A flight from Gmail: its dot.
 const GMAIL_RED: Color = Color::hex(0xEA4335);
 /// A calendar event: its dot, Google Calendar's blue in every theme (the
-/// accent can be orange, as in Oyen, like a bill's dot).
+/// accent can be orange, as in Halo, like a bill's dot).
 const CALENDAR_BLUE: Color = Color::hex(0x4285F4);
 
 const WEEKDAY_LONG: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

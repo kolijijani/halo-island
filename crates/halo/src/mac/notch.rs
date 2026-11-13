@@ -13,7 +13,7 @@
 //!   a strip the notch's height on top, the usual content under it.
 //!
 //! The Eyes look rests in the ears too, and plays hide and seek with the
-//! camera ([`draw_peek`]): the eyes (Oyen, in his theme) peek out beside it
+//! camera ([`draw_peek`]): the eyes (Halo, in his theme) peek out beside it
 //! on the side the pointer is on and look at the pointer wherever it is on
 //! the screen; when it crosses over they duck behind the camera and come out
 //! on the other side. Minimal and Hidden rest inside the notch.
@@ -44,7 +44,7 @@ use crate::activities::{self, Activity, Mode};
 use crate::gfx::{Canvas, TextStyle, Weight};
 use crate::icons::Icon;
 use crate::island::{Geom, SHOULDER};
-use crate::oyen;
+use crate::face;
 use crate::pill;
 use crate::state::AppState;
 use crate::ui::Ui;
@@ -80,7 +80,7 @@ const BELOW_EAR: f32 = 24.0;
 const EARS_R: f32 = 14.0;
 /// The one neutral track under every progress ring (as in activities.rs).
 const RING_TRACK: Color = Color::white(0.14);
-/// The Eyes look's ears: room for the eyes (or Oyen) to peek out on either
+/// The Eyes look's ears: room for the eyes (or Halo) to peek out on either
 /// side of the camera, this far from its edge.
 const PEEK_EAR: f32 = 46.0;
 const PEEK_GAP: f32 = 6.0;
@@ -89,11 +89,11 @@ const PEEK_GAP: f32 = 6.0;
 const EYES_W: f32 = 22.0 + 6.5;
 /// How far the eyes turn toward the pointer (DIPs, across and down).
 const LOOK: (f32, f32) = (2.5, 2.0);
-/// Oyen's head in an ear, as beside the clock.
-const PEEK_OYEN_W: f32 = 22.0;
-/// Oyen watches the pointer this long after it moves, then rests again (he
+/// Halo's head in an ear, as beside the clock.
+const PEEK_HALO_W: f32 = 22.0;
+/// Halo watches the pointer this long after it moves, then rests again (he
 /// has his blinks and ear flicks to do).
-const OYEN_WATCH: f64 = 2.5;
+const HALO_WATCH: f64 = 2.5;
 
 pub fn fit(m: &Mode, st: &AppState) -> Fit {
     if pill::on(st.settings.theme) {
@@ -168,7 +168,7 @@ fn ear(m: &Mode, st: &AppState) -> f32 {
         Mode::Idle if st.settings.idle_style == IdleStyle::Eyes => PEEK_EAR,
         Mode::Idle => {
             let clock = if st.settings.use_24h { 64.0 } else { 84.0 };
-            if oyen::on(st.settings.theme) {
+            if face::on(st.settings.theme) {
                 clock + 6.0
             } else {
                 clock
@@ -305,14 +305,14 @@ pub fn draw_ears(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect, n: Notch)
     let right = Rect::new(body.right() - ear_w, body.y, ear_w, body.h);
     match m {
         Mode::Idle => {
-            if oyen::on(st.settings.theme) {
-                // Oyen rests in the left ear and watches the cursor.
+            if face::on(st.settings.theme) {
+                // Halo rests in the left ear and watches the cursor.
                 let look = ui.input.mouse.map(|p| (p.x - body.center().x) / (body.w / 2.0));
-                let (frame, moving) = oyen::rest(st.now, st.local.hour < 5, look);
+                let (frame, moving) = face::rest(st.now, st.local.hour < 5, look);
                 if moving {
                     ui.request_anim();
                 }
-                oyen::peek(ui.c, &frame, left.center().x + 4.0, body.bottom() - 5.0, 22.0, body.y + 1.0);
+                face::peek(ui.c, &frame, left.center().x + 4.0, body.bottom() - 5.0, 22.0, body.y + 1.0);
             }
             let time = fmt_clock(&st.local, st.settings.use_24h);
             let ts = TextStyle::body().weight(Weight::Semibold).tabular().center();
@@ -356,7 +356,7 @@ pub fn draw_ears(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect, n: Notch)
             ui.c.text(&text, Rect::new(right.x, body.y, right.w - 6.0, body.h), &ts.center());
             true
         }
-        // Art left and bars (or Oyen) right, no words under the camera: the
+        // Art left and bars (or Halo) right, no words under the camera: the
         // sung line hangs below the notch instead (`fit`).
         Mode::Activity(Activity::Media) => {
             activities::draw_music(ui, st, body, false);
@@ -366,7 +366,7 @@ pub fn draw_ears(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect, n: Notch)
     }
 }
 
-/// The Eyes look around a notch: the eyes (Oyen, in his theme) peek out
+/// The Eyes look around a notch: the eyes (Halo, in his theme) peek out
 /// beside the camera on the pointer's side and look at it, wherever it is
 /// on the screen. When it crosses over, they duck behind the camera, which
 /// hides their way across, and come out on the other side. The same in
@@ -379,32 +379,32 @@ fn draw_peek(ui: &mut Ui, st: &mut AppState, body: Rect, n: Notch) {
     }
     let look = peek_look(st, spot, now);
     let x = body.center().x + spot.x;
-    if oyen::on(st.settings.theme) {
-        let (frame, moving) = oyen::rest(now, st.local.hour < 5, look.map(|l| l.0));
+    if face::on(st.settings.theme) {
+        let (frame, moving) = face::rest(now, st.local.hour < 5, look.map(|l| l.0));
         if moving {
             ui.request_anim();
         }
-        oyen::peek(ui.c, &frame, x, body.bottom() - 5.0, PEEK_OYEN_W, body.y + 1.0);
+        face::peek(ui.c, &frame, x, body.bottom() - 5.0, PEEK_HALO_W, body.y + 1.0);
     } else {
         let (gx, gy) = look.unwrap_or((0.0, 0.0));
         activities::draw_eyes(ui, st, x, body.center().y + gy * LOOK.1, gx * LOOK.0);
     }
 }
 
-/// Where the peeking eyes (Oyen, in his theme) are at `now`, from the
+/// Where the peeking eyes (Halo, in his theme) are at `now`, from the
 /// island's top centre, and whether they are on their way across.
 fn peek_spot(st: &AppState, n: Notch, now: f64) -> (Point, bool) {
-    let w = if oyen::on(st.settings.theme) { PEEK_OYEN_W } else { EYES_W };
+    let w = if face::on(st.settings.theme) { PEEK_HALO_W } else { EYES_W };
     let (along, moving) = st.ui.peek.along(now);
     (Point::new(along * (n.w / 2.0 + PEEK_GAP + w / 2.0), n.h / 2.0), moving)
 }
 
 /// Where the eyes at `spot` look at `now` (-1 to 1 each way): at the
-/// pointer, wherever it is. Oyen only watches it for a moment after it
+/// pointer, wherever it is. Halo only watches it for a moment after it
 /// moves, and not while he sleeps.
 fn peek_look(st: &AppState, spot: Point, now: f64) -> Option<(f32, f32)> {
     let p = &st.ui.peek;
-    if oyen::on(st.settings.theme) && (st.local.hour < 5 || !p.moved_within(now, OYEN_WATCH)) {
+    if face::on(st.settings.theme) && (st.local.hour < 5 || !p.moved_within(now, HALO_WATCH)) {
         return None;
     }
     p.pointer.map(|at| peek::gaze(spot, at))

@@ -2,9 +2,9 @@
 // Keeps the page opening without a connection (network first, cache as the
 // fallback; /api/ is never cached) and receives Android's share sheet:
 // POST /share (multipart/form-data, field "files") goes into IndexedDB
-// ("oyen-drop" / "shared"), then the page opens at /?share=<id>.
+// ("halo-drop" / "shared"), then the page opens at /?share=<id>.
 
-const CACHE = 'oyen-drop-shell-v3';
+const CACHE = 'halo-drop-shell-v3';
 const SHELL = [
   '/', '/app.js', '/app.css', '/drop-core.js', '/island.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png',
   '/halo-peek.webp', '/halo-sit.webp', '/halo-asleep.webp', '/halo-shelf.webp', '/halo-note.webp',
@@ -81,7 +81,7 @@ function randomId() {
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open('oyen-drop', 1);
+    const r = indexedDB.open('halo-drop', 1);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains('shared')) r.result.createObjectStore('shared');
     };

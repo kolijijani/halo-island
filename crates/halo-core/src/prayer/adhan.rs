@@ -1,6 +1,6 @@
 //! The sun's position and the moments it reaches a given altitude: a Rust port
 //! of the parts of Adhan (adhan-js 4.4.6, MIT, Copyright (c) Batoul Apps) that
-//! Oyen Umroh's prayer engine runs on. The arithmetic follows the JavaScript
+//! the reference prayer engine runs on. The arithmetic follows the JavaScript
 //! step for step, including where it truncates to whole seconds, so both
 //! engines land on the same minute after JAKIM's rounding. Formulas are from
 //! Jean Meeus, "Astronomical Algorithms". Licence text: THIRD-PARTY-NOTICES.txt.
@@ -574,7 +574,7 @@ fn adhan_times(year: i32, month: u8, day: u8, lat: f64, lng: f64, m: &Method, sh
 }
 
 /// Initial great-circle bearing from a place to the Kaaba, degrees clockwise
-/// from true north (0..360). Oyen Umroh's formula and Kaaba point.
+/// from true north (0..360). The reference engine's formula and Kaaba point.
 pub fn qibla(lat: f64, lng: f64) -> f64 {
     const KAABA: (f64, f64) = (21.4225, 39.8262);
     let (p1, p2, dl) = (deg2rad(lat), deg2rad(KAABA.0), deg2rad(KAABA.1 - lng));

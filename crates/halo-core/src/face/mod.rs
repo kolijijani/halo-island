@@ -1,14 +1,14 @@
-//! Oyen, the Halo mascot: the Halo mark with eyes that change with the
+//! Halo, the Halo mascot: the Halo mark with eyes that change with the
 //! moment, drawn flat like the logo (no fur, no mouth, no whiskers). A mood
 //! moves only the eyes, the folded ear and a little bounce, as a pure function
 //! of time, so every frame is exact and nothing animates on its own.
 //!
-//! There is one Oyen. This is a port of OyenKit (the Halo Mac bar's Swift
-//! port of the Halo app's `src/components/oyen-face.tsx`) that gives the same
-//! numbers, checked against frames OyenKit wrote (see `swift_check`). Change
-//! the app first, then OyenKit, then this, never this alone.
+//! There is one Halo. This is a port of HaloKit (the Halo Mac bar's Swift
+//! port of the Halo app's `src/components/halo-face.tsx`) that gives the same
+//! numbers, checked against frames HaloKit wrote (see `swift_check`). Change
+//! the app first, then HaloKit, then this, never this alone.
 //!
-//! Oyen never reacts to spending. Nothing here takes an amount, a balance or a
+//! Halo never reacts to spending. Nothing here takes an amount, a balance or a
 //! budget, and callers must not pick a mood from one: moods follow what the app
 //! is doing (idle, reading, something just arrived, the night).
 
@@ -40,7 +40,7 @@ pub const GREEN: u32 = 0x1E9E4A;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Mood {
     /// Idle: one blink, a tiny ear flick.
-    Oyen,
+    Halo,
     /// The ear springs up to wave, the head tilts.
     Hello,
     /// Eyes shut in a smile, bouncing.
@@ -78,7 +78,7 @@ pub enum Mood {
 impl Mood {
     /// Every mood, in the Swift port's order.
     pub const ALL: [Mood; 17] = [
-        Mood::Oyen,
+        Mood::Halo,
         Mood::Hello,
         Mood::Happy,
         Mood::Love,
@@ -100,7 +100,7 @@ impl Mood {
     /// The mood's name in the app and in the Swift port.
     pub const fn name(self) -> &'static str {
         match self {
-            Mood::Oyen => "oyen",
+            Mood::Halo => "halo",
             Mood::Hello => "hello",
             Mood::Happy => "happy",
             Mood::Love => "love",
@@ -127,7 +127,7 @@ impl Mood {
     /// One loop of the mood, in seconds.
     pub const fn loop_secs(self) -> f64 {
         match self {
-            Mood::Oyen => 2.4,
+            Mood::Halo => 2.4,
             Mood::Hello => 1.6,
             Mood::Happy => 1.2,
             Mood::Love => 1.2,
@@ -215,7 +215,7 @@ pub struct EarTip {
     pub behind_head: bool,
 }
 
-/// Oyen at one moment. Draw the tip (if `behind_head`), the head, the tip
+/// Halo at one moment. Draw the tip (if `behind_head`), the head, the tip
 /// (otherwise), then the eyes and extras, all under `head`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
@@ -245,7 +245,7 @@ fn mark_path(data: &str) -> Path {
     Path::from_svg(data).unwrap_or_default()
 }
 
-/// Oyen's head `t` seconds into `mood`'s loop. `eye_scale` grows the eyes for
+/// Halo's head `t` seconds into `mood`'s loop. `eye_scale` grows the eyes for
 /// very small sizes, the way the mark's own small cut does (1 is the logo's
 /// eye, 1.19 the small cut used at 32 px and below).
 ///
@@ -714,7 +714,7 @@ fn pose(mood: Mood, t: f64, input: Input, r: f64) -> Pose {
                 ..Pose::new(smiling())
             }
         }
-        Mood::Oyen => {
+        Mood::Halo => {
             // Idle: one blink, a tiny ear flick.
             let open = blink(t, 1.7, 0.16);
             Pose {
@@ -777,7 +777,7 @@ mod tests {
             let left: Vec<Point> = logo.points().into_iter().filter(|p| p.x < 0.0).collect();
             let (x0, y0, x1, y1) = bounds(&left);
             let (fx0, fy0, fx1, fy1) = bounds(
-                &frame(Mood::Oyen, 0.0, Input::default(), eye_scale).eyes[0]
+                &frame(Mood::Halo, 0.0, Input::default(), eye_scale).eyes[0]
                     .path
                     .points(),
             );
@@ -792,16 +792,16 @@ mod tests {
 
     #[test]
     fn idle_shows_the_logo_blinks_once_and_flicks_the_ear() {
-        let rest = at(Mood::Oyen, 0.0);
+        let rest = at(Mood::Halo, 0.0);
         assert_eq!(rest.fold, 1.0);
         assert_eq!(&rest.tip.path, fold_path());
         assert_eq!(rest.head, Affine::IDENTITY);
         assert!(eye_height(&rest) > 13.0);
 
-        let shut = at(Mood::Oyen, 1.7 + 0.08);
+        let shut = at(Mood::Halo, 1.7 + 0.08);
         assert!(eye_height(&shut) < 1.5);
 
-        let flick = at(Mood::Oyen, 0.6 + 0.175);
+        let flick = at(Mood::Halo, 0.6 + 0.175);
         assert!((flick.fold - 0.88).abs() < 0.001);
         assert_ne!(&flick.tip.path, fold_path());
     }
@@ -856,8 +856,8 @@ mod tests {
 
     #[test]
     fn larger_eyes_for_small_sizes_keep_their_place() {
-        let logo = at(Mood::Oyen, 0.0);
-        let small = frame(Mood::Oyen, 0.0, Input::default(), 8.06 / 6.76);
+        let logo = at(Mood::Halo, 0.0);
+        let small = frame(Mood::Halo, 0.0, Input::default(), 8.06 / 6.76);
         assert!((eye_height(&small) - 16.12).abs() < 0.01);
         assert!((eye_height(&logo) - 13.52).abs() < 0.01);
         assert_eq!(eye_centre(&small), eye_centre(&logo));

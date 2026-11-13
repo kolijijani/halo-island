@@ -1,7 +1,7 @@
 ; Halo Island installer (NSIS 3; kolijijani's fork of Halo Island). Per-user install, no admin rights needed.
 ;
-; The name shown to people is "Halo Island" (upstream says "Halo Island", its 0.1.x "Oyen Halo"); the install folder,
-; the uninstall key, the Run value and halo.exe keep the name "Halo", so older installs upgrade in place.
+; The name shown to people is "Halo Island"; the install folder, the uninstall key, the Run value and halo.exe
+; use the name "Halo".
 ;
 ; Build (Linux/macOS/Windows with makensis):
 ;   makensis -DEXE=/abs/path/halo.exe -DOUTDIR=/abs/path/dist installer/halo.nsi
@@ -66,7 +66,7 @@ VIAddVersionKey "LegalCopyright" "Copyright (C) 2026"
 !macroend
 !define MUI_ICON "../crates/halo/res/halo.ico"
 !define MUI_UNICON "../crates/halo/res/halo.ico"
-; Oyen hanging from the island on the welcome and finish pages, Halo's logo in the header (tools/make_brand.py).
+; Halo hanging from the island on the welcome and finish pages, Halo's logo in the header (tools/make_brand.py).
 !define MUI_WELCOMEFINISHPAGE_BITMAP "art/nsis-welcome.bmp"
 !define MUI_HEADERIMAGE
 !define MUI_HEADERIMAGE_RIGHT
@@ -95,9 +95,7 @@ Section "Halo Island" SecMain
   ; The licenses of what halo.exe is built from (mecab-ipadic asks for its notice in every copy).
   File "../THIRD-PARTY-NOTICES.txt"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  ; Older shortcuts: "Halo" (0.1.0, 0.1.1) and "Oyen Halo" (0.1.2 to the last 0.1.x).
   Delete "$SMPROGRAMS\Halo.lnk"
-  Delete "$SMPROGRAMS\Oyen Halo.lnk"
   Delete "$SMPROGRAMS\Halo Island.lnk" ; old upstream shortcut
   CreateShortcut "$SMPROGRAMS\${APPNAME}.lnk" "$INSTDIR\halo.exe" "" "$INSTDIR\halo.exe" 0
   WriteRegStr HKCU "Software\Halo" "InstallDir" "$INSTDIR"
@@ -151,7 +149,6 @@ Section "Uninstall"
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\${APPNAME}.lnk"
   Delete "$SMPROGRAMS\Halo.lnk"
-  Delete "$SMPROGRAMS\Oyen Halo.lnk"
   Delete "$SMPROGRAMS\Halo Island.lnk" ; old upstream shortcut
   DeleteRegValue HKCU "${RUN_KEY}" "Halo"
   DeleteRegKey HKCU "${UNINST_KEY}"

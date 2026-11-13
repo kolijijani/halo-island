@@ -1699,7 +1699,7 @@ impl<'a> Canvas<'a> {
         self.g.look
     }
 
-    /// Run `f` painting colours exactly as given, outside the theme (Oyen's
+    /// Run `f` painting colours exactly as given, outside the theme (Halo's
     /// own face).
     pub fn unthemed<R>(&mut self, f: impl FnOnce(&mut Canvas<'a>) -> R) -> R {
         let prev = self.g.look;

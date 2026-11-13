@@ -46,12 +46,12 @@
 	<string>Halo Island saves the videos and sounds you download, and the files you send from your phone, in Downloads.</string>
 	<!-- Shown when Meeting notes first records the Mac's own sound (a Core Audio tap, only while a meeting is recorded). -->
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Oyen listens to the voices of your call, from your Mac's own sound, to write your meeting notes.</string>
+	<string>Halo listens to the voices of your call, from your Mac's own sound, to write your meeting notes.</string>
 	<!-- Shown when Meeting notes first saves notes in Documents › Halo Island › Notes. -->
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>Halo Island saves your meeting notes in Documents, in Halo Island › Notes.</string>
 	<!-- Shown when the IELTS coach or Meeting notes first records (the microphone runs only while it records). -->
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Oyen listens to your spoken IELTS answers and scores them, and to you in a meeting you take notes of.</string>
+	<string>Halo listens to your spoken IELTS answers and scores them, and to you in a meeting you take notes of.</string>
 </dict>
 </plist>

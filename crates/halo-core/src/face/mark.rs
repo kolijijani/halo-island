@@ -1,9 +1,9 @@
 //! The Halo mark's outlines, as SVG path data in the mark's own units.
 //!
-//! Copied verbatim from OyenKit's `OyenMarkData.swift`, which is generated from
+//! Copied verbatim from HaloKit's `HaloMarkData.swift`, which is generated from
 //! the Halo app's `src/components/halo-mark.tsx` (app commit 871d07c) by
 //! `Halo/tools/gen_mark_paths.py`. Never edit these by hand: when the mark
-//! changes, regenerate OyenKit's file and copy the strings again.
+//! changes, regenerate HaloKit's file and copy the strings again.
 
 /// The head's outline: the right ear upright, the left one cut off at its crease.
 pub const HEAD: &str = "M25.65 -58.33L25.65 -58.33Q28.39 -61.57 32.53 -60.63Q36.67 -59.7 37.75 -55.6L47.91 -17.24Q48.01 -16.87 48.19 -16.53Q52 -9.16 52 3.81e-06Q52 23.69 41.99 31.1Q31.98 38.52 0 38.52Q-31.98 38.52 -41.99 31.1Q-52 23.69 -52 0Q-52 -9.16 -48.19 -16.53Q-48.01 -16.87 -47.92 -17.24L-43.17 -35.16Q-42.86 -36.31 -41.86 -36.94L-21.64 -49.62Q-19.44 -51.01 -17.76 -49.02L-9.7 -39.52Q-9.57 -39.36 -9.42 -39.22Q-9.27 -39.08 -9.1 -38.96Q-8.94 -38.84 -8.76 -38.74Q-8.58 -38.64 -8.39 -38.56Q-8.2 -38.48 -8.01 -38.42Q-7.81 -38.37 -7.61 -38.33Q-7.41 -38.3 -7.2 -38.29Q-7 -38.28 -6.79 -38.29Q-3.48 -38.52 0 -38.52Q3.48 -38.52 6.79 -38.29Q7 -38.28 7.2 -38.29Q7.41 -38.3 7.61 -38.33Q7.81 -38.37 8.01 -38.42Q8.2 -38.48 8.39 -38.56Q8.58 -38.64 8.76 -38.74Q8.94 -38.84 9.1 -38.96Q9.27 -39.08 9.42 -39.22Q9.57 -39.36 9.7 -39.52L25.65 -58.33Z";

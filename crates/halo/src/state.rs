@@ -358,8 +358,8 @@ pub struct PageUiState {
     pub before_settings: Option<PageKind>,
     /// Start with Windows, as last read off the UI thread (None until Settings first opens).
     pub autostart: Option<bool>,
-    /// Oyen theme: the music notes floating up in the media pill.
-    pub notes: crate::oyen::Notes,
+    /// Halo theme: the music notes floating up in the media pill.
+    pub notes: crate::face::Notes,
     /// The Eyes look on a MacBook's notch: the pointer the eyes follow and
     /// the side of the camera they peek out from (`mac/notch.rs`).
     #[cfg(target_os = "macos")]
@@ -443,7 +443,7 @@ pub enum AgendaState {
 }
 
 /// What the Halo tab and its notices show (`pages::halo`), and the Today
-/// page's day (`pages::today`). Oyen's moods never read any of it: money
+/// page's day (`pages::today`). Halo's moods never read any of it: money
 /// never makes him happier or a bill sadder.
 #[derive(Clone, Debug, Default)]
 pub struct HaloState {
@@ -1187,9 +1187,9 @@ impl AppState {
     }
 
     /// Accent for media UI: art colour when available, else the system accent.
-    /// The Oyen theme keeps to Oyen's orange.
+    /// The Halo theme keeps to Halo's orange.
     pub fn media_accent(&self) -> Color {
-        if self.settings.theme == halo_core::settings::Theme::Oyen {
+        if self.settings.theme == halo_core::settings::Theme::Halo {
             return self.accent;
         }
         self.media.as_ref().and_then(|m| m.art_color).unwrap_or(self.accent)

@@ -42,16 +42,12 @@ pub fn lock_path() -> PathBuf {
     cache_dir().join("halo.lock")
 }
 
-/// Where files from a phone land (Phone drop): `~/Downloads/Halo Island`, or
-/// `~/Downloads/Oyen Halo` where a copy from before the rename made it: Shelf
-/// items link to the files in it.
+/// Where files from a phone land (Phone drop): `~/Downloads/Halo Island`.
 pub fn phone_inbox_dir() -> PathBuf {
     if let Some(h) = home_override() {
         return h.join("phone-drop");
     }
-    let downloads = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("Downloads");
-    let before_rename = downloads.join("Oyen Halo");
-    if before_rename.is_dir() { before_rename } else { downloads.join("Halo Island") }
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("Downloads").join("Halo Island")
 }
 
 /// Where the Downloader saves videos and sound: `~/Downloads`, as a browser

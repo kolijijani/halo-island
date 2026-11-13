@@ -8,7 +8,7 @@ Three parts work together:
 
 | Part | Where | What it does |
 |---|---|---|
-| Halo Island | the PC (`crates/poni-core/src/pairdrop`, `crates/poni/src/services/pairdrop.rs`) | keeps the pairs, waits for phones through the meeting server, answers with a direct WebRTC link, saves the files |
+| Halo Island | the PC (`crates/halo-core/src/pairdrop`, `crates/halo/src/services/pairdrop.rs`) | keeps the pairs, waits for phones through the meeting server, answers with a direct WebRTC link, saves the files |
 | Phone page | `server/public`, served at `https://drop.halo.island` | pairing, your PCs (online or offline), send, save Shelf files; installs to the Home Screen; joins Android's share sheet |
 | Meeting server | `server/drop-server.mjs` | tells a phone whether its PC is online and passes the two sides' connection details; hands out short-lived relay passes |
 
@@ -17,7 +17,7 @@ the Wi-Fi, straight across the internet, or (when both networks block that)
 through a TURN relay that only forwards encrypted bytes. No server stores a
 file, a file name or a device name.
 
-Today's QR phone drop (`poni_core::phonedrop`, same Wi-Fi, nothing through
+Today's QR phone drop (`halo_core::phonedrop`, same Wi-Fi, nothing through
 the internet) stays as it is for phones that aren't paired.
 
 ## Pairing secret and what is derived from it
@@ -34,9 +34,9 @@ https://drop.halo.island/p#k=<b64u(S)>
 
 | Name | Value | Used for |
 |---|---|---|
-| `room` | `b64u(SHA256("oyen-drop/1 room" ‖ S))` | the address of this pair on the meeting server |
-| `proof` | `b64u(SHA256("oyen-drop/1 proof" ‖ S))` | shown to the meeting server with every request; it keeps `SHA256(proof)` per room (first use wins) |
-| `K` | `SHA256("oyen-drop/1 mac" ‖ S)` (32 raw bytes) | HMAC key for every signalling message |
+| `room` | `b64u(SHA256("halo-drop/1 room" ‖ S))` | the address of this pair on the meeting server |
+| `proof` | `b64u(SHA256("halo-drop/1 proof" ‖ S))` | shown to the meeting server with every request; it keeps `SHA256(proof)` per room (first use wins) |
+| `K` | `SHA256("halo-drop/1 mac" ‖ S)` (32 raw bytes) | HMAC key for every signalling message |
 
 The meeting server sees `room` and `proof`, never `S` or `K`, so it can't
 make or alter a signed message. Every SDP is signed, and an SDP carries the
@@ -60,7 +60,7 @@ object with these fields:
 `text` is these lines joined with `\n` (the SDP verbatim, `\r\n` and all):
 
 ```
-oyen-drop/1
+halo-drop/1
 <room>
 <t>
 <sid>
@@ -86,12 +86,12 @@ Test vector (also in the Rust and JavaScript tests):
 ```
 S     = 000102030405060708090a0b0c0d0e0f (hex)
 b64u  = AAECAwQFBgcICQoLDA0ODw
-room  = geDM0jEhk4eiOz_li-FtORW2YlPBbebr7NsHjLkHI_4
-proof = 6JmvhsXX2_bzKYvHQ_iFgLcPnlG-m636-rWXAI5Vubo
-K     = PbxVzGOl5YKxg6Fd-uSD6Yqr9716j9MddvFbISuFxL4 (b64u)
+room  = 8DSxiJKisdEK6Enj3OZzPPWYA0yehO_z25j9im-U9vo
+proof = p_6y7gGULdRHCCn4ODRurzjr3iigCxImd_Td9-pwlxc
+K     = zCuQT42pQZvcqVsQGue88tEsuYgOIH6P3jX2HGFzfGI (b64u)
 mac of t=offer, sid=AAECAwQFBgcICQoLDA0ODw, ts=1790000000000, name="Pixel 10",
        sdp="v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n"
-      = 3QYhMYuCNPzit2tYBw0ejDAQsE1vxoO4DQERkznV8o8
+      = I4BNjNlhyfrRCg6uQz_5IE28qeZBUc8YIQEdeF48heo
 ```
 
 ## Meeting server API
@@ -118,7 +118,7 @@ The server keeps everything in memory except the `gone` list.
 
 ## The data channel
 
-The phone makes the offer with one data channel labelled `oyen-drop`
+The phone makes the offer with one data channel labelled `halo-drop`
 (ordered, reliable). Text frames are JSON; binary frames are file bytes.
 
 | From | Message | Meaning |
@@ -137,7 +137,7 @@ The phone makes the offer with one data channel labelled `oyen-drop`
 | phone | `{"t":"bye"}` | done; either side may also just close |
 
 Files are staged and moved into the inbox only when every byte of every file
-arrived, under names made safe for Windows (`poni_core::phonedrop::names`).
+arrived, under names made safe for Windows (`halo_core::phonedrop::names`).
 
 ## Hosting your own meeting server
 
@@ -150,5 +150,5 @@ node server/drop-server.mjs --port 8797
 Put it behind HTTPS (the phone page needs a secure context). For the relay,
 set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` from a Cloudflare Realtime TURN key;
 without them, phones and PCs connect directly or not at all. Halo Island reads
-the server address from the environment variable `PONI_DROP_SERVER`
+the server address from the environment variable `HALO_DROP_SERVER`
 (default `https://drop.halo.island`).

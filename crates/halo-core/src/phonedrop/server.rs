@@ -42,7 +42,7 @@ const TRANSFER_STALE: Duration = Duration::from_secs(90);
 /// Progress events at most this often.
 const PROGRESS_EVERY: Duration = Duration::from_millis(200);
 /// Staging folders in the inbox: `<prefix><transfer id>`.
-const STAGING_PREFIX: &str = ".oyen-halo-incoming-";
+const STAGING_PREFIX: &str = ".halo-incoming-";
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -930,8 +930,8 @@ mod tests {
     fn clears_leftovers_of_an_interrupted_send() {
         let dir = std::env::temp_dir().join(format!("halo-phonedrop-leftover-{}", std::process::id()));
         let inbox = dir.join("inbox");
-        fs::create_dir_all(inbox.join(".oyen-halo-incoming-3")).unwrap();
-        fs::write(inbox.join(".oyen-halo-incoming-3").join("0.part"), b"half").unwrap();
+        fs::create_dir_all(inbox.join(".halo-incoming-3")).unwrap();
+        fs::write(inbox.join(".halo-incoming-3").join("0.part"), b"half").unwrap();
         fs::write(inbox.join("kept.jpg"), b"a photo").unwrap();
         let s = Server::start(Config::new("127.0.0.1:0".parse().unwrap(), TOKEN.into(), "PC".into(), inbox.clone()), |_| {}).unwrap();
         let left: Vec<String> = fs::read_dir(&inbox).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();

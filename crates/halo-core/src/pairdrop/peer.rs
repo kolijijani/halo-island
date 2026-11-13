@@ -23,7 +23,7 @@ use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event as RtcEvent, IceConnectionState, Input, Output, Rtc};
 
 /// The data channel the phone page opens.
-pub const LABEL: &str = "oyen-drop";
+pub const LABEL: &str = "halo-drop";
 /// A link that hasn't connected by now has failed.
 const CONNECT_WITHIN: Duration = Duration::from_secs(30);
 /// A connected phone that sends nothing for this long has gone away.

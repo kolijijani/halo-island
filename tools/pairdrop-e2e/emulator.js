@@ -200,7 +200,7 @@ async function handle(room, msg) {
   await pc.setLocalDescription(await pc.createAnswer());
   await gathered(pc, 3000);
   await reply(p, { t: 'answer', sid: msg.sid, name: emu.name, sdp: pc.localDescription.sdp });
-  log('answered', { label: 'oyen-drop' });
+  log('answered', { label: 'halo-drop' });
 }
 
 const shelfList = () => emu.shelf.map((s) => ({ id: s.id, name: s.name, size: s.bytes.length }));
@@ -208,7 +208,7 @@ const shelfList = () => emu.shelf.map((s) => ({ id: s.id, name: s.name, size: s.
 function serve(dc, link) {
   dc.binaryType = 'arraybuffer';
   dc.bufferedAmountLowThreshold = LOW_WATER;
-  if (dc.label !== 'oyen-drop' || !dc.ordered) log('protocol', { what: `channel ${dc.label} ordered=${dc.ordered}` });
+  if (dc.label !== 'halo-drop' || !dc.ordered) log('protocol', { what: `channel ${dc.label} ordered=${dc.ordered}` });
   let recv = null;
   let failed = false;
   const sendJson = (o) => dc.send(JSON.stringify(o));

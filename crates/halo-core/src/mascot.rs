@@ -1,5 +1,5 @@
-//! Halo, the mascot that rests in the idle island in place of the clock
-//! (`docs/A2Z-07-mascot-ideas.md`, "Keputusan"): awake and blinking every
+//! Halo, the mascot that rests in the idle island in place of the clock:
+//! awake and blinking every
 //! 4-6 s, dozing after 8 s without input, asleep after 20 s, and a 1.2 s
 //! wave on the first input after a doze or sleep.
 //!

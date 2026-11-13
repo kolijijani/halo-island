@@ -6,7 +6,7 @@ The `mac` workflow does this by itself on every release tag once five secrets ex
 
 What the workflow does, in `.github/workflows/mac.yml` and `tools/sign_mac_dmg.sh`:
 
-- **`sign` (release tags, or by hand with `sign` on):** re-signs the app with the hardened runtime, a secure timestamp and `installer/mac/poni.entitlements`, builds and signs the DMG, sends it to Apple's notary service, staples the ticket, checks it the way Gatekeeper will, and runs the smoke test on the signed app. The release job then uploads that DMG under both its names. If signing fails, the release still gets the ad-hoc DMG, with a warning in the run.
+- **`sign` (release tags, or by hand with `sign` on):** re-signs the app with the hardened runtime, a secure timestamp and `installer/mac/halo.entitlements`, builds and signs the DMG, sends it to Apple's notary service, staples the ticket, checks it the way Gatekeeper will, and runs the smoke test on the signed app. The release job then uploads that DMG under both its names. If signing fails, the release still gets the ad-hoc DMG, with a warning in the run.
 - **`sign-check` (everything else, pull requests included):** the same signing with a throwaway certificate and no notarization, plus the smoke run under the hardened runtime, so the path is tested before a release needs it.
 
 ## 1. The Developer ID Application certificate (about 10 minutes, on your Mac)

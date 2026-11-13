@@ -4,7 +4,7 @@
 # and the creator links kolijijani.github.io/halo-island/<code> (docs/creators.md).
 #
 # Preview locally:  tools/build_site.sh && python3 -m http.server -d _site 8000
-# New screenshots:  python3 tools/site_shots.py SELFTEST_DIR classic|oyen
+# New screenshots:  python3 tools/site_shots.py SELFTEST_DIR classic|halo
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf _site

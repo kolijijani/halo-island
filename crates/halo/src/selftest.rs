@@ -110,7 +110,7 @@ const SOFT_GPU_SETTLE_TIMEOUT: f64 = 8.0;
 /// Seconds to wait for a simulated tab click to switch the page.
 const CLICK_TIMEOUT: f64 = 1.5;
 /// Stop visiting scenes after this many seconds. The 89 scenes take about
-/// 45 s under Wine at 100 % (a busy machine is the slow end); on CI the Oyen
+/// 45 s under Wine at 100 % (a busy machine is the slow end); on CI the Halo
 /// theme with Japanese lyrics is the slowest run, about 63 s with 85 (it
 /// reached the old 50 s at scene 80 once the Today scenes came in, and 65 s
 /// was tight for four more). With 121 (Notifications and the AI tab
@@ -239,7 +239,7 @@ const PAIR_URL: &str = "https://drop.halo_account.com/p#k=AAECAwQFBgcICQoLDA0ODw
 fn fake_paired(scene: Scene, unix: i64) -> Vec<PairedPhone> {
     match scene {
         Scene::ShelfPaired | Scene::ShelfPairedPhones | Scene::PairedNotice => vec![
-            PairedPhone { room: "geDM0jEhk4eiOz_li-FtORW2YlPBbebr7NsHjLkHI_4".into(), name: "Pixel 10".into(), seen: unix - 5 * 60 },
+            PairedPhone { room: "8DSxiJKisdEK6Enj3OZzPPWYA0yehO_z25j9im-U9vo".into(), name: "Pixel 10".into(), seen: unix - 5 * 60 },
             PairedPhone { room: "ZmFrZS1yb29tLWZvci10aGUtc2VsZi10ZXN0LWlwaG9u".into(), name: "iPhone".into(), seen: unix - 2 * 86_400 - 3600 },
         ],
         _ => Vec::new(),
@@ -2127,7 +2127,7 @@ pub struct SelfTest {
     /// the next line on a held clock, one frame per refresh at that rate.
     scroll_hz: Option<f64>,
     dpi_applied: bool,
-    /// HALO_SELFTEST_THEME=oyen|glass|pill|diorama: run every scene in that theme.
+    /// HALO_SELFTEST_THEME=halo|glass|pill|diorama: run every scene in that theme.
     theme: Theme,
     /// HALO_SELFTEST_DIORAMA=only, in the Diorama theme: its own pictures
     /// (`RESTS`) and no scene.
@@ -2190,7 +2190,7 @@ impl SelfTest {
     pub fn new(dir: String) -> Self {
         let track_key = MediaSession::make_track_key(TITLE, ARTIST, ALBUM);
         let theme = match std::env::var("HALO_SELFTEST_THEME").map(|v| v.trim().to_ascii_lowercase()).as_deref() {
-            Ok("oyen") => Theme::Oyen,
+            Ok("halo") => Theme::Halo,
             Ok("glass") => Theme::Glass,
             Ok("pill") => Theme::Pill,
             Ok("diorama") => Theme::Diorama,
@@ -2325,7 +2325,7 @@ impl SelfTest {
             let works = crate::services::romanize::analyzer_works();
             self.checks.push(check("japanese-analyzer", works.is_ok(), works.err().unwrap_or_else(|| "Windows' analyzer reads Japanese".into())));
         }
-        // HALO_SELFTEST_JA_DICT=<file> (CI passes the repo's copy): Oyen
+        // HALO_SELFTEST_JA_DICT=<file> (CI passes the repo's copy): Halo
         // Halo's own dictionary, put where the Japanese readings add-on keeps
         // it, so the run reads Japanese the way a PC with the add-on does.
         if let Ok(src) = std::env::var("HALO_SELFTEST_JA_DICT") {
@@ -2495,8 +2495,8 @@ impl SelfTest {
                 let steps = steps + 1;
                 let waited = now - since;
                 let timed_out = waited > self.settle_limit(app);
-                // No picture mid-blink: the eyes, and Oyen in the Halo tab.
-                let blinking = (scene == Scene::IdleEyes && mid_blink()) || (scene.expanded() && crate::oyen::mid_rest_move(clock::mono(), 0.3));
+                // No picture mid-blink: the eyes, and Halo in the Halo tab.
+                let blinking = (scene == Scene::IdleEyes && mid_blink()) || (scene.expanded() && crate::face::mid_rest_move(clock::mono(), 0.3));
                 let ready = steps >= MIN_STEPS && stable >= STABLE_STEPS && !blinking;
                 if ready || timed_out {
                     self.capture(app, Shot::Scene(i), !timed_out || settled, waited);
@@ -2984,7 +2984,7 @@ impl SelfTest {
         if st.settings.theme != self.theme {
             st.settings.theme = self.theme;
             st.accent = match self.theme {
-                Theme::Oyen => crate::oyen::ORANGE,
+                Theme::Halo => crate::face::ORANGE,
                 // Diorama's own, as the app keeps it (`theme_accent`).
                 Theme::Diorama => halo_core::look::DIORAMA_ACCENT,
                 _ => palette::BLUE,

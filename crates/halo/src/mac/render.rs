@@ -1,4 +1,4 @@
-//! `halo --render <dir> [--theme classic|oyen|glass|pill|diorama] [--notch]`: draw the island's
+//! `halo --render <dir> [--theme classic|halo|glass|pill|diorama] [--notch]`: draw the island's
 //! states with sample data into PNGs, offscreen, through the Mac renderer.
 //! CI runs it on a Mac with no notch and no person at the screen, so this is
 //! how the Mac drawing gets looked at: every page and activity, each theme,
@@ -432,7 +432,7 @@ pub fn run(dir: &str, args: &[String]) -> i32 {
         return 2;
     }
     let theme = match args.iter().position(|a| a == "--theme").and_then(|i| args.get(i + 1)).map(|s| s.as_str()) {
-        Some("oyen") => Theme::Oyen,
+        Some("halo") => Theme::Halo,
         Some("glass") => Theme::Glass,
         Some("pill") => Theme::Pill,
         Some("diorama") => Theme::Diorama,
@@ -441,7 +441,7 @@ pub fn run(dir: &str, args: &[String]) -> i32 {
     let notch = args.iter().any(|a| a == "--notch").then_some(Notch::MACBOOK);
     let name = match theme {
         Theme::Classic => "",
-        Theme::Oyen => "-oyen",
+        Theme::Halo => "-halo",
         Theme::Glass => "-glass",
         Theme::Pill => "-pill",
         Theme::Diorama => "-diorama",
@@ -698,7 +698,7 @@ fn render_morph(gfx: &mut Gfx, theme: Theme, notch: Option<Notch>, path: &Path) 
 /// The Eyes look around notch `n` as it moves (stills can't show it), a
 /// frame a row, a fifteenth of a second apart: the pointer (drawn, so each
 /// frame says what the eyes follow) wanders right of the camera and crosses
-/// over; the eyes (Oyen, in his theme) duck behind the camera and come out
+/// over; the eyes (Halo, in his theme) duck behind the camera and come out
 /// on its left, follow it up into the menu bar and back under the camera.
 fn render_peek(gfx: &mut Gfx, theme: Theme, n: Notch, path: &Path) -> Result<(), String> {
     /// The pointer from the island's top centre (DIPs) at each time
@@ -945,7 +945,7 @@ fn base_state(theme: Theme) -> AppState {
     st.unix = NOW_UNIX;
     st.local = LocalDateTime { year: 2026, month: 10, day: 24, hour: 9, minute: 41, second: 0 };
     st.accent = match theme {
-        Theme::Oyen => crate::oyen::ORANGE,
+        Theme::Halo => crate::face::ORANGE,
         Theme::Diorama => halo_core::look::DIORAMA_ACCENT,
         _ => palette::BLUE,
     };
@@ -1138,7 +1138,7 @@ fn render_scene(gfx: &mut Gfx, scene: Scene, theme: Theme, notch: Option<Notch>,
     let mode = match scene {
         Scene::IdleClock => Mode::Idle,
         // Around a notch the eyes look at the pointer: down at it in the
-        // window under the menu bar (Oyen rests again a while after it
+        // window under the menu bar (Halo rests again a while after it
         // moved), and over the notch while it hovers there.
         Scene::IdleEyes => {
             st.settings.idle_style = IdleStyle::Eyes;

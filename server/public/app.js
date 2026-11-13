@@ -10,7 +10,7 @@ import { setIsland, islandProgress, pose, carrying } from './island.js';
 
 const $ = (id) => document.getElementById(id);
 
-const STORE_KEY = 'oyen-drop.v1';
+const STORE_KEY = 'halo-drop.v1';
 const SEND_RETRY_MS = 1500; // an offline PC is asked again this often...
 const PAIR_RETRY_MS = 20_000; // ...for this long while pairing (it may just be starting to listen)
 const OFFER_RETRY_MS = 6_000; // ...and this long for the first connect right after pairing
@@ -316,7 +316,7 @@ function showProgress(prefix, done, total, files) {
   if (box.hidden) {
     const kinds = new Set(files.map((x) => kindOf(x.name, x.type)));
     setIsland('busy', { title: `Sending ${describe(files)}`, sub, progress: f, thumb: files[0], icon: kinds.size === 1 && kinds.has('photo') ? 'photo' : 'file' });
-    carrying(prefix === 'send' ? 'pc-oyen' : 'share-oyen', true);
+    carrying(prefix === 'send' ? 'pc-halo' : 'share-halo', true);
   } else {
     islandProgress(f, sub);
   }
@@ -332,7 +332,7 @@ function showProgress(prefix, done, total, files) {
 function hideProgress(prefix) {
   const box = $(prefix === 'send' ? 'progress' : 'share-progress');
   if (!box.hidden) {
-    carrying(prefix === 'send' ? 'pc-oyen' : 'share-oyen', false);
+    carrying(prefix === 'send' ? 'pc-halo' : 'share-halo', false);
     restoreIsland();
   }
   box.hidden = true;
@@ -354,7 +354,7 @@ function islandNews(prefix, kind, text) {
   if (kind === 'ok') {
     if (prefix === 'send' || prefix === 'share') {
       setIsland('done', { title: 'On the Shelf', sub: who, hold: 3200 });
-      pose(prefix === 'send' ? 'pc-oyen' : 'share-oyen', 'shelf', 'hop');
+      pose(prefix === 'send' ? 'pc-halo' : 'share-halo', 'shelf', 'hop');
     } else if (prefix === 'save') {
       setIsland('done', { title: 'Saved', sub: 'On this phone', hold: 2400 });
     }
@@ -554,7 +554,7 @@ class Link {
       throw new Problem('no-webrtc');
     }
     this.pc = pc;
-    const dc = pc.createDataChannel('oyen-drop', { ordered: true });
+    const dc = pc.createDataChannel('halo-drop', { ordered: true });
     this.dc = dc;
     dc.binaryType = 'arraybuffer';
     dc.bufferedAmountLowThreshold = LOW_WATER;
@@ -1028,14 +1028,14 @@ function setPairState(state, detail) {
   $('pair-home').hidden = true;
   $('v-pair').dataset.state = state;
   if (state === 'working') {
-    pose('pair-oyen', 'peek');
+    pose('pair-halo', 'peek');
     setIsland('wait', { title: 'Pairing…' });
     title.textContent = 'Pairing with your PC…';
     sub.textContent = 'This takes a few seconds.';
     sub.hidden = false;
     setStatus('pair', 'Waiting for your PC to answer.', 'wait');
   } else if (state === 'done') {
-    pose('pair-oyen', 'sit', 'hop');
+    pose('pair-halo', 'sit', 'hop');
     islandRest = () => setIsland('idle');
     setIsland('idle');
     setIsland('done', { title: 'Paired', sub: detail, hold: 3200 });
@@ -1046,7 +1046,7 @@ function setPairState(state, detail) {
     $('pair-done').hidden = false;
     renderKeep();
   } else {
-    pose('pair-oyen', 'asleep');
+    pose('pair-halo', 'asleep');
     setIsland('idle');
     setIsland('oops', { title: 'Couldn\'t pair', hold: 3600 });
     title.textContent = 'Couldn\'t pair';
@@ -1183,7 +1183,7 @@ function renderHome() {
   const list = $('pcs');
   list.textContent = '';
   const any = store.pairs.length > 0;
-  pose('home-oyen', any ? 'peek' : 'note');
+  pose('home-halo', any ? 'peek' : 'note');
   $('home-title').textContent = any ? 'Your PCs' : 'Let\'s pair your PC';
   $('home-sub').textContent = any ? 'Tap one to send photos and files to its Shelf.' : 'Pair once, then send to it from anywhere.';
   $('pcs-card').hidden = !any;
@@ -1315,7 +1315,7 @@ function setRoad(kind) {
     else setIsland('off', { title: who, sub: kind === 'paused' ? 'Resting' : 'Not connected' });
   };
   if (view === 'pc' && $('progress').hidden) islandRest();
-  if (SHORT[kind]) pose('pc-oyen', 'shelf');
+  if (SHORT[kind]) pose('pc-halo', 'shelf');
   const box = $('road-icon');
   box.textContent = '';
   box.appendChild(icon ? svg(icon) : el('span', 'spin'));
@@ -1393,7 +1393,7 @@ function showPcError(code) {
   const p = pcv.pair;
   if (code === 'gone' || code === 'bad') statusByK.set(p.k, { state: code, seen: null });
   setRoad('off');
-  if (['offline', 'no-answer', 'no-route', 'network'].includes(code)) pose('pc-oyen', 'asleep');
+  if (['offline', 'no-answer', 'no-route', 'network'].includes(code)) pose('pc-halo', 'asleep');
   $('pc-error').hidden = false;
   $('pc-error').className = `status ${['offline', 'no-answer', 'no-route', 'network', 'busy'].includes(code) ? 'nap' : 'bad'}`;
   $('pc-error-text').textContent = problemText(code, PcName(p));
@@ -1587,7 +1587,7 @@ const sv = { id: null, files: [], busy: false, sent: false, link: null };
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open('oyen-drop', 1);
+    const r = indexedDB.open('halo-drop', 1);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains('shared')) r.result.createObjectStore('shared');
     };

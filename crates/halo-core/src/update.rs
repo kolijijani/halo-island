@@ -284,9 +284,9 @@ mod tests {
 
     #[test]
     fn the_built_in_keys_are_trusted_and_others_are_not() {
-        let k = trusted_key("4cb3280eaea65b50").expect("signing key");
+        let k = trusted_key("bbc265637ee3b145").expect("signing key");
         assert_eq!(k[0], 4);
-        assert!(trusted_key("f835f77c60bd2b7f").is_some(), "spare key");
+        assert!(trusted_key("a67142ee1d7e50dc").is_some(), "spare key");
         assert_eq!(trusted_key("0000000000000000"), None);
         assert_eq!(trusted_key(""), None);
     }
@@ -294,11 +294,11 @@ mod tests {
     #[test]
     fn the_file_reads_its_signature_and_key() {
         let sig = "A".repeat(85) + "Q==";
-        let file = format!(r#"{{"about":"…","payload":"{{}}","signature":"{sig}","key":"4cb3280eaea65b50"}}"#);
+        let file = format!(r#"{{"about":"…","payload":"{{}}","signature":"{sig}","key":"bbc265637ee3b145"}}"#);
         let s = parse_file(&file).unwrap();
         assert_eq!(s.payload, "{}");
         assert_eq!(s.signature.len(), 64);
-        assert!(parse_file(&file.replace("4cb3280eaea65b50", "deadbeefdeadbeef")).unwrap_err().contains("doesn't trust"));
+        assert!(parse_file(&file.replace("bbc265637ee3b145", "deadbeefdeadbeef")).unwrap_err().contains("doesn't trust"));
         assert!(parse_file(&file.replace(&sig, "AAAA")).is_err());
         assert!(parse_file("<html>").is_err());
     }

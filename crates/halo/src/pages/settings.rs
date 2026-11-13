@@ -81,9 +81,9 @@ const CHIP_ICON_GAP: f32 = 5.0;
 const CHIP_GAP: f32 = 6.0;
 
 // Glass: on Windows from a copy of the screen, on a Mac macOS's own glass.
-const THEMES: [(Theme, &str); 5] = [(Theme::Classic, "Classic"), (Theme::Oyen, "Halo"), (Theme::Glass, "Glass"), (Theme::Pill, "Pill"), (Theme::Diorama, "Diorama")];
+const THEMES: [(Theme, &str); 5] = [(Theme::Classic, "Classic"), (Theme::Halo, "Halo"), (Theme::Glass, "Glass"), (Theme::Pill, "Pill"), (Theme::Diorama, "Diorama")];
 
-/// An idle look's name in the picker (`eyes` is Oyen in his theme).
+/// An idle look's name in the picker (`eyes` is Halo in his theme).
 fn idle_name(s: IdleStyle, eyes: &'static str) -> &'static str {
     match s {
         IdleStyle::Clock => "Clock",
@@ -96,8 +96,8 @@ fn idle_name(s: IdleStyle, eyes: &'static str) -> &'static str {
 
 /// The idle looks `theme` offers, as the picker names them.
 fn idle_names(theme: Theme) -> Vec<&'static str> {
-    // In the Oyen theme the eyes are Oyen's own (as in the tray menu).
-    let eyes = if theme == Theme::Oyen { "Halo" } else { "Eyes" };
+    // In the Halo theme the eyes are Halo's own (as in the tray menu).
+    let eyes = if theme == Theme::Halo { "Halo" } else { "Eyes" };
     status::looks(theme).iter().map(|s| idle_name(*s, eyes)).collect()
 }
 
@@ -720,8 +720,7 @@ pub fn whats_new() -> &'static str {
      \u{1F512} Pro license key (no server): unlock themes, add-ons & more\n\
      \u{1F3A8} Glass, Pill & Diorama themes now Halo Pro\n\
      \u{1F9E9} Add-ons (AI Usage, Meeting Notes, IELTS, Downloader) now Halo Pro\n\
-     \u{1F54C} Prayer times: Malaysia (JAKIM) replaces Indonesia\n\
-     \u{1F4E6} poni.exe is now halo.exe, its data folder Halo"
+     \u{1F54C} Prayer times: Malaysia (JAKIM) replaces Indonesia"
 }
 
 /// About Halo Island: the sheet's lines (the version first).
@@ -795,7 +794,7 @@ mod tests {
     fn place(t: Theme) -> usize {
         match t {
             Theme::Classic => 0,
-            Theme::Oyen => 1,
+            Theme::Halo => 1,
             Theme::Glass => 2,
             Theme::Pill => 3,
             Theme::Diorama => 4,
@@ -826,8 +825,8 @@ mod tests {
         }
         // Diorama rests as its picture, with the time or alone: no eyes.
         assert_eq!(idle_names(Theme::Diorama), ["Clock", "Minimal", "Hidden"]);
-        // In his theme the eyes are Oyen's own, and the status bar is Pill's.
-        assert_eq!(idle_names(Theme::Oyen), ["Clock", "Halo", "Minimal", "Hidden"]);
+        // In his theme the eyes are Halo's own, and the status bar is Pill's.
+        assert_eq!(idle_names(Theme::Halo), ["Clock", "Halo", "Minimal", "Hidden"]);
         assert_eq!(idle_names(Theme::Pill), ["Clock", "Eyes", "Minimal", "Hidden", "Status"]);
         // A name for every look a theme offers, one choice each.
         for (theme, _) in THEMES {

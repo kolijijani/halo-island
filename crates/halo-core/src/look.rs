@@ -12,10 +12,10 @@
 //!   white wash becomes an 8 % ink wash, the black island becomes the ground.
 //! * The palette's accents swap for the look's own, with a deeper shade for
 //!   text so small coloured labels stay readable on a light ground.
-//! * Anything else (album-art colours, Oyen's own face, `palette::ON_ACCENT`)
+//! * Anything else (album-art colours, Halo's own face, `palette::ON_ACCENT`)
 //!   is left alone.
 //!
-//! A look also says what the island is made of: Classic and Oyen paint a
+//! A look also says what the island is made of: Classic and Halo paint a
 //! solid ground, Glass draws liquid glass there (gfx and the glass shader)
 //! and paints content in the light or dark Glass look on top, and Diorama
 //! sets its ground in a raised frame ([`Frame`]). And its shape: every
@@ -101,8 +101,8 @@ pub enum Shape {
     Pill,
 }
 
-const OYEN_ORANGE: Color = Color::hex(crate::oyen::ORANGE);
-const OYEN_FOLD: Color = Color::hex(crate::oyen::FOLD_ORANGE);
+const HALO_ORANGE: Color = Color::hex(crate::face::ORANGE);
+const HALO_FOLD: Color = Color::hex(crate::face::FOLD_ORANGE);
 
 pub const CLASSIC: Look = Look {
     ground: Color::black(1.0),
@@ -117,12 +117,12 @@ pub const CLASSIC: Look = Look {
     swaps: &[],
 };
 
-/// Oyen: warm cream paper, espresso ink, Oyen's orange, and Outfit (the Oyen
+/// Halo: warm cream paper, espresso ink, Halo's orange, and Outfit (the Halo
 /// Halo website's typeface) for every Latin letter.
-pub const OYEN: Look = Look {
+pub const HALO: Look = Look {
     ground: Color::hex(0xFFF1DE),
     ink: Color::hex(0x2B1B10),
-    accent: Some(OYEN_ORANGE),
+    accent: Some(HALO_ORANGE),
     border: Color::rgba(0.55, 0.30, 0.10, 0.22),
     light: true,
     font: Some("Outfit"),
@@ -130,8 +130,8 @@ pub const OYEN: Look = Look {
     shape: Shape::Notch,
     frame: None,
     swaps: &[
-        Swap { from: OYEN_ORANGE, fill: OYEN_ORANGE, text: OYEN_FOLD },
-        Swap { from: palette::ORANGE, fill: OYEN_ORANGE, text: OYEN_FOLD },
+        Swap { from: HALO_ORANGE, fill: HALO_ORANGE, text: HALO_FOLD },
+        Swap { from: palette::ORANGE, fill: HALO_ORANGE, text: HALO_FOLD },
         Swap { from: palette::GREEN, fill: Color::hex(0x2DB45A), text: Color::hex(0x1B7F3E) },
         Swap { from: palette::RED, fill: Color::hex(0xE5484D), text: Color::hex(0xC9302C) },
         Swap { from: palette::BLUE, fill: Color::hex(0x2F7CF6), text: Color::hex(0x1A5FCC) },
@@ -142,14 +142,14 @@ pub const OYEN: Look = Look {
     ],
 };
 
-/// Oyen around a MacBook's camera notch. The notch is black hardware that no
+/// Halo around a MacBook's camera notch. The notch is black hardware that no
 /// pixel can colour, so a cream island would wear a black hole in its top
-/// edge: here the island is black like the notch (and Classic), and Oyen
+/// edge: here the island is black like the notch (and Classic), and Halo
 /// stays in everything on it: cream ink, his orange, Outfit, his face.
-pub const OYEN_NIGHT: Look = Look {
+pub const HALO_NIGHT: Look = Look {
     ground: Color::black(1.0),
     ink: Color::hex(0xFFF1DE),
-    accent: Some(OYEN_ORANGE),
+    accent: Some(HALO_ORANGE),
     border: Color::rgba(1.0, 0.945, 0.871, 0.07),
     light: false,
     font: Some("Outfit"),
@@ -159,8 +159,8 @@ pub const OYEN_NIGHT: Look = Look {
     // His orange reads on black as it is, in fills and in text alike; the
     // palette's other accents are made for a dark ground already.
     swaps: &[
-        Swap { from: OYEN_ORANGE, fill: OYEN_ORANGE, text: OYEN_ORANGE },
-        Swap { from: palette::ORANGE, fill: OYEN_ORANGE, text: OYEN_ORANGE },
+        Swap { from: HALO_ORANGE, fill: HALO_ORANGE, text: HALO_ORANGE },
+        Swap { from: palette::ORANGE, fill: HALO_ORANGE, text: HALO_ORANGE },
     ],
 };
 
@@ -232,7 +232,7 @@ const WINDOW_GLOW: Color = Color::hex(0xE9AE3A);
 /// little lighter than it, slate ink (the clock's slate deepened, so text
 /// at 62 % still reads at 4.5:1), the roof's indigo for its accent, and the
 /// place's own colours for the palette's: green is the grass, orange the
-/// cat, yellow the window's gold. Outfit, as Oyen writes.
+/// cat, yellow the window's gold. Outfit, as Halo writes.
 pub const DIORAMA_DAY: Look = Look {
     ground: Color::hex(0xF8F3E7),
     ink: Color::hex(0x14173A),
@@ -345,7 +345,7 @@ pub fn custom(c: &crate::halo::CustomLook) -> Look {
 pub fn of(theme: Theme) -> &'static Look {
     match theme {
         Theme::Classic => &CLASSIC,
-        Theme::Oyen => &OYEN,
+        Theme::Halo => &HALO,
         Theme::Glass => &GLASS_DARK,
         Theme::Pill => &PILL,
         Theme::Diorama => &DIORAMA_DAY,
@@ -353,14 +353,14 @@ pub fn of(theme: Theme) -> &'static Look {
 }
 
 /// The theme's look on a screen where the island wraps a camera notch (the
-/// Mac app on a MacBook): the island meets black hardware there, so Oyen
+/// Mac app on a MacBook): the island meets black hardware there, so Halo
 /// goes black and Glass is the dark glass (with a black strip where it
 /// touches the notch, drawn by the Mac app). Pill and Diorama float below
 /// the notch and keep their looks.
 pub fn around_notch(theme: Theme) -> &'static Look {
     match theme {
         Theme::Classic => &CLASSIC,
-        Theme::Oyen => &OYEN_NIGHT,
+        Theme::Halo => &HALO_NIGHT,
         Theme::Glass => &GLASS_DARK,
         Theme::Pill => &PILL,
         Theme::Diorama => &DIORAMA_DAY,
@@ -449,61 +449,61 @@ mod tests {
     }
 
     #[test]
-    fn oyen_turns_greys_into_ink_on_cream() {
-        assert_eq!(OYEN.paint(Color::black(1.0)), OYEN.ground);
-        assert_eq!(OYEN.paint(Color::white(1.0)), OYEN.ink);
+    fn halo_turns_greys_into_ink_on_cream() {
+        assert_eq!(HALO.paint(Color::black(1.0)), HALO.ground);
+        assert_eq!(HALO.paint(Color::white(1.0)), HALO.ink);
         // White at 62 % keeps its opacity, now in ink.
-        assert_eq!(OYEN.paint(palette::TEXT_DIM), OYEN.ink.with_alpha(0.62));
+        assert_eq!(HALO.paint(palette::TEXT_DIM), HALO.ink.with_alpha(0.62));
         // An opaque mid grey lands between the ground and the ink.
-        let g = OYEN.paint(Color::rgba(0.16, 0.16, 0.16, 1.0));
-        assert_eq!(g, Color::lerp(OYEN.ground, OYEN.ink, 0.16));
+        let g = HALO.paint(Color::rgba(0.16, 0.16, 0.16, 1.0));
+        assert_eq!(g, Color::lerp(HALO.ground, HALO.ink, 0.16));
         // The invisible hit-mask colour stays (nearly) invisible.
-        assert!(OYEN.paint(Color::black(1.0 / 255.0)).a < 0.01);
+        assert!(HALO.paint(Color::black(1.0 / 255.0)).a < 0.01);
     }
 
     #[test]
-    fn oyen_swaps_accents_and_deepens_them_for_text() {
-        let fill = OYEN.paint(palette::ORANGE);
-        let text = OYEN.paint_text(palette::ORANGE);
-        assert_eq!(fill, OYEN_ORANGE);
-        assert_eq!(text, OYEN_FOLD);
+    fn halo_swaps_accents_and_deepens_them_for_text() {
+        let fill = HALO.paint(palette::ORANGE);
+        let text = HALO.paint_text(palette::ORANGE);
+        assert_eq!(fill, HALO_ORANGE);
+        assert_eq!(text, HALO_FOLD);
         assert!(text.luminance() < fill.luminance());
         // Opacity survives the swap.
-        assert_eq!(OYEN.paint(palette::GREEN.mul_alpha(0.5)).a, 0.5);
-        // Colours the look doesn't know (album art, Oyen's face) pass through,
+        assert_eq!(HALO.paint(palette::GREEN.mul_alpha(0.5)).a, 0.5);
+        // Colours the look doesn't know (album art, Halo's face) pass through,
         // and so does content on an accent fill.
         let art = Color::hex(0x7A3EE0);
-        assert_eq!(OYEN.paint(art), art);
-        assert_eq!(OYEN.paint_text(palette::ON_ACCENT), palette::ON_ACCENT);
+        assert_eq!(HALO.paint(art), art);
+        assert_eq!(HALO.paint_text(palette::ON_ACCENT), palette::ON_ACCENT);
     }
 
     #[test]
-    fn oyen_around_a_notch_is_black_with_oyen_on_it() {
+    fn halo_around_a_notch_is_black_with_halo_on_it() {
         // The island's own black is the notch's black, exactly.
-        assert_eq!(OYEN_NIGHT.paint(palette::ISLAND), palette::ISLAND);
-        assert_eq!(OYEN_NIGHT.ground, CLASSIC.ground);
-        // White content becomes Oyen's cream, at the opacity it asked for.
-        assert_eq!(OYEN_NIGHT.paint(Color::white(1.0)), OYEN.ground);
-        assert_eq!(OYEN_NIGHT.paint(palette::TEXT_DIM), OYEN.ground.with_alpha(0.62));
+        assert_eq!(HALO_NIGHT.paint(palette::ISLAND), palette::ISLAND);
+        assert_eq!(HALO_NIGHT.ground, CLASSIC.ground);
+        // White content becomes Halo's cream, at the opacity it asked for.
+        assert_eq!(HALO_NIGHT.paint(Color::white(1.0)), HALO.ground);
+        assert_eq!(HALO_NIGHT.paint(palette::TEXT_DIM), HALO.ground.with_alpha(0.62));
         // His orange in fills and text, bright enough on black.
-        assert_eq!(OYEN_NIGHT.paint(palette::ORANGE), OYEN_ORANGE);
-        assert_eq!(OYEN_NIGHT.paint_text(palette::ORANGE), OYEN_ORANGE);
-        assert!(OYEN_ORANGE.luminance() > 0.3);
+        assert_eq!(HALO_NIGHT.paint(palette::ORANGE), HALO_ORANGE);
+        assert_eq!(HALO_NIGHT.paint_text(palette::ORANGE), HALO_ORANGE);
+        assert!(HALO_ORANGE.luminance() > 0.3);
         // The palette's dark-ground accents and the content on them stay.
-        assert_eq!(OYEN_NIGHT.paint(palette::GREEN), palette::GREEN);
-        assert_eq!(OYEN_NIGHT.paint_text(palette::ON_ACCENT), palette::ON_ACCENT);
-        assert!(!OYEN_NIGHT.light);
-        assert_eq!(OYEN_NIGHT.font, OYEN.font);
-        assert_eq!(OYEN_NIGHT.material, Material::Solid);
+        assert_eq!(HALO_NIGHT.paint(palette::GREEN), palette::GREEN);
+        assert_eq!(HALO_NIGHT.paint_text(palette::ON_ACCENT), palette::ON_ACCENT);
+        assert!(!HALO_NIGHT.light);
+        assert_eq!(HALO_NIGHT.font, HALO.font);
+        assert_eq!(HALO_NIGHT.material, Material::Solid);
     }
 
     #[test]
-    fn around_a_notch_only_oyen_changes() {
+    fn around_a_notch_only_halo_changes() {
         assert_eq!(*around_notch(Theme::Classic), CLASSIC);
-        assert_eq!(*around_notch(Theme::Oyen), OYEN_NIGHT);
+        assert_eq!(*around_notch(Theme::Halo), HALO_NIGHT);
         assert_eq!(*around_notch(Theme::Glass), GLASS_DARK);
         // Away from a notch (and on Windows) every theme keeps its look.
-        assert_eq!(*of(Theme::Oyen), OYEN);
+        assert_eq!(*of(Theme::Halo), HALO);
     }
 
     #[test]
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(PILL.shape, Shape::Pill);
         assert_eq!(*of(Theme::Pill), PILL);
         assert_eq!(*around_notch(Theme::Pill), PILL);
-        for look in [&CLASSIC, &OYEN, &OYEN_NIGHT, &GLASS_DARK, &GLASS_LIGHT] {
+        for look in [&CLASSIC, &HALO, &HALO_NIGHT, &GLASS_DARK, &GLASS_LIGHT] {
             assert_eq!(look.shape, Shape::Notch);
         }
         // Black and white like Classic: what a page asks for is what it gets.
@@ -521,7 +521,7 @@ mod tests {
         }
         assert_eq!(PILL.material, Material::Solid);
         // Only Diorama's island is set in a frame.
-        for look in [&CLASSIC, &OYEN, &OYEN_NIGHT, &GLASS_DARK, &GLASS_LIGHT, &PILL] {
+        for look in [&CLASSIC, &HALO, &HALO_NIGHT, &GLASS_DARK, &GLASS_LIGHT, &PILL] {
             assert_eq!(look.frame, None);
         }
     }
@@ -545,7 +545,7 @@ mod tests {
         for look in [&DIORAMA_DAY, &DIORAMA_NIGHT] {
             assert_eq!(look.shape, Shape::Pill);
             assert_eq!(look.material, Material::Solid);
-            assert_eq!(look.font, OYEN.font);
+            assert_eq!(look.font, HALO.font);
             assert!(look.frame.is_some());
         }
         assert!(DIORAMA_DAY.light && !DIORAMA_NIGHT.light);
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn glass_is_glass_and_the_others_are_solid() {
         assert_eq!(CLASSIC.material, Material::Solid);
-        assert_eq!(OYEN.material, Material::Solid);
+        assert_eq!(HALO.material, Material::Solid);
         assert_eq!(GLASS_DARK.material, Material::Glass);
         assert_eq!(GLASS_LIGHT.material, Material::Glass);
         assert_eq!(*of(Theme::Glass), GLASS_DARK);

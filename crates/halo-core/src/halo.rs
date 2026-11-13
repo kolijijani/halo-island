@@ -235,7 +235,6 @@ impl Default for CustomLook {
 pub const SWATCHES: [(u32, u32); 6] = [(0x0B0D12, 0xF2F5FA), (0xF3F5F9, 0x141821), (0x10213A, 0xE6F0FF), (0x1E1430, 0xF4E9FF), (0x0F2A22, 0xE3FFF4), (0x2A1410, 0xFFEDE3)];
 
 /// Halo's own palette: the pill and the eyes, dark and light
-/// (`docs/A2Z-08-mascot-option.md`).
 pub const PILL_DARK: u32 = 0x0B0D12;
 pub const EYES_DARK: u32 = 0xF2F5FA;
 pub const PILL_LIGHT: u32 = 0xF3F5F9;

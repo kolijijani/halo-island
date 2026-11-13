@@ -9,7 +9,7 @@
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
 use crate::island::Geom;
-use crate::oyen;
+use crate::face;
 use crate::pages::{self, PageKind};
 use crate::state::{AppState, FpsAccess, HudKind, InlineAction, Notice};
 use crate::ui::{wid, PillStyle, Ui, PILL_SMALL};
@@ -78,12 +78,12 @@ const BOLT_INSET: f32 = BOLT * 5.0 / 24.0;
 const BOLT_VISIBLE: f32 = BOLT * 14.0 / 24.0;
 /// Gap between the idle clock and its battery badge.
 const BADGE_GAP: f32 = 6.0;
-/// Oyen theme: the head's width (DIPs) in the idle "Oyen" look, beside the
+/// Halo theme: the head's width (DIPs) in the idle "Halo" look, beside the
 /// idle clock and in the media pill, and the clock pill's extra width for him.
-const OYEN_IDLE_W: f32 = 30.0;
-const OYEN_CLOCK_W: f32 = 22.0;
-const OYEN_MEDIA_W: f32 = 24.0;
-const OYEN_CLOCK_LEAD: f32 = 12.0 + OYEN_CLOCK_W;
+const HALO_IDLE_W: f32 = 30.0;
+const HALO_CLOCK_W: f32 = 22.0;
+const HALO_MEDIA_W: f32 = 24.0;
+const HALO_CLOCK_LEAD: f32 = 12.0 + HALO_CLOCK_W;
 /// The countdown before a prayer: the moon, then "Maghrib 10 min" (152,
 /// its words' room), then its OK.
 const PRAYER_W: f32 = 152.0 + PRAYER_OK_ROOM;
@@ -260,12 +260,12 @@ pub fn geom(m: &Mode, st: &AppState) -> Geom {
                     Some(ClockBadge::Low(_)) => 34.0,
                     None => 0.0,
                 };
-                let lead = if oyen::on(st.settings.theme) { OYEN_CLOCK_LEAD } else { 0.0 };
+                let lead = if face::on(st.settings.theme) { HALO_CLOCK_LEAD } else { 0.0 };
                 Geom::new(base + badge + lead, 30.0, 14.0)
             }
             IdleStyle::Minimal => Geom::new(150.0, 26.0, 12.0),
             // A little taller than the eyes, so his ears clear the top edge.
-            IdleStyle::Eyes if oyen::on(st.settings.theme) => Geom::new(104.0, 36.0, 16.0),
+            IdleStyle::Eyes if face::on(st.settings.theme) => Geom::new(104.0, 36.0, 16.0),
             IdleStyle::Eyes => Geom::new(118.0, 30.0, 14.0),
             IdleStyle::Hidden => hidden_strip(),
         },
@@ -308,7 +308,7 @@ pub fn geom(m: &Mode, st: &AppState) -> Geom {
     }
 }
 
-/// Halo's mini handle over a maximized window (`docs/A2Z-09`, mockups/
+/// Halo's mini handle over a maximized window (mockups/
 /// halo-3mode-demo.html): a small dark strip 2 DIPs below the top edge.
 pub fn mini_handle() -> Geom {
     Geom::new(HANDLE_W, HANDLE_H, HANDLE_H / 2.0)
@@ -326,15 +326,15 @@ fn hidden_strip() -> Geom {
 }
 
 /// Needs continuous ambient frames (near 60 fps): animated equalizer while music plays.
-/// A paused (lingering) pill is static, once Oyen's notes are gone.
+/// A paused (lingering) pill is static, once Halo's notes are gone.
 pub fn is_live(m: &Mode, st: &AppState) -> bool {
     if let Some(live) = crate::pill::is_live(m, st) {
         return live;
     }
     let Some(media) = st.media.as_ref() else { return false };
     match m {
-        Mode::Activity(Activity::Media) if oyen::on(st.settings.theme) => {
-            oyen::music_moving(st.now, media.is_playing(), st.media_paused_at, &st.ui.notes)
+        Mode::Activity(Activity::Media) if face::on(st.settings.theme) => {
+            face::music_moving(st.now, media.is_playing(), st.media_paused_at, &st.ui.notes)
         }
         Mode::Activity(Activity::Media) | Mode::Activity(Activity::MediaTimer) => media.is_playing(),
         _ => false,
@@ -357,9 +357,9 @@ pub fn next_wake(m: &Mode, st: &AppState) -> Option<f64> {
         if let Some(t) = st.mascot.next_wake(now) {
             consider(t);
         }
-    } else if *m == Mode::Idle && oyen_idle(st) {
+    } else if *m == Mode::Idle && halo_idle(st) {
         if !night(st) {
-            consider(oyen::next_rest_move(now));
+            consider(face::next_rest_move(now));
         }
     } else if *m == Mode::Idle && st.settings.idle_style == IdleStyle::Eyes && !crate::pill::diorama::shows(st) {
         // (The Diorama theme rests as its picture, which has no eyes to blink.)
@@ -374,7 +374,7 @@ pub fn next_wake(m: &Mode, st: &AppState) -> Option<f64> {
     if *m == Mode::Activity(Activity::Media) {
         consider(st.ui.peek_until);
         // The next sung line: the equalizer's frames stop while paused or
-        // on battery saver, and Oyen's when his notes are gone.
+        // on battery saver, and Halo's when his notes are gone.
         if let Some(t) = crate::pill::lyric::next_wake(st) {
             consider(t);
         }
@@ -388,24 +388,24 @@ pub fn next_wake(m: &Mode, st: &AppState) -> Option<f64> {
 const BLINK_PERIOD: f64 = 5.5;
 const BLINK_LEN: f64 = 0.14;
 
-/// Oyen shows in the idle pill (the clock and "Oyen" looks of his theme).
-fn oyen_idle(st: &AppState) -> bool {
-    oyen::on(st.settings.theme) && matches!(st.settings.idle_style, IdleStyle::Clock | IdleStyle::Status | IdleStyle::Eyes)
+/// Halo shows in the idle pill (the clock and "Halo" looks of his theme).
+fn halo_idle(st: &AppState) -> bool {
+    face::on(st.settings.theme) && matches!(st.settings.idle_style, IdleStyle::Clock | IdleStyle::Status | IdleStyle::Eyes)
 }
 
-/// Oyen sleeps from midnight to five.
+/// Halo sleeps from midnight to five.
 pub(crate) fn night(st: &AppState) -> bool {
     st.local.hour < 5
 }
 
-/// Oyen at rest in the idle pill; he follows the cursor while it hovers.
-fn draw_oyen_rest(ui: &mut Ui, st: &AppState, body: Rect, cx: f32, w: f32, bar_y: f32) {
+/// Halo at rest in the idle pill; he follows the cursor while it hovers.
+fn draw_halo_rest(ui: &mut Ui, st: &AppState, body: Rect, cx: f32, w: f32, bar_y: f32) {
     let look = ui.input.mouse.map(|p| (p.x - body.center().x) / (body.w / 2.0));
-    let (frame, moving) = oyen::rest(st.now, night(st), look);
+    let (frame, moving) = face::rest(st.now, night(st), look);
     if moving {
         ui.request_anim();
     }
-    oyen::peek(ui.c, &frame, cx, bar_y, w, body.y + 1.0);
+    face::peek(ui.c, &frame, cx, bar_y, w, body.y + 1.0);
 }
 
 pub fn draw(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect) {
@@ -448,10 +448,10 @@ fn draw_idle(ui: &mut Ui, st: &mut AppState, body: Rect) {
     }
     match st.settings.idle_style {
         IdleStyle::Clock | IdleStyle::Status => {
-            // Oyen theme: he peeks on the left and the clock centres in the rest.
-            let body = if oyen::on(st.settings.theme) {
-                draw_oyen_rest(ui, st, body, body.x + 11.0 + OYEN_CLOCK_W / 2.0, OYEN_CLOCK_W, body.bottom() - 5.0);
-                Rect::new(body.x + OYEN_CLOCK_LEAD, body.y, body.w - OYEN_CLOCK_LEAD, body.h)
+            // Halo theme: he peeks on the left and the clock centres in the rest.
+            let body = if face::on(st.settings.theme) {
+                draw_halo_rest(ui, st, body, body.x + 11.0 + HALO_CLOCK_W / 2.0, HALO_CLOCK_W, body.bottom() - 5.0);
+                Rect::new(body.x + HALO_CLOCK_LEAD, body.y, body.w - HALO_CLOCK_LEAD, body.h)
             } else {
                 body
             };
@@ -481,8 +481,8 @@ fn draw_idle(ui: &mut Ui, st: &mut AppState, body: Rect) {
             }
             ui.c.text(&time, Rect::new(x0 + bw + BADGE_GAP, body.y, tw + 2.0, body.h), &ts);
         }
-        IdleStyle::Eyes if oyen::on(st.settings.theme) => {
-            draw_oyen_rest(ui, st, body, body.center().x, OYEN_IDLE_W, body.bottom() - 7.0);
+        IdleStyle::Eyes if face::on(st.settings.theme) => {
+            draw_halo_rest(ui, st, body, body.center().x, HALO_IDLE_W, body.bottom() - 7.0);
         }
         IdleStyle::Eyes => {
             // Eyes glance toward the cursor while hovering.
@@ -506,19 +506,18 @@ pub fn draw_eyes(ui: &mut Ui, st: &AppState, cx: f32, cy: f32, look: f32) {
 }
 
 /// Halo Mascot (Settings): Halo's eyes rest where the clock would, in the
-/// themes that show a clock at rest (Oyen keeps Oyen, Diorama its picture).
+/// themes that show a clock at rest (Halo keeps Halo, Diorama its picture).
 /// ponytail: Windows only; the Mac's notch would need the same input and
 /// reset hooks as `app.rs`.
 pub fn mascot_shows(st: &AppState) -> bool {
     cfg!(windows)
         && st.settings.mascot
-        && !oyen::on(st.settings.theme)
+        && !face::on(st.settings.theme)
         && !crate::pill::diorama::shows(st)
         && crate::pill::status::shown(st.settings.theme, st.settings.idle_style) == IdleStyle::Clock
 }
 
-/// Halo's capsule eyes, 8 x 16 and 10 apart (docs/A2Z-07-mascot-ideas.md,
-/// "Keputusan"), in the pose `st.mascot` gives. They lean up to 2 DIPs
+/// Halo's capsule eyes, 8 x 16 and 10 apart, in the pose `st.mascot` gives. They lean up to 2 DIPs
 /// towards a pointer over the island (its WM_MOUSEMOVE, no poll).
 fn draw_mascot(ui: &mut Ui, st: &AppState, body: Rect) {
     use halo_core::mascot::Pose;
@@ -642,7 +641,7 @@ fn draw_peek(ui: &mut Ui, st: &AppState, x0: f32, x1: f32, body: Rect, alpha: f3
     });
 }
 
-/// Music, collapsed: the album art on the left, the equalizer (Oyen, in his
+/// Music, collapsed: the album art on the left, the equalizer (Halo, in his
 /// theme) on the right, and between them the line being sung while the song
 /// has synced lyrics, as in the Pill theme (`pill::media::middle`: the line,
 /// with its reading in Latin letters under it when it has one, or the title
@@ -658,16 +657,16 @@ pub fn draw_music(ui: &mut Ui, st: &mut AppState, body: Rect, words: bool) {
     let eq = Rect::new(body.right() - 34.0, cy - 8.0, 20.0, 16.0);
     let sings = words && crate::pill::lyric::sings(st);
     let alpha = if sings { 1.0 } else { peek_alpha(st, body.w) };
-    if oyen::on(st.settings.theme) {
-        // Oyen bops to the music where the equalizer would be, and a
+    if face::on(st.settings.theme) {
+        // Halo bops to the music where the equalizer would be, and a
         // note floats up beside him on every beat (the ones on his
         // left make way for the words: the sung line or the title).
         let (cx, bar_y) = (body.right() - 26.0, body.bottom() - 5.0);
         st.ui.notes.step(st.now, playing);
         let sky = Rect::new(body.x, body.y + 1.0, body.w, body.h - 1.0);
-        oyen::notes(ui.c, &st.ui.notes, st.now, cx, bar_y, sky, 1.0 - alpha);
-        let f = oyen::music(st.now, playing, st.media_paused_at);
-        oyen::peek(ui.c, &f, cx, bar_y, OYEN_MEDIA_W, body.y + 1.0);
+        face::notes(ui.c, &st.ui.notes, st.now, cx, bar_y, sky, 1.0 - alpha);
+        let f = face::music(st.now, playing, st.media_paused_at);
+        face::peek(ui.c, &f, cx, bar_y, HALO_MEDIA_W, body.y + 1.0);
     } else {
         equalizer(ui, eq, st.media_accent(), playing, st.now);
     }
@@ -702,7 +701,7 @@ fn draw_activity(ui: &mut Ui, st: &mut AppState, a: Activity, body: Rect) {
             ui.c.text(&text, Rect::new(body.x + 40.0, body.y, 64.0, body.h), &countdown_style(col, paused));
         }
         Activity::Prayer => {
-            // No Oyen here, in any theme: the moon, the minutes and OK only.
+            // No Halo here, in any theme: the moon, the minutes and OK only.
             let Some((prayer, left)) = prayer_countdown(st) else { return };
             let col = st.accent;
             ui.c.icon(Icon::Moon, Rect::new(body.x + 14.0, cy - 8.0, 16.0, 16.0), col);
@@ -757,7 +756,7 @@ fn draw_recording(ui: &mut Ui, st: &AppState, body: Rect) {
 }
 
 /// The recording's mark at `c`: the red dot; a solid pause mark while
-/// paused, so the dimmed time still reads on the light Oyen ground; a ring
+/// paused, so the dimmed time still reads on the light Halo ground; a ring
 /// while it starts or saves. Shared with the notch's left ear.
 pub(crate) fn recording_mark(ui: &mut Ui, st: &AppState, c: Point) {
     match st.rec.phase {
@@ -920,7 +919,7 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
             st.ui.hud_level = shown;
             ui.c.fill_rrect(bar, 3.0, palette::TRACK);
             if shown > 0.0 {
-                // Classic fills the level in white; a look with its own accent (Oyen's) in it.
+                // Classic fills the level in white; a look with its own accent (Halo's) in it.
                 let level = match ui.c.look().accent {
                     Some(a) => a,
                     None => Color::white(0.95),
@@ -1148,7 +1147,7 @@ mod tests {
         let mut st = playing(Some("[00:10.00]紙の舟よ\n[00:14.00]Paper boats\n"));
         assert_eq!(geom(&media, &st).h, 32.0, "no readings: one row");
         st.lyrics.ruby = vec![vec![Ruby { text: "紙の舟よ".into(), roman: "kami no fune yo".into() }], Vec::new()];
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Pill, Theme::Diorama] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
             st.settings.theme = theme;
             assert_eq!(geom(&media, &st).h, crate::pill::media::H_READS, "{theme:?}: the line over its reading");
         }
@@ -1325,7 +1324,7 @@ mod tests {
         use halo_core::settings::Theme;
         let m = Mode::Activity(Activity::Download);
         let mut st = with_downloads(AppState::new(Settings::default(), Store::default()), 1);
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Pill, Theme::Diorama] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
             st.settings.theme = theme;
             assert!(!is_live(&m, &st), "{theme:?}");
             assert_eq!(next_wake(&m, &st), None, "{theme:?}: it repaints as yt-dlp reports");
@@ -1357,7 +1356,7 @@ mod tests {
         // A second one, queued: the count shows beside the mark.
         add(&mut st, "https://archive.org/details/BigBuckBunny_124");
         assert!(download_many(&st));
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Pill, Theme::Diorama] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
             st.settings.theme = theme;
             assert_eq!(geom(&m, &st).w, DOWNLOAD_MANY_W, "{theme:?}");
         }

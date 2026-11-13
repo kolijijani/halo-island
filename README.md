@@ -242,7 +242,7 @@ On a Mac the gear opens the same Settings, and **Advanced settings** the same wi
 
 The island stays black by default. Switch on the Halo theme (the gear › **Theme › Halo**, or right-click › **Theme › Halo**) and the whole island becomes Halo's: warm cream with dark brown text, his orange on the play button, the bars and the switches, and Outfit, the Halo Island typeface. Halo, the Halo cat, moves in too: he peeks over the island's edge while it rests, watches your pointer when it comes near, sits beside the clock, peeks up beside the pin when the island is open and bobs along while music plays. He sleeps from midnight to five. Where the island wraps a MacBook's notch, the theme goes black like the notch itself, with Halo's cream type, his orange and his face on it. He is drawn from the Halo logo, not a picture, so he stays sharp at any scaling, and he only moves for a moment now and then, so he costs no CPU at rest.
 
-![Classic and the Halo theme side by side: resting, with the clock, and playing music](docs/screenshots/halo-theme.png)
+![The Music page in Classic, in the Halo theme, in Glass and in Pill](docs/brand/readme/themes.webp)
 
 ### The Glass theme
 
@@ -323,7 +323,7 @@ Send photos and files from your phone to the Shelf, or save Shelf files on your 
 
 | | |
 |---|---|
-| ![Phone drop open: the QR code waits for a phone](docs/screenshots/page-shelf-phone.png) | ![An iPhone asks to send three files](docs/screenshots/page-shelf-phone-ask.png) |
+| ![The Shelf with Phone drop open: an iPhone asks to send three files](site/assets/shots/classic/page-shelf-phone-ask.webp) | ![The same request in the Halo theme](site/assets/shots/halo/page-shelf-phone-ask.webp) |
 
 The phone and the PC need the same Wi-Fi; guest networks often keep devices apart. The first time, Windows asks whether Halo Island may use the network: allow it on private networks. If Windows treats your Wi-Fi as a public network, set it to private (Settings > Network & internet > Wi-Fi), or the phone can't reach the PC.
 
@@ -341,9 +341,8 @@ Pair a phone once, and it finds this PC from any network, whenever Halo Island r
 
 | | |
 |---|---|
-| ![A pairing code under the shelf](docs/screenshots/page-shelf-pairing.png) | ![The paired phones, each with Remove](docs/screenshots/page-shelf-paired-phones.png) |
+| ![A pairing code under the shelf](site/assets/shots/halo/page-shelf-pairing.webp) | ![The paired phones, each with Remove](docs/brand/readme/paired-phones.png) |
 
-![The phone page: paired, your PCs, sending, and on the Shelf](docs/screenshots/paired-phone-page.webp)
 
 The phone and PC meet through a small server (`drop.halo.com`, code in [`server/`](server)); the files go straight between them over WebRTC, encrypted with keys made on the two devices, or through a relay that can't read them when both networks block a direct link. The server never sees a file, a file name, or the pairing secret: every message is signed with that secret, which only the QR code carries. **Paired phones** lists each phone with **Remove**. How it works: [docs/paired-drop.md](docs/paired-drop.md).
 
@@ -442,7 +441,7 @@ target/release/halo --render shots --notch   # every island state as a picture, 
 | `HALO_SELFTEST_ANIM=1` | Also record the transitions frame by frame (plus each frame's screen position in `anim-<name>.json`) |
 | `HALO_RENDERER=software` | Draw in software instead of on the GPU (also outside the self-test, for troubleshooting) |
 
-![The expand animation, frame by frame](docs/screenshots/expand-motion.png)
+![The expand animation, frame by frame](docs/brand/readme/expand-motion.png)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit: threads, the rendering model, the page and service contracts, and data files.
 

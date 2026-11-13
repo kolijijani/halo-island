@@ -13,9 +13,9 @@ use sha2::{Digest, Sha256};
 /// Bytes in a pairing secret.
 pub const SECRET_LEN: usize = 16;
 
-const ROOM: &[u8] = b"oyen-drop/1 room";
-const PROOF: &[u8] = b"oyen-drop/1 proof";
-const MAC: &[u8] = b"oyen-drop/1 mac";
+const ROOM: &[u8] = b"halo-drop/1 room";
+const PROOF: &[u8] = b"halo-drop/1 proof";
+const MAC: &[u8] = b"halo-drop/1 mac";
 
 /// A pairing secret. The Windows crate fills it from the system RNG.
 #[derive(Clone, PartialEq, Eq)]
@@ -144,9 +144,9 @@ mod tests {
     fn contract_vector() {
         let s = vector();
         assert_eq!(s.encode(), "AAECAwQFBgcICQoLDA0ODw");
-        assert_eq!(s.room(), "geDM0jEhk4eiOz_li-FtORW2YlPBbebr7NsHjLkHI_4");
-        assert_eq!(s.proof(), "6JmvhsXX2_bzKYvHQ_iFgLcPnlG-m636-rWXAI5Vubo");
-        assert_eq!(b64u(&s.mac_key()), "PbxVzGOl5YKxg6Fd-uSD6Yqr9716j9MddvFbISuFxL4");
+        assert_eq!(s.room(), "8DSxiJKisdEK6Enj3OZzPPWYA0yehO_z25j9im-U9vo");
+        assert_eq!(s.proof(), "p_6y7gGULdRHCCn4ODRurzjr3iigCxImd_Td9-pwlxc");
+        assert_eq!(b64u(&s.mac_key()), "zCuQT42pQZvcqVsQGue88tEsuYgOIH6P3jX2HGFzfGI");
         assert_eq!(s.link("http://127.0.0.1:9/"), "http://127.0.0.1:9/p#k=AAECAwQFBgcICQoLDA0ODw");
     }
 

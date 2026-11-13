@@ -1,4 +1,4 @@
-//! Plain geometry for Oyen's face, in the Halo mark's own units: the head is
+//! Plain geometry for Halo's face, in the Halo mark's own units: the head is
 //! 104 wide and centred on (0, 0), y grows downwards. f64 throughout, and every
 //! expression keeps the Swift port's order of operations, so frames come out
 //! the same to the bit (`to_radians()`, `powi()` and the like would not).

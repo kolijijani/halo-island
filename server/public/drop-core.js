@@ -12,7 +12,7 @@ function subtle() {
   return s;
 }
 
-export const PROTO = 'oyen-drop/1';
+export const PROTO = 'halo-drop/1';
 export const NAME_MAX = 60; // characters (code points)
 export const SDP_MAX = 32 * 1024; // bytes of UTF-8
 export const TS_WINDOW_MS = 10 * 60 * 1000; // a message more than 10 minutes off is dropped

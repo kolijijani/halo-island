@@ -208,8 +208,8 @@ class Run:
                 "Android: install button or Menu › Install app",
                 lambda: expect(phone.locator("#install:visible, #keep-menu:visible")).to_have_count(1),
             )
-        stored = phone.evaluate("JSON.parse(localStorage.getItem('oyen-drop.v1'))")
-        c.check(stored and stored["pairs"] and stored["pairs"][0]["k"] == s1 and stored["pairs"][0]["name"] == PC, "pair stored in oyen-drop.v1", json.dumps(stored))
+        stored = phone.evaluate("JSON.parse(localStorage.getItem('halo-drop.v1'))")
+        c.check(stored and stored["pairs"] and stored["pairs"][0]["k"] == s1 and stored["pairs"][0]["name"] == PC, "pair stored in halo-drop.v1", json.dumps(stored))
         self.shot(phone, "02-paired")
 
         print(f"  [{self.label}] home")
@@ -219,8 +219,8 @@ class Run:
         phone.fill("#phone-name", f"  {my_name}\n")
         phone.press("#phone-name", "Enter")
         c.expect("phone name saved", lambda: expect(phone.locator("#phone-name-note")).to_have_text("Saved. Your PCs show this name."))
-        stored = phone.evaluate("JSON.parse(localStorage.getItem('oyen-drop.v1'))")
-        c.check(stored.get("phoneName") == my_name, "phone name kept in oyen-drop.v1", json.dumps(stored.get("phoneName")))
+        stored = phone.evaluate("JSON.parse(localStorage.getItem('halo-drop.v1'))")
+        c.check(stored.get("phoneName") == my_name, "phone name kept in halo-drop.v1", json.dumps(stored.get("phoneName")))
         self.shot(phone, "03-home")
 
         print(f"  [{self.label}] PC view and connect")
@@ -313,7 +313,7 @@ class Run:
         self.shot(phone, "12-gone")
         phone.click("#pcs button.save:has-text('Forget')")
         c.expect("empty state after Forget", lambda: expect(phone.locator("#empty")).to_contain_text("No PC paired yet"))
-        stored = phone.evaluate("JSON.parse(localStorage.getItem('oyen-drop.v1'))")
+        stored = phone.evaluate("JSON.parse(localStorage.getItem('halo-drop.v1'))")
         c.check(stored["pairs"] == [], "forgotten in storage")
         c.check("k=" not in phone.url, "the address no longer carries the forgotten pairing", phone.url)
         phone.reload()
@@ -419,7 +419,7 @@ class Run:
         c.expect("shared photos sent", lambda: expect(phone.locator("#share-status-text")).to_have_text(f"Sent 3 photos to {PC}", timeout=40000))
         got = self.summary()["received"][before:]
         c.check([g["sha256"] for g in got] == [sha(b) for _, b in photos], "PC got the 3 shared photos byte for byte", json.dumps(got))
-        left = phone.evaluate("""() => new Promise((res) => { const r = indexedDB.open('oyen-drop', 1);
+        left = phone.evaluate("""() => new Promise((res) => { const r = indexedDB.open('halo-drop', 1);
             r.onsuccess = () => { const q = r.result.transaction('shared').objectStore('shared').count(); q.onsuccess = () => res(q.result); }; })""")
         c.check(left == 0, "the shared files are deleted after sending", f"{left} left")
         self.shot(phone, "09b-share-sent")
@@ -439,7 +439,7 @@ class Run:
         c.check(page.url == f"{self.base}/", "standalone app tidies the address", page.url)
         c.check(len(self.events("pair")) == pairs_before, "no second pairing message for an import")
         page.goto(f"{self.base}/p#k={s1}&n=Other")
-        stored = page.evaluate("JSON.parse(localStorage.getItem('oyen-drop.v1'))")
+        stored = page.evaluate("JSON.parse(localStorage.getItem('halo-drop.v1'))")
         c.check(len(stored["pairs"]) == 1 and stored["pairs"][0]["name"] == PC, "importing again changes nothing", json.dumps(stored))
         c.expect("paste field for pairing links in the Home Screen app", lambda: expect(page.locator("#paste-card")).to_be_visible())
         ctx.close()

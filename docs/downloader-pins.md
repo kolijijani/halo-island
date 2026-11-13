@@ -1,6 +1,6 @@
 # Downloader pins
 
-The Downloader add-on gets three programs when it is switched on: on Windows yt-dlp.exe and qjs.exe from their own GitHub releases, unchanged, and ffmpeg.exe from the add-on's own release; on a Mac yt-dlp (yt-dlp's `yt-dlp_macos`, unchanged) from its release, and qjs and ffmpeg, our own builds, from the Mac add-on's release. The app keeps a file only if its size and SHA-256 are the ones built into it (`DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC` in `crates/poni-core/src/addons.rs`), so a changed or broken file is refused. It also means a newer yt-dlp reaches people only with a new release of Halo Island.
+The Downloader add-on gets three programs when it is switched on: on Windows yt-dlp.exe and qjs.exe from their own GitHub releases, unchanged, and ffmpeg.exe from the add-on's own release; on a Mac yt-dlp (yt-dlp's `yt-dlp_macos`, unchanged) from its release, and qjs and ffmpeg, our own builds, from the Mac add-on's release. The app keeps a file only if its size and SHA-256 are the ones built into it (`DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC` in `crates/halo-core/src/addons.rs`), so a changed or broken file is refused. It also means a newer yt-dlp reaches people only with a new release of Halo Island.
 
 ## yt-dlp, every week
 

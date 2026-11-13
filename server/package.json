@@ -1,5 +1,5 @@
 {
-  "name": "oyen-drop-server",
+  "name": "halo-drop-server",
   "private": true,
   "description": "Meeting server and phone page for Halo Island paired phone drop (docs/paired-drop.md). No dependencies.",
   "license": "MIT",

@@ -45,7 +45,7 @@ mod island;
 #[cfg(any(windows, target_os = "macos"))]
 mod last_call;
 #[cfg(any(windows, target_os = "macos"))]
-mod oyen;
+mod face;
 #[cfg(any(windows, target_os = "macos"))]
 mod pages;
 #[cfg(any(windows, target_os = "macos"))]

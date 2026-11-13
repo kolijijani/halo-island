@@ -40,7 +40,7 @@ TILE_R = 0.2245
 ISL_W, ISL_H, ISL_R, ISL_FLARE = 0.655, 0.209, 0.075, 0.041
 EQ_BARS = (0.45, 0.85, 0.6, 1.0)
 EQ_W, EQ_GAP = 0.022, 0.016
-OYEN_W, OYEN_CY = 0.51, 0.667  # white Halo's width and centre, below the island
+HALO_W, HALO_CY = 0.51, 0.667  # white Halo's width and centre, below the island
 MARK_W, MARK_CY = 104.0, -11.04  # the mark's own width and vertical centre, in its units
 
 
@@ -154,8 +154,8 @@ def draw_logo(size: int, ss: int = 8) -> Image.Image:
             draw.rounded_rectangle([bx, cy - bh / 2, bx + L["bw"], cy + bh / 2], radius=L["bw"] / 2, fill=EQ)
 
     # White Halo: the brand kit's white mark, its fold and eyes cut out of the head.
-    k = OYEN_W * t / MARK_W
-    ox, oy = s / 2, inset + OYEN_CY * t - MARK_CY * k
+    k = HALO_W * t / MARK_W
+    ox, oy = s / 2, inset + HALO_CY * t - MARK_CY * k
     polys = [[(ox + px * k, oy + py * k) for px, py in poly] for d in mark_paths("halo-mark-white.svg") for poly in flatten(d)]
     img.paste("white", (0, 0), evenodd((s, s), polys))
     return img.resize((size, size), Image.LANCZOS)
@@ -166,7 +166,7 @@ def logo_svg() -> str:
     L = layout(s)
     inset, t = L["inset"], L["t"]
     a, x, y = L["art"], L["art_x"], L["art_y"]
-    k = OYEN_W * t / MARK_W
+    k = HALO_W * t / MARK_W
     stops = "".join(f'<stop offset="{u:g}" stop-color="{c}"/>' for u, c in COVER)
     bars = "".join(
         f'<rect x="{L["eq_x"] + i * (L["bw"] + L["gap"]):.1f}" y="{y + a / 2 - a * 0.45 * h:.1f}" width="{L["bw"]:.1f}" '
@@ -185,7 +185,7 @@ def logo_svg() -> str:
         f'<path d="M{x + 0.66 * a - r:.1f} {y + 0.5 * a:.1f}a{r:.1f} {r:.1f} 0 0 1 {2 * r:.1f} 0Z" fill="{SUN}"/>'
         f'<path d="M{x + 0.24 * a:.1f} {y + 0.8 * a:.1f}L{x + 0.34 * a:.1f} {y + 0.56 * a:.1f}L{x + 0.42 * a:.1f} {y + 0.8 * a:.1f}Z" fill="#fff"/>'
         f"{bars}"
-        f'<g transform="translate({s / 2:.1f} {inset + OYEN_CY * t - MARK_CY * k:.1f}) scale({k:.4f})"><path d="{white}" fill="#fff" fill-rule="evenodd"/></g>'
+        f'<g transform="translate({s / 2:.1f} {inset + HALO_CY * t - MARK_CY * k:.1f}) scale({k:.4f})"><path d="{white}" fill="#fff" fill-rule="evenodd"/></g>'
         "</svg>\n"
     )
 
@@ -195,12 +195,12 @@ def trimmed(path: Path) -> Image.Image:
     return im.crop(im.getchannel("A").point(lambda v: 255 if v > 32 else 0).getbbox())
 
 
-def wizard_image(w: int, h: int, oyen: Image.Image) -> Image.Image:
+def wizard_image(w: int, h: int, halo: Image.Image) -> Image.Image:
     """Welcome/finish picture: Halo on the island, playing music, on a warm cream field."""
     img = gradient(w, h, [(0.0, "#FFF6EC"), (1.0, "#FFE3C4")]).convert("RGBA")
     ow = round(w * 0.88)
-    oh = round(oyen.height * ow / oyen.width)
-    art = oyen.resize((ow, oh), Image.LANCZOS)
+    oh = round(halo.height * ow / halo.width)
+    art = halo.resize((ow, oh), Image.LANCZOS)
     img.alpha_composite(art, ((w - ow) // 2, round(h * 0.47 - oh / 2)))
     return img
 
@@ -219,12 +219,12 @@ def main() -> int:
     ART.mkdir(exist_ok=True)
     for n in WIZARD_SMALL_SIZES:
         draw_logo(n).save(ART / f"wizard-small-{n}.png", optimize=True)
-    oyen = trimmed(BRAND / "art" / "halo-sit.webp")
+    halo = trimmed(BRAND / "art" / "halo-sit.webp")
     for w, h in WIZARD_SIZES:
-        wizard_image(w, h, oyen).convert("RGB").save(ART / f"wizard-{w}x{h}.png", optimize=True)
+        wizard_image(w, h, halo).convert("RGB").save(ART / f"wizard-{w}x{h}.png", optimize=True)
 
     # NSIS (MUI2) only takes 24-bit BMPs: 164x314 welcome/finish picture, 150x57 header.
-    wizard_image(164, 314, oyen).convert("RGB").save(ART / "nsis-welcome.bmp")
+    wizard_image(164, 314, halo).convert("RGB").save(ART / "nsis-welcome.bmp")
     header = Image.new("RGBA", (150, 57), "white")
     header.alpha_composite(draw_logo(48), (150 - 48 - 6, (57 - 48) // 2))
     header.convert("RGB").save(ART / "nsis-header.bmp")

@@ -77,12 +77,12 @@ jobs:
         run: |
           bin=target/aarch64-apple-darwin/release/halo
           $bin --render mac-renders
-          $bin --render mac-renders --theme oyen
+          $bin --render mac-renders --theme halo
           $bin --render mac-renders --theme glass
           $bin --render mac-renders --theme pill
           $bin --render mac-renders --theme diorama
           $bin --render mac-renders --notch
-          $bin --render mac-renders --theme oyen --notch
+          $bin --render mac-renders --theme halo --notch
           $bin --render mac-renders --theme glass --notch
           $bin --render mac-renders --theme pill --notch
           $bin --render mac-renders --theme diorama --notch

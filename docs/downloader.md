@@ -28,14 +28,14 @@ On a Mac:
 
 `qjs`, `ffmpeg` and the notice are on this project's `addon-downloader-mac-1` pre-release. mac.yml's `downloader-tools` job builds the two tools, signed ad-hoc (a Mac with Apple silicon runs only signed code), and checks that each runs and links nothing but macOS's own libraries.
 
-They go in `%LOCALAPPDATA%\Poni\addons\downloader\`, or `~/Library/Caches/Poni/addons/downloader/` on a Mac. Each file's size and SHA-256 are built into the app (`poni_core::addons::DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC`), and a file that doesn't match is refused. On a Mac the app makes the three tools runnable as it saves them; files it writes itself carry no quarantine, so macOS doesn't ask about them. Switching the add-on off deletes them.
+They go in `%LOCALAPPDATA%\Halo\addons\downloader\`, or `~/Library/Caches/Halo/addons/downloader/` on a Mac. Each file's size and SHA-256 are built into the app (`halo_core::addons::DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC`), and a file that doesn't match is refused. On a Mac the app makes the three tools runnable as it saves them; files it writes itself carry no quarantine, so macOS doesn't ask about them. Switching the add-on off deletes them.
 
 ## What runs, and when
 
 Nothing runs at rest. With the add-on on and nothing downloading, it has no program, thread or timer going.
 
 - **A download** starts one `yt-dlp.exe`, without a window, at below normal priority. yt-dlp starts `qjs.exe` when YouTube's JavaScript needs answering, and `ffmpeg.exe` to join the picture and the sound once both are in. They all end when the download does. A Mac runs `yt-dlp`, `qjs` and `ffmpeg` the same way.
-- **Two at a time:** a third download waits for a free place (`poni_core::downloads::AT_ONCE`).
+- **Two at a time:** a third download waits for a free place (`halo_core::downloads::AT_ONCE`).
 - **Stop** ends a download's programs at once, and so does quitting Halo Island: each yt-dlp runs in a Windows job object, which ends it with everything it started. On a Mac each yt-dlp leads a process group of its own, which what it starts joins; Stop asks the whole group to end, and ends what is left of it 2 seconds later. Stop then deletes what yt-dlp had written of the file (its `.part` and `.ytdl` files); after quitting, they stay in the Downloads folder.
 - **The progress** comes from yt-dlp's own lines, five a second at most, read by one thread per running download, which ends with it. A YouTube link first reads **Solving YouTube's puzzle** while QuickJS answers YouTube's JavaScript: seconds, and longer for a YouTube player it hasn't seen before.
 
@@ -52,9 +52,9 @@ Finished files go to your Downloads folder, and onto the Shelf. **Open** opens a
 
 ## How yt-dlp is kept up to date
 
-Sites change, and yt-dlp follows them with new versions. Here it's updated with Halo Island: each release pins one yt-dlp, one QuickJS-ng and one FFmpeg, by size and SHA-256, in `poni_core::addons::DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC` (the same versions on both), and yt-dlp never updates itself. When a release pins new ones, PCs with the add-on on download them once that release starts, and the old ones are deleted. A site that changed and stopped working works again with the first release that pins a yt-dlp that reads it.
+Sites change, and yt-dlp follows them with new versions. Here it's updated with Halo Island: each release pins one yt-dlp, one QuickJS-ng and one FFmpeg, by size and SHA-256, in `halo_core::addons::DOWNLOADER_WINDOWS` and `DOWNLOADER_MAC` (the same versions on both), and yt-dlp never updates itself. When a release pins new ones, PCs with the add-on on download them once that release starts, and the old ones are deleted. A site that changed and stopped working works again with the first release that pins a yt-dlp that reads it.
 
-To move to a new yt-dlp: its size is on its release page, and its SHA-256 in that release's `SHA2-256SUMS`, which yt-dlp signs with its [key](https://github.com/yt-dlp/yt-dlp/blob/master/public.key). `tools/pin_ytdlp.py` puts the new URLs, sizes and SHA-256s of `yt-dlp.exe` and `yt-dlp_macos` in `poni_core::addons` together ([downloader-pins.md](downloader-pins.md)). A changed `NOTICE.txt` goes on a new tag (`addon-downloader-2`, or `addon-downloader-mac-2` for the Mac's) with that add-on's own files, like any add-on file, and ships with an app release. So does a new QuickJS-ng or FFmpeg for the Mac: change `QJS_COMMIT` or the script, take the two files from the `downloader-tools-mac` artifact of mac.yml's run, put them on the new tag and pin them in `DOWNLOADER_MAC`.
+To move to a new yt-dlp: its size is on its release page, and its SHA-256 in that release's `SHA2-256SUMS`, which yt-dlp signs with its [key](https://github.com/yt-dlp/yt-dlp/blob/master/public.key). `tools/pin_ytdlp.py` puts the new URLs, sizes and SHA-256s of `yt-dlp.exe` and `yt-dlp_macos` in `halo_core::addons` together ([downloader-pins.md](downloader-pins.md)). A changed `NOTICE.txt` goes on a new tag (`addon-downloader-2`, or `addon-downloader-mac-2` for the Mac's) with that add-on's own files, like any add-on file, and ships with an app release. So does a new QuickJS-ng or FFmpeg for the Mac: change `QJS_COMMIT` or the script, take the two files from the `downloader-tools-mac` artifact of mac.yml's run, put them on the new tag and pin them in `DOWNLOADER_MAC`.
 
 ## What you download is up to you
 

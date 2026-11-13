@@ -8,7 +8,7 @@ use crate::events::{AppEvent, AppleMusicStatus, EventSink, HaloEvent, SendHwnd, 
 use crate::gfx::{px_rect, px_union, scale_about, union_rect, Canvas, Gfx, HitMask};
 use crate::icons::Icon;
 use crate::island::{Geom, Island, SHOULDER};
-use crate::oyen;
+use crate::face;
 use crate::pages::{self, PageKind};
 use crate::paths;
 use crate::pill;
@@ -145,12 +145,6 @@ pub fn main_entry() -> i32 {
     }
     if crate::autostart::packaged() {
         pinfo!("running as the Microsoft Store package");
-    }
-    // After the single-instance check, so two starts never copy at once.
-    match paths::migrate_from_poni() {
-        Ok(Some(n)) => pinfo!("migrated {n} files from %APPDATA%\\Poni to {}", paths::data_dir().display()),
-        Ok(None) => {}
-        Err(e) => pwarn!("migrating %APPDATA%\\Poni failed: {e}"),
     }
     // Install on next start: the new version's Setup, downloaded and checked
     // earlier, runs now, before any window, and opens the new version.
@@ -998,7 +992,7 @@ impl App {
     /// (a theme switch into or out of Pill, the self-test picking its theme
     /// after start, or the outline docking at the edge after rising back to
     /// it): lay the window out again for the new room, grown for the gap and
-    /// the shadow or given back, so Classic, Oyen and Glass keep exactly the
+    /// the shadow or given back, so Classic, Halo and Glass keep exactly the
     /// window they start with and Pill gets its own. Called every frame
     /// after the island steps; a layout only on that change.
     fn sync_room(&mut self) {
@@ -1423,7 +1417,7 @@ impl App {
                 }
                 if msg == WM_SETTINGCHANGE && self.st.settings.theme == Theme::Glass {
                     self.st.accent = theme_accent(Theme::Glass);
-                } else if msg == WM_SETTINGCHANGE && !oyen::on(self.st.settings.theme) && self.st.settings.theme != Theme::Diorama {
+                } else if msg == WM_SETTINGCHANGE && !face::on(self.st.settings.theme) && self.st.settings.theme != Theme::Diorama {
                     if let Some(a) = services::system_accent() {
                         self.st.accent = a;
                     }
@@ -5312,11 +5306,11 @@ impl App {
     }
 }
 
-/// Oyen's orange in his theme, Diorama's own (which its day and night looks
+/// Halo's orange in his theme, Diorama's own (which its day and night looks
 /// paint as theirs), Windows' accent colour otherwise.
 fn theme_accent(theme: Theme) -> Color {
-    if oyen::on(theme) {
-        oyen::ORANGE
+    if face::on(theme) {
+        face::ORANGE
     } else if theme == Theme::Diorama {
         halo_core::look::DIORAMA_ACCENT
     } else if theme == Theme::Glass {

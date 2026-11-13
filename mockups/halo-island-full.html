@@ -498,7 +498,7 @@ const u = (id, t) => t - S[id].t0;                       // scene-local time
 const inS = (id, t, f = .3) => win(t, S[id].t0 + .1, S[id].t1, f);
 const txt = (el, s) => { if (el.textContent !== s) el.textContent = s; };
 
-// ---- Halo mascot. Geometry in notch px on a 104×32 pill, as docs/A2Z-07 "Keputusan":
+// ---- Halo mascot. Geometry in notch px on a 104×32 pill:
 // two 8×16 capsules, full radius, 10 px apart, centred. No ring, no glow, no mouth.
 const PAL = { pill: [hex("#0B0D12"), hex("#F3F5F9")], eye: [hex("#F2F5FA"), hex("#141821")] };
 function mkMascot(host, scale, pill = true) {

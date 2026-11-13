@@ -3,14 +3,14 @@
 //! `--render` and the menu bar icon).
 //!
 //! The drawing API ([`Canvas`]) is the Windows renderer's (`../gfx.rs`), call
-//! for call, so pages, activities and Oyen draw unchanged. Coordinates are
+//! for call, so pages, activities and Halo draw unchanged. Coordinates are
 //! DIPs (points): the context's base transform puts (0, 0) at the top left
 //! with y growing down, and Core Graphics does the Retina scaling.
 //!
 //! Differences that are on purpose:
 //! * Colours are sRGB, like the Windows island, whatever the display's own space.
 //! * Text uses the system font (SF Pro, with monospaced digits for `tabular`)
-//!   unless the look brings its own (Outfit for Oyen, embedded in the app).
+//!   unless the look brings its own (Outfit for Halo, embedded in the app).
 //! * [`Canvas::layered`] is a Core Graphics transparency layer: the group still
 //!   fades as one picture, and its text is drawn live through the transform
 //!   (macOS doesn't hint glyphs, so scaled text glides without re-snapping).
@@ -756,7 +756,7 @@ impl<'a> Canvas<'a> {
         self.g.look
     }
 
-    /// Run `f` painting colours exactly as given, outside the theme (Oyen's
+    /// Run `f` painting colours exactly as given, outside the theme (Halo's
     /// own face).
     pub fn unthemed<R>(&mut self, f: impl FnOnce(&mut Canvas<'a>) -> R) -> R {
         let prev = self.g.look;

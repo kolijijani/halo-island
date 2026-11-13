@@ -159,8 +159,8 @@ fn draw_about(ui: &mut Ui, st: &mut AppState, area: Rect, a: &Addon) {
     let title_w = ui.c.measure(a.title, &TextStyle::headline(), w.max(1.0)).0.ceil();
     ui.c.text(a.title, Rect::new(x, area.y + 3.0, title_w + 1.0, 20.0), &TextStyle::headline());
     let tag = Rect::new(x + title_w + 8.0, area.y + 4.0, 36.0, 18.0);
-    ui.c.fill_rrect(tag, 9.0, crate::oyen::ORANGE.with_alpha(0.2));
-    ui.c.text("PRO", tag, &TextStyle::caption().weight(Weight::Bold).center().color(crate::oyen::ORANGE));
+    ui.c.fill_rrect(tag, 9.0, crate::face::ORANGE.with_alpha(0.2));
+    ui.c.text("PRO", tag, &TextStyle::caption().weight(Weight::Bold).center().color(crate::face::ORANGE));
     ui.c.text(a.blurb, Rect::new(x, area.y + 23.0, w, 17.0), &TextStyle::footnote().color(palette::TEXT_DIM));
     let para = TextStyle::footnote().wrap().top();
     let body = about(a);
@@ -251,7 +251,7 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     let mut text_right = edge - 16.0;
     if status == Status::Off {
         let size = if a.pro { "Pro".to_string() } else if a.downloads() { fmt_bytes(a.size()) } else { "Built in".to_string() };
-        let style = if a.pro { TextStyle::footnote().weight(Weight::Semibold).color(crate::oyen::ORANGE).right() } else { TextStyle::footnote().color(palette::TEXT_DIM).right() };
+        let style = if a.pro { TextStyle::footnote().weight(Weight::Semibold).color(crate::face::ORANGE).right() } else { TextStyle::footnote().color(palette::TEXT_DIM).right() };
         let w = ui.c.measure(&size, &style, 200.0).0.ceil();
         ui.c.text(&size, Rect::new(edge - 10.0 - w, r.y, w, r.h), &style);
         text_right = edge - 10.0 - w - 16.0;

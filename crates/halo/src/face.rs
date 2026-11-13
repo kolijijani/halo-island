@@ -1,29 +1,29 @@
-//! The Oyen theme: Oyen, the Halo cat, living in the island.
+//! The Halo theme: Halo, the Halo cat, living in the island.
 //!
-//! Oyen is drawn from the Halo app's own built face ([`halo_core::oyen`]),
+//! Halo is drawn from the Halo app's own built face ([`halo_core::face`]),
 //! never from a picture, so he is the same character, with the same moods, as
 //! in the app. He peeks over a line near the island's bottom edge the way the
-//! Halo Studio logo does, his chin hidden behind it. (The logo's cream paws are
-//! left out: at island size they read as teeth, and Oyen has no mouth.)
+//! Halo Island logo does, his chin hidden behind it. (The logo's cream paws are
+//! left out: at island size they read as teeth, and Halo has no mouth.)
 //!
 //! Moods only ever follow what the island is doing (resting, music, the
 //! cursor, the night), never an amount of money.
 
 use crate::gfx::Canvas;
 use halo_core::geom::{Color, Point, Rect};
-use halo_core::oyen::{self, Affine, Element, Frame, Input, Mood, Paint, Path, Place};
+use halo_core::face::{self, Affine, Element, Frame, Input, Mood, Paint, Path, Place};
 use halo_core::settings::Theme;
 use halo_core::svgpath::{self, Seg};
 use std::f32::consts::TAU;
 use std::f64::consts::PI;
 use std::sync::OnceLock;
 
-/// Oyen's orange: the theme's accent.
-pub const ORANGE: Color = Color::hex(oyen::ORANGE);
-const FOLD: Color = Color::hex(oyen::FOLD_ORANGE);
-const INK: Color = Color::hex(oyen::INK);
-const PINK: Color = Color::hex(oyen::PINK);
-const GREEN: Color = Color::hex(oyen::GREEN);
+/// Halo's orange: the theme's accent.
+pub const ORANGE: Color = Color::hex(face::ORANGE);
+const FOLD: Color = Color::hex(face::FOLD_ORANGE);
+const INK: Color = Color::hex(face::INK);
+const PINK: Color = Color::hex(face::PINK);
+const GREEN: Color = Color::hex(face::GREEN);
 /// Shapes that float around the head (thinking dots, z's) are ink on a light
 /// page; on the black island they need to be light.
 const FLOAT: Color = Color::white(0.85);
@@ -37,12 +37,12 @@ const BAR_TOP: f32 = 23.0;
 const SMALL_EYES: f64 = 1.19;
 
 /// How long one rest cycle lasts: a blink at its start, an ear flick every
-/// third cycle. Between moves Oyen is a still frame, so the app sleeps.
+/// third cycle. Between moves Halo is a still frame, so the app sleeps.
 const REST_CYCLE: f64 = 6.5;
 const BLINK_WINDOW: f64 = 0.4;
 
 pub fn on(theme: Theme) -> bool {
-    theme == Theme::Oyen
+    theme == Theme::Halo
 }
 
 /// Is a rest move (blink or ear flick) under way at `now`?
@@ -56,13 +56,13 @@ pub fn next_rest_move(now: f64) -> f64 {
 }
 
 /// Is a rest move under way at `now`, or within `margin` seconds of one? The
-/// self-test waits for a still Oyen before it takes a picture.
+/// self-test waits for a still Halo before it takes a picture.
 pub fn mid_rest_move(now: f64, margin: f64) -> bool {
     let phase = now.rem_euclid(REST_CYCLE);
     phase < BLINK_WINDOW + margin || phase > REST_CYCLE - margin
 }
 
-/// What Oyen does while the island rests. `look` is the cursor's horizontal
+/// What Halo does while the island rests. `look` is the cursor's horizontal
 /// place over the island (-1 left .. 1 right) while it hovers: his eyes
 /// follow it, glancing down towards it. Returns the frame and whether it
 /// moves on its own (the caller then keeps frames coming).
@@ -74,20 +74,20 @@ pub fn rest(now: f64, night: bool, look: Option<f32>) -> (Frame, bool) {
 fn rest_eyes(now: f64, night: bool, look: Option<f32>, eyes: f64) -> (Frame, bool) {
     if night {
         // Asleep, drawn still: no breathing frames at night.
-        return (oyen::frame(Mood::Sleep, 0.6, Input::default(), eyes), false);
+        return (face::frame(Mood::Sleep, 0.6, Input::default(), eyes), false);
     }
     if let Some(x) = look {
         let input = Input { pencil: x.clamp(-1.0, 1.0) as f64, ..Input::default() };
-        return (oyen::frame(Mood::Nulis, 0.0, input, eyes), false);
+        return (face::frame(Mood::Nulis, 0.0, input, eyes), false);
     }
     let phase = now.rem_euclid(REST_CYCLE);
     if !rest_moving(now) {
-        return (oyen::frame(Mood::Oyen, 0.0, Input::default(), eyes), false);
+        return (face::frame(Mood::Halo, 0.0, Input::default(), eyes), false);
     }
     // The idle mood blinks at 1.7 s and flicks the folded ear at 0.6 s.
     let flick = (now / REST_CYCLE).floor() as i64 % 3 == 2;
     let t = if flick { 0.55 + phase } else { 1.6 + phase };
-    (oyen::frame(Mood::Oyen, t, Input::default(), eyes), true)
+    (face::frame(Mood::Halo, t, Input::default(), eyes), true)
 }
 
 /// Bopping to the music while it plays: eyes shut in a smile, bouncing on the
@@ -95,19 +95,19 @@ fn rest_eyes(now: f64, night: bool, look: Option<f32>, eyes: f64) -> (Frame, boo
 /// (the lean straightens out first).
 pub fn music(now: f64, playing: bool, paused_at: Option<f64>) -> Frame {
     let (mut f, lean) = if playing {
-        (oyen::frame(Mood::Happy, now.rem_euclid(Mood::Happy.loop_secs()), Input::default(), SMALL_EYES), lean(now))
+        (face::frame(Mood::Happy, now.rem_euclid(Mood::Happy.loop_secs()), Input::default(), SMALL_EYES), lean(now))
     } else {
         let left = paused_at.map_or(0.0, |p| 1.0 - smooth(((now - p) / SETTLE) as f32) as f64);
-        (oyen::frame(Mood::Oyen, 0.0, Input::default(), SMALL_EYES), paused_at.map_or(0.0, lean) * left)
+        (face::frame(Mood::Halo, 0.0, Input::default(), SMALL_EYES), paused_at.map_or(0.0, lean) * left)
     };
     if lean != 0.0 {
-        f.head = f.head.then(Affine::rotation_about(lean, oyen::Point::new(0.0, oyen::CHIN)));
+        f.head = f.head.then(Affine::rotation_about(lean, face::Point::new(0.0, face::CHIN)));
     }
     f
 }
 
 /// Does the media pill still move on its own: music playing, notes still in
-/// the air, or Oyen straightening up after a pause?
+/// the air, or Halo straightening up after a pause?
 pub fn music_moving(now: f64, playing: bool, paused_at: Option<f64>, notes: &Notes) -> bool {
     playing || notes.flying() || paused_at.is_some_and(|p| now < p + SETTLE)
 }
@@ -120,17 +120,17 @@ fn lean(t: f64) -> f64 {
 
 // ---------------------------------------------------------------- notes
 
-/// Oyen's beat while music plays: the happy mood bounces twice a loop, so his
+/// Halo's beat while music plays: the happy mood bounces twice a loop, so his
 /// head lands every 0.6 s (100 bpm). A note leaves on each landing.
 pub const BEAT: f64 = 0.6;
-/// How long a note floats, from leaving Oyen to gone.
+/// How long a note floats, from leaving Halo to gone.
 pub const NOTE_LIFE: f64 = 1.9;
 /// A note's pop as it leaves.
 const POP: f64 = 0.22;
 /// A gap this long between frames means the pill was away (paused, a page
 /// open): the notes start afresh on the next beat instead of catching up.
 const GAP: f64 = 0.25;
-/// How far Oyen leans at the top of a bounce (degrees), and how long he takes
+/// How far Halo leans at the top of a bounce (degrees), and how long he takes
 /// to straighten up when the music pauses.
 const LEAN_DEG: f64 = 5.0;
 const SETTLE: f64 = 0.3;
@@ -169,9 +169,9 @@ impl Notes {
     }
 }
 
-/// One note's way up: where it leaves (DIPs right of Oyen's middle), how far
+/// One note's way up: where it leaves (DIPs right of Halo's middle), how far
 /// it drifts sideways while rising, a pair (♫) or one (♪), deep orange or
-/// Oyen's own (a little smaller), and where its sway starts (in turns).
+/// Halo's own (a little smaller), and where its sway starts (in turns).
 struct Flight {
     x: f32,
     drift: f32,
@@ -212,7 +212,7 @@ fn glyph(pair: bool) -> &'static [Seg] {
     &g[pair as usize]
 }
 
-/// The notes in the air, around Oyen at (`cx`, `bar_y`) (his place in the
+/// The notes in the air, around Halo at (`cx`, `bar_y`) (his place in the
 /// pill), inside `clip`. `left` dims the ones on his left, where a new
 /// track's title passes.
 pub fn notes(c: &mut Canvas, notes: &Notes, now: f64, cx: f32, bar_y: f32, clip: Rect, left: f32) {
@@ -285,7 +285,7 @@ fn back_out(x: f32) -> f32 {
     1.0 + v * v * ((S + 1.0) * v + S)
 }
 
-/// Oyen peeking over the line at `bar_y`, his head `w` DIPs wide and centred
+/// Halo peeking over the line at `bar_y`, his head `w` DIPs wide and centred
 /// on `cx`. Only what is above the line shows (nothing above `top` either).
 pub fn peek(c: &mut Canvas, frame: &Frame, cx: f32, bar_y: f32, w: f32, top: f32) {
     let k = w / MARK_W;
@@ -297,7 +297,7 @@ pub fn peek(c: &mut Canvas, frame: &Frame, cx: f32, bar_y: f32, w: f32, top: f32
 
 /// One frame of the face, the mark's (0, 0) at `origin`, `k` DIPs per unit.
 /// Same layering as the app: a raised ear tip behind the head, a folded one
-/// on it, then eyes and extras. Oyen keeps his own colours in every theme.
+/// on it, then eyes and extras. Halo keeps his own colours in every theme.
 fn draw(c: &mut Canvas, f: &Frame, origin: Point, k: f32) {
     let look = c.look();
     let float = if look.light { look.ink.with_alpha(FLOAT_ON_LIGHT) } else { FLOAT };
@@ -306,7 +306,7 @@ fn draw(c: &mut Canvas, f: &Frame, origin: Point, k: f32) {
 
 fn draw_face(c: &mut Canvas, f: &Frame, origin: Point, k: f32, float: Color) {
     let h = f.head;
-    let map = |p: oyen::Point| {
+    let map = |p: face::Point| {
         let q = h.apply(p);
         Point::new(origin.x + q.x as f32 * k, origin.y + q.y as f32 * k)
     };
@@ -316,7 +316,7 @@ fn draw_face(c: &mut Canvas, f: &Frame, origin: Point, k: f32, float: Color) {
     if f.tip.behind_head {
         c.path(&segs(&f.tip.path, &map), Some(tip), None);
     }
-    c.path(&segs(oyen::head_path(), &map), Some(ORANGE), None);
+    c.path(&segs(face::head_path(), &map), Some(ORANGE), None);
     if !f.tip.behind_head {
         c.path(&segs(&f.tip.path, &map), Some(tip), None);
     }
@@ -336,7 +336,7 @@ fn draw_face(c: &mut Canvas, f: &Frame, origin: Point, k: f32, float: Color) {
     }
 }
 
-fn segs(p: &Path, map: &impl Fn(oyen::Point) -> Point) -> Vec<Seg> {
+fn segs(p: &Path, map: &impl Fn(face::Point) -> Point) -> Vec<Seg> {
     p.elements
         .iter()
         .map(|e| match *e {
@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn oyen_lands_upright_and_straightens_after_a_pause() {
+    fn halo_lands_upright_and_straightens_after_a_pause() {
         let lean = |f: &Frame| f.head.b.atan2(f.head.a).to_degrees();
         assert!(lean(&music(6.0, true, None)).abs() < 1e-6);
         assert!((lean(&music(6.3, true, None)) - LEAN_DEG).abs() < 0.2);

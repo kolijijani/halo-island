@@ -9,11 +9,11 @@ import { derive, sign as nodeSign } from './helpers.mjs';
 const V = {
   S: Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex'),
   b64u: 'AAECAwQFBgcICQoLDA0ODw',
-  room: 'geDM0jEhk4eiOz_li-FtORW2YlPBbebr7NsHjLkHI_4',
-  proof: '6JmvhsXX2_bzKYvHQ_iFgLcPnlG-m636-rWXAI5Vubo',
-  K: 'PbxVzGOl5YKxg6Fd-uSD6Yqr9716j9MddvFbISuFxL4',
+  room: '8DSxiJKisdEK6Enj3OZzPPWYA0yehO_z25j9im-U9vo',
+  proof: 'p_6y7gGULdRHCCn4ODRurzjr3iigCxImd_Td9-pwlxc',
+  K: 'zCuQT42pQZvcqVsQGue88tEsuYgOIH6P3jX2HGFzfGI',
   msg: { t: 'offer', sid: 'AAECAwQFBgcICQoLDA0ODw', ts: 1790000000000, name: 'Pixel 10', sdp: 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n' },
-  mac: '3QYhMYuCNPzit2tYBw0ejDAQsE1vxoO4DQERkznV8o8',
+  mac: 'I4BNjNlhyfrRCg6uQz_5IE28qeZBUc8YIQEdeF48heo',
 };
 
 test('test vector with node:crypto', () => {
@@ -39,7 +39,7 @@ test('test vector with drop-core.js (WebCrypto)', async () => {
   }
   assert.equal(
     core.macText(V.room, V.msg),
-    `oyen-drop/1\n${V.room}\noffer\nAAECAwQFBgcICQoLDA0ODw\n1790000000000\nPixel 10\nv=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n`,
+    `halo-drop/1\n${V.room}\noffer\nAAECAwQFBgcICQoLDA0ODw\n1790000000000\nPixel 10\nv=0\r\no=- 1 2 IN IP4 127.0.0.1\r\n`,
   );
 });
 

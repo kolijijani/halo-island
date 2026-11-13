@@ -31,7 +31,7 @@ pub mod mascot;
 pub mod mediaremote;
 pub mod notifications;
 pub mod nowplaying;
-pub mod oyen;
+pub mod face;
 pub mod pairdrop;
 pub mod peek;
 pub mod phonedrop;

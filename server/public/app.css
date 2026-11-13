@@ -128,9 +128,9 @@ label b { font-weight: 600; font-size: 16px; }
 /* The PC view's hero: the name on the left, Halo on the right standing on the card. */
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; margin-bottom: -34px; position: relative; z-index: 2; pointer-events: none; }
 .hero-text { padding-bottom: 42px; pointer-events: auto; min-width: 0; }
-.hero-oyen { width: 108px; height: auto; display: block; margin-right: 8px; filter: drop-shadow(0 12px 12px rgba(150, 82, 22, 0.22)); transform-origin: 50% 100%; }
-.hero-oyen[data-pose="asleep"] { width: 128px; margin-right: -2px; }
-.hero-oyen.carrying { animation: carry 0.75s ease-in-out infinite alternate; }
+.hero-halo { width: 108px; height: auto; display: block; margin-right: 8px; filter: drop-shadow(0 12px 12px rgba(150, 82, 22, 0.22)); transform-origin: 50% 100%; }
+.hero-halo[data-pose="asleep"] { width: 128px; margin-right: -2px; }
+.hero-halo.carrying { animation: carry 0.75s ease-in-out infinite alternate; }
 .hero + * { margin-top: 0; }
 /* A note right under the hero starts below Halo (napping Halo lies on its island, not on the text). */
 .hero + .status { margin-top: 34px; }

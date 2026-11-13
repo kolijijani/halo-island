@@ -547,7 +547,7 @@ mod tests {
         st.settings.idle_style = IdleStyle::Hidden;
         assert_eq!(geom(&st), None);
         st.settings.idle_style = IdleStyle::Clock;
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Pill] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill] {
             st.settings.theme = theme;
             assert_eq!(geom(&st), None, "{theme:?}");
         }

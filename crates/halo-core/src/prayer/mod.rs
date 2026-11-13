@@ -2,7 +2,7 @@
 //! and Terbit for one place, the next and current prayer, and the qibla.
 //!
 //! Places in the add-on's list use JAKIM's (Jabatan Kemajuan Islam Malaysia)
-//! angles through the engine Oyen Umroh runs, checked against a published
+//! angles through the reference engine, checked against a published
 //! 2026 schedule for all 517 places of the list it was built on (see
 //! tests.rs):
 //! - Subuh: sun 20° below the horizon; Isya: 18° below (a place can set its
@@ -564,7 +564,7 @@ fn umm_al_qura(site: &Site, day: i64, y: i32, m: u8, d: u8) -> Option<[i64; 6]> 
 }
 
 /// Ramadan in the Umm al-Qura calendar: (first day as days since 1970, length).
-/// From ICU's islamic-umalqura calendar, which Oyen Umroh's engine reads
+/// From ICU's islamic-umalqura calendar, which the reference engine reads
 /// through `Intl`; 1440-1501 AH.
 const RAMADAN_UMM_AL_QURA: [(i64, i64); 62] = [
     (18022, 29), (18376, 30), (18730, 30), (19084, 30), (19438, 29), (19792, 30), (20147, 29), (20502, 30), (20857, 29), (21211, 30),

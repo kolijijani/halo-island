@@ -11,11 +11,11 @@ export const b64u = (buf) => Buffer.from(buf).toString('base64url');
 export function derive(secret) {
   const S = Buffer.isBuffer(secret) ? secret : Buffer.from(secret, 'base64url');
   const h = (label) => crypto.createHash('sha256').update(Buffer.from(label, 'utf8')).update(S).digest();
-  return { S: b64u(S), room: b64u(h('oyen-drop/1 room')), proof: b64u(h('oyen-drop/1 proof')), K: h('oyen-drop/1 mac') };
+  return { S: b64u(S), room: b64u(h('halo-drop/1 room')), proof: b64u(h('halo-drop/1 proof')), K: h('halo-drop/1 mac') };
 }
 
 export function sign(keys, { t, sid, ts = Date.now(), name = '', sdp = '' }) {
-  const text = ['oyen-drop/1', keys.room, t, sid, String(ts), name, sdp].join('\n');
+  const text = ['halo-drop/1', keys.room, t, sid, String(ts), name, sdp].join('\n');
   const mac = b64u(crypto.createHmac('sha256', keys.K).update(text, 'utf8').digest());
   return { t, sid, ts, name, sdp, mac };
 }

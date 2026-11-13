@@ -1,4 +1,4 @@
-//! The menu bar item (Oyen's mark) and its menu, also shown on a right-click
+//! The menu bar item (Halo's mark) and its menu, also shown on a right-click
 //! of the island. It carries what works on the Mac so far; lyrics and the
 //! Apple Music token join it with the music slice.
 
@@ -69,8 +69,8 @@ pub fn menu_items(s: &Settings, pinned: bool, login: Login, recorder: bool, upda
     let style = |st: IdleStyle| {
         let label = match st {
             IdleStyle::Clock => "Clock",
-            // In the Oyen theme the eyes are Oyen's own.
-            IdleStyle::Eyes if s.theme == Theme::Oyen => "Halo",
+            // In the Halo theme the eyes are Halo's own.
+            IdleStyle::Eyes if s.theme == Theme::Halo => "Halo",
             IdleStyle::Eyes => "Eyes",
             IdleStyle::Minimal => "Minimal",
             IdleStyle::Hidden => "Hidden until hover",
@@ -84,7 +84,7 @@ pub fn menu_items(s: &Settings, pinned: bool, login: Login, recorder: bool, upda
         item("Keep island open", MenuCmd::TogglePinned, pinned),
         MenuItem::Sub {
             label: "Theme".into(),
-            items: vec![theme("Classic", Theme::Classic), theme("Halo", Theme::Oyen), theme("Glass", Theme::Glass), theme("Pill", Theme::Pill), theme("Diorama", Theme::Diorama)],
+            items: vec![theme("Classic", Theme::Classic), theme("Halo", Theme::Halo), theme("Glass", Theme::Glass), theme("Pill", Theme::Pill), theme("Diorama", Theme::Diorama)],
         },
         MenuItem::Sub { label: "Idle look".into(), items: crate::pill::status::looks(s.theme).iter().map(|l| style(*l)).collect() },
         item("Synced lyrics", MenuCmd::ToggleLyrics, s.lyrics),
@@ -247,7 +247,7 @@ fn build_into(mtm: MainThreadMarker, target: &MenuTarget, items: &[MenuItem], cm
     menu
 }
 
-/// Oyen's mark as a one-colour template image (macOS tints it for light and
+/// Halo's mark as a one-colour template image (macOS tints it for light and
 /// dark menu bars). Drawn from the mark's own outlines with the small cut's
 /// eyes, the size the logo uses at 32 px and below.
 fn mark_image(mtm: MainThreadMarker) -> Option<Retained<NSImage>> {
@@ -257,7 +257,7 @@ fn mark_image(mtm: MainThreadMarker) -> Option<Retained<NSImage>> {
     let bmp = crate::gfx::Bitmap::new(px, px, SCALE)?;
     let ctx: &CGContext = bmp.ctx();
     let parse = |d: &str| halo_core::svgpath::parse(d).ok().map(|segs| crate::gfx::cg_path(&segs));
-    let (head, fold, eyes) = (parse(halo_core::oyen::mark::HEAD)?, parse(halo_core::oyen::mark::FOLD)?, parse(halo_core::oyen::mark::EYES_SMALL)?);
+    let (head, fold, eyes) = (parse(halo_core::face::mark::HEAD)?, parse(halo_core::face::mark::FOLD)?, parse(halo_core::face::mark::EYES_SMALL)?);
     // The mark is 104 units wide, centred on y -11.04 in its own units.
     let s = 16.5 / 104.0;
     CGContext::translate_ctm(Some(ctx), PT / 2.0, PT / 2.0 + 11.04 * s);

@@ -3,7 +3,7 @@
 on the notch pill, dark and light, in five states.
 
 Every pill is drawn 4x larger and shrunk with LANCZOS so the edges come out smooth.
-Sizes are in notch px (pill 32 px tall), as in docs/A2Z-07-mascot-ideas.md.
+Sizes are in notch px (pill 32 px tall).
 
     python3 mockups/render_mascot_eyes.py
 """

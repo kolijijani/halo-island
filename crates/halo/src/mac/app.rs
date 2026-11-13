@@ -20,7 +20,7 @@ use crate::icons::Icon;
 use crate::island::{Geom, Island, HIT_MARGIN, SHOULDER};
 use crate::menubar::{Login, MenuBar, MenuCmd};
 use crate::notch::{self, Fit, Notch};
-use crate::oyen;
+use crate::face;
 use crate::pages::{self, PageKind};
 use crate::paths;
 use crate::pill;
@@ -736,11 +736,6 @@ impl App {
         if self.first_run && self.smoke.is_none() {
             let place = if self.screen.notch.is_some() { "Point at the notch to open it" } else { "Point at the island to open it" };
             self.st.notify(Icon::CheckCircle, self.st.accent, "Halo Island is on", place, 6.0, None);
-        }
-        if self.smoke.is_none() {
-            if let Some(dir) = services::trash_app_from_before_rename() {
-                self.st.notify(Icon::Trash, self.st.accent, "Oyen Halo is now Halo Island", format!("The old copy in {dir} is in the Trash"), 8.0, None);
-            }
         }
         if self.smoke.is_some() {
             self.set_timer(Timer::Smoke, 600);
@@ -2197,7 +2192,7 @@ impl App {
     }
 
     /// How the island paints: the theme's look, or around a notch the one
-    /// that meets its black (Oyen goes black there); Diorama's by day or at
+    /// that meets its black (Halo goes black there); Diorama's by day or at
     /// night, as its picture shows (it floats below a notch).
     fn look(&self) -> &'static Look {
         pill::look(&self.st, self.screen.notch.is_some())
@@ -4233,7 +4228,7 @@ impl App {
                 services::media::smoke_rest();
             }
             "now-playing-browser" => services::media::smoke_sound(),
-            // The themes on the real window: Glass, then Oyen and Glass
+            // The themes on the real window: Glass, then Halo and Glass
             // around a notch (one the screen pretends to have; CI's Macs
             // have none), open and resting in the menu bar's line.
             "glass-open" => {
@@ -4241,7 +4236,7 @@ impl App {
                 self.st.page = PageKind::Today;
                 self.expand();
             }
-            "glass-collapsed" | "notch-oyen-collapsed" | "pill-collapsed" => self.collapse(),
+            "glass-collapsed" | "notch-halo-collapsed" | "pill-collapsed" => self.collapse(),
             // Around the notch Pill's music floats below the menu bar even with
             // no line to sing (as in an intro, a break or a pause): the song
             // plays on with its lyrics dropped, and no timer.
@@ -4325,7 +4320,7 @@ impl App {
                 self.on_pointer(Point::new(self.cx, pill::TOP_GAP / 2.0));
                 self.cancel_hover();
             }
-            "notch-oyen-open" => {
+            "notch-halo-open" => {
                 // The pointer from pill-hover leaves first, and the timer set
                 // aside for pill-music-cost comes back.
                 self.leave();
@@ -4334,7 +4329,7 @@ impl App {
                 }
                 window::fake_notch(Some(Notch::MACBOOK));
                 self.refresh_screen();
-                self.on_menu(MenuCmd::SetTheme(Theme::Oyen));
+                self.on_menu(MenuCmd::SetTheme(Theme::Halo));
                 self.st.page = PageKind::Today;
                 self.expand();
             }
@@ -4667,10 +4662,10 @@ impl App {
                 let what = glass::kind().unwrap_or("no glass view");
                 Some(("glass-theme", glass::shown() && self.look().material == Material::Glass, format!("{what} under the open island, {notch}")))
             }
-            "notch-oyen-open" | "notch-oyen-collapsed" => {
+            "notch-halo-open" | "notch-halo-collapsed" => {
                 let look = self.look();
-                let ok = self.screen.notch.is_some() && *look == halo_core::look::OYEN_NIGHT && !glass::shown();
-                Some(("oyen-around-notch", ok, format!("ground {:?}, ink {:?}, font {:?}", look.ground, look.ink, look.font)))
+                let ok = self.screen.notch.is_some() && *look == halo_core::look::HALO_NIGHT && !glass::shown();
+                Some(("halo-around-notch", ok, format!("ground {:?}, ink {:?}, font {:?}", look.ground, look.ink, look.font)))
             }
             "pill-open" | "pill-collapsed" | "notch-pill-open" | "notch-pill-collapsed" => Some(self.pill_report()),
             "notch-pill-music" => {
@@ -5287,10 +5282,10 @@ fn system_report(st: &AppState) -> (bool, String) {
     (ok, detail)
 }
 
-/// Oyen's orange in his theme, the Mac's accent colour otherwise.
+/// Halo's orange in his theme, the Mac's accent colour otherwise.
 pub(crate) fn theme_accent(theme: Theme) -> Color {
-    if oyen::on(theme) {
-        oyen::ORANGE
+    if face::on(theme) {
+        face::ORANGE
     } else if theme == Theme::Diorama {
         // Its own, which its day and night looks paint as theirs.
         halo_core::look::DIORAMA_ACCENT
@@ -5403,8 +5398,8 @@ const SMOKE_STEPS: [&str; 90] = [
     "pill-drag",
     "pill-drag-open",
     "pill-drag-centre",
-    "notch-oyen-open",
-    "notch-oyen-collapsed",
+    "notch-halo-open",
+    "notch-halo-collapsed",
     "notch-glass-open",
     "notch-pill-open",
     "notch-pill-music",

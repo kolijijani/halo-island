@@ -27,9 +27,9 @@ pub enum Theme {
     /// The plain black island.
     #[default]
     Classic,
-    /// Oyen, the Halo cat, lives in the island: he peeks over its edge
-    /// while it rests, bobs to the music and takes Oyen's orange as accent.
-    Oyen,
+    /// Halo, the Halo cat, lives in the island: he peeks over its edge
+    /// while it rests, bobs to the music and takes Halo's orange as accent.
+    Halo,
     /// Liquid glass: the island bends, frosts and tints what's under it.
     Glass,
     /// Pill: the island floats a little below the top edge as a black
@@ -48,7 +48,7 @@ impl Theme {
     /// The theme picked free: Classic and Halo. Glass, Pill and Diorama are
     /// Halo Pro's (`Settings::theme_free`, the gate at every picker).
     pub fn free(self) -> bool {
-        matches!(self, Theme::Classic | Theme::Oyen)
+        matches!(self, Theme::Classic | Theme::Halo)
     }
 }
 
@@ -85,7 +85,7 @@ pub struct Settings {
     pub idle_style: IdleStyle,
     pub use_24h: bool,
     /// Halo Mascot: the idle clock gives way to Halo's eyes while nothing
-    /// else shows (`crate::mascot`). Oyen's theme keeps Oyen.
+    /// else shows (`crate::mascot`). Halo's theme keeps Halo.
     pub mascot: bool,
     /// Delay before hover expands the island.
     pub hover_delay_ms: u32,
@@ -556,8 +556,8 @@ mod tests {
         // Files written before themes existed keep the black island.
         let s: Settings = serde_json::from_str(r#"{"idle_style":"eyes"}"#).unwrap();
         assert_eq!(s.theme, Theme::Classic);
-        let s: Settings = serde_json::from_str(r#"{"theme":"oyen"}"#).unwrap();
-        assert_eq!(s.theme, Theme::Oyen);
+        let s: Settings = serde_json::from_str(r#"{"theme":"halo"}"#).unwrap();
+        assert_eq!(s.theme, Theme::Halo);
         let s: Settings = serde_json::from_str(r#"{"theme":"glass"}"#).unwrap();
         assert_eq!(s.theme, Theme::Glass);
         let s: Settings = serde_json::from_str(r#"{"theme":"pill"}"#).unwrap();
@@ -572,12 +572,12 @@ mod tests {
         // it has its name here, and then the loop below asks for it.
         let name = |t: Theme| match t {
             Theme::Classic => "classic",
-            Theme::Oyen => "oyen",
+            Theme::Halo => "halo",
             Theme::Glass => "glass",
             Theme::Pill => "pill",
             Theme::Diorama => "diorama",
         };
-        for theme in [Theme::Classic, Theme::Oyen, Theme::Glass, Theme::Pill, Theme::Diorama] {
+        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
             let s = Settings { theme, ..Settings::default() };
             let j = serde_json::to_string(&s).unwrap();
             assert!(j.contains(&format!(r#""theme":"{}""#, name(theme))), "{theme:?}: {j}");
@@ -621,8 +621,8 @@ mod tests {
     #[test]
     fn files_with_clipboard_history_still_load_and_drop_it() {
         // Files from 0.2.8 and before hold the key: it's ignored, and gone after a save.
-        let s = serde_json::from_str::<Settings>(r#"{"settings_version":4,"clipboard_history":true,"theme":"oyen"}"#).unwrap().sanitized();
-        assert_eq!(s.theme, Theme::Oyen);
+        let s = serde_json::from_str::<Settings>(r#"{"settings_version":4,"clipboard_history":true,"theme":"halo"}"#).unwrap().sanitized();
+        assert_eq!(s.theme, Theme::Halo);
         assert!(!serde_json::to_string(&s).unwrap().contains("clipboard"));
         // A Clipboard start page from before 0.2.7 opens Music.
         let s = serde_json::from_str::<Settings>(r#"{"settings_version":3,"start_page":"clipboard"}"#).unwrap().sanitized();

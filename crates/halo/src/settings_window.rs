@@ -437,7 +437,7 @@ const SOUNDS: [(PrayerSound, &str); 3] = [(PrayerSound::Adzan, "Adzan"), (Prayer
 const FOLLOWS: [(PrayerFollow, &str); 1] = [(PrayerFollow::Jakim, "Malaysia")];
 const THEMES: [(Theme, &str, &str); 5] = [
     (Theme::Classic, "Classic", "A black island at the top edge"),
-    (Theme::Oyen, "Halo", "Halo lives in the island"),
+    (Theme::Halo, "Halo", "Halo lives in the island"),
     (Theme::Glass, "Glass", "Frosted glass over your screen"),
     (Theme::Pill, "Pill", "Floats just below the top edge"),
     (Theme::Diorama, "Diorama", "A little place that keeps your day"),
@@ -473,7 +473,7 @@ fn nearest(list: &[(u32, &str)], ms: u32) -> Option<usize> {
 fn idle_name(s: IdleStyle, theme: Theme) -> &'static str {
     match s {
         IdleStyle::Clock => "Clock",
-        IdleStyle::Eyes if theme == Theme::Oyen => "Halo",
+        IdleStyle::Eyes if theme == Theme::Halo => "Halo",
         IdleStyle::Eyes => "Eyes",
         IdleStyle::Minimal => "Minimal",
         IdleStyle::Hidden => "Hidden",
@@ -1944,7 +1944,7 @@ fn diorama_spot(screen: Rect, px: (u32, u32), scale: f32) -> Rect {
 }
 
 /// A theme's island on a small screen: hanging from its top edge, glass,
-/// with Oyen's eyes, floating below it, or floating there as Diorama's
+/// with Halo's eyes, floating below it, or floating there as Diorama's
 /// picture. Drawn as it is, in either mode.
 fn draw_theme_preview(c: &mut Canvas, theme: Theme, screen: Rect) {
     c.clip(screen);
@@ -1953,15 +1953,15 @@ fn draw_theme_preview(c: &mut Canvas, theme: Theme, screen: Rect) {
     let cx = screen.center().x;
     let clock = TextStyle::caption().weight(Weight::Semibold).tabular().center();
     match theme {
-        Theme::Classic | Theme::Oyen | Theme::Glass => {
+        Theme::Classic | Theme::Halo | Theme::Glass => {
             let body = Rect::new(cx - 34.0, screen.y, 68.0, 20.0);
             let (fill, border) = match theme {
                 Theme::Glass => (Color::white(0.30), Some(Color::white(0.45))),
                 _ => (palette::ISLAND, None),
             };
             c.notch(body, 9.0, 5.0, fill, border);
-            if theme == Theme::Oyen {
-                // Oyen's eyes peek over the island's edge.
+            if theme == Theme::Halo {
+                // Halo's eyes peek over the island's edge.
                 for dx in [-6.0, 6.0] {
                     c.fill_rrect(Rect::from_center(Point::new(cx + dx, body.center().y), 5.0, 8.0), 2.5, palette::ORANGE);
                 }
@@ -2276,7 +2276,7 @@ mod tests {
         assert!(!looks(&st).contains(&"Status"));
         st.settings.theme = Theme::Pill;
         assert!(looks(&st).contains(&"Status"));
-        st.settings.theme = Theme::Oyen;
+        st.settings.theme = Theme::Halo;
         assert!(looks(&st).contains(&"Halo"));
         // Diorama rests as its picture: with the time, alone, or hidden. It
         // draws its clock for a status bar picked in Pill, and the picture
@@ -2303,7 +2303,7 @@ mod tests {
     fn place(t: Theme) -> usize {
         match t {
             Theme::Classic => 0,
-            Theme::Oyen => 1,
+            Theme::Halo => 1,
             Theme::Glass => 2,
             Theme::Pill => 3,
             Theme::Diorama => 4,

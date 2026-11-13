@@ -235,7 +235,7 @@ jobs:
         if: matrix.group == 'classic'
         shell: pwsh
         env:
-          HALO_SELFTEST_THEME: oyen
+          HALO_SELFTEST_THEME: halo
           HALO_SELFTEST_LYRICS: ja
           HALO_SELFTEST_ANALYZER: required
         run: |
@@ -244,20 +244,20 @@ jobs:
           $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
           [HaloCiHalo.User32]::SetCursorPos([int]($b.Width / 2), [int]($b.Height / 2)) | Out-Null
 
-          New-Item -ItemType Directory -Force -Path selftest-oyen-ja | Out-Null
-          $p = Start-Process -FilePath target\release\halo.exe -ArgumentList "--selftest","selftest-oyen-ja" -PassThru
+          New-Item -ItemType Directory -Force -Path selftest-halo-ja | Out-Null
+          $p = Start-Process -FilePath target\release\halo.exe -ArgumentList "--selftest","selftest-halo-ja" -PassThru
           $null = $p.Handle
           if (-not $p.WaitForExit(180000)) { Stop-Process -Id $p.Id -Force; $code = -1 } else { $code = $p.ExitCode }
-          "oyen + japanese self-test exit code: $code"
-          if (Test-Path selftest-oyen-ja\report.json) {
-            $r = Get-Content selftest-oyen-ja\report.json -Raw | ConvertFrom-Json
+          "halo + japanese self-test exit code: $code"
+          if (Test-Path selftest-halo-ja\report.json) {
+            $r = Get-Content selftest-halo-ja\report.json -Raw | ConvertFrom-Json
             "renderer: $($r.renderer); states passed: $($r.states_passed)/$($r.states_total); failed: $($r.failed_checks -join ', ')"
             if ($r.slow_frames) { "::warning title=Slow frames on CI's software GPU (not counted)::$($r.slow_frames -join '; ')" }
           }
           "---- pronunciation (halo.log)"
-          Select-String -Path selftest-oyen-ja\home\cache\halo.log -Pattern 'selftest: \[ja\]|fonts:|reading analyzer' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line }
+          Select-String -Path selftest-halo-ja\home\cache\halo.log -Pattern 'selftest: \[ja\]|fonts:|reading analyzer' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line }
           if ($code -ne 0) {
-            Get-Content selftest-oyen-ja\home\cache\halo.log -Tail 80 -ErrorAction SilentlyContinue
+            Get-Content selftest-halo-ja\home\cache\halo.log -Tail 80 -ErrorAction SilentlyContinue
             exit 1
           }
 
@@ -269,7 +269,7 @@ jobs:
         if: matrix.group == 'classic'
         shell: pwsh
         env:
-          HALO_SELFTEST_THEME: oyen
+          HALO_SELFTEST_THEME: halo
           HALO_SELFTEST_LYRICS: ja
           HALO_SELFTEST_ANALYZER: "off"
           HALO_SELFTEST_JA_DICT: crates\halo-core\data\ja-readings.dic.zst
@@ -562,7 +562,7 @@ jobs:
           name: halo-screens-${{ matrix.group }}
           path: |
             selftest-out
-            selftest-oyen-ja
+            selftest-halo-ja
             selftest-ja-own
             selftest-glass-light
             selftest-glass-dark
@@ -637,7 +637,7 @@ jobs:
           if-no-files-found: error
 
   install-test:
-    name: Install over 0.1.1, check and uninstall (Windows)
+    name: Install, check and uninstall (Windows)
     needs: installer
     runs-on: windows-2025
     steps:
@@ -646,13 +646,9 @@ jobs:
         with:
           name: halo-island-setup
           path: dist
-      - name: Fetch the release to upgrade from
-        shell: pwsh
-        # 0.1.1 is the installer people have today; the check upgrades from it.
-        run: Invoke-WebRequest -Uri "https://github.com/lucacadalora/halo-studio/releases/download/v0.1.1/Halo-Setup-0.1.1.exe" -OutFile previous-setup.exe
       - name: Install, check, uninstall
         shell: pwsh
-        run: ./tools/ci-installer.ps1 -Setup "dist\Halo-Island-Setup-$env:HALO_VERSION.exe" -Version $env:HALO_VERSION -Previous previous-setup.exe -Out installer-out
+        run: ./tools/ci-installer.ps1 -Setup "dist\Halo-Island-Setup-$env:HALO_VERSION.exe" -Version $env:HALO_VERSION -Out installer-out
       - name: Upload screenshots and results
         if: always()
         uses: actions/upload-artifact@v4
