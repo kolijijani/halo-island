@@ -13,7 +13,7 @@ use crate::settings::Settings;
 use crate::sha256;
 
 /// Where the files live: `<RELEASES>/<tag>/<name>`.
-pub const RELEASES: &str = "https://halo.local.invalid/releases/download";
+pub const RELEASES: &str = "https://github.com/kolijijani/halo-island/releases/download";
 
 /// One file an add-on downloads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -305,7 +305,7 @@ pub const DOWNLOADER_MAC: Addon = Addon {
         // mac.yml's downloader-tools job (QuickJS-ng v0.17.0; FFmpeg 9.0.2, tools/build-ffmpeg-min.sh darwin).
         AddonFile { name: "qjs", size: 2_456_496, sha256: "d4526ffc81f4251e7e835d789a441e367b03ba1700bd111e9ce1a1a5bec0134a", url: None },
         AddonFile { name: "ffmpeg", size: 4_307_968, sha256: "fb47d9aa82cf1e61aa49b54d1989fffef98571d1cec3d0f9a5133e0b63468724", url: None },
-        AddonFile { name: "NOTICE.txt", size: 33_047, sha256: "15356f0833820f1770dc152d04cdb50d4ac91e1cfe840d51c9c6132b65c5336b", url: None },
+        AddonFile { name: "NOTICE.txt", size: 33_041, sha256: "9cabe008664215a95b89df56038612bb5551442e2383fe33be5b00cc0e5cfe8e", url: None },
     ],
     ..DOWNLOADER_WINDOWS
 };
@@ -525,7 +525,7 @@ mod tests {
             assert!(f.matches(bytes), "{name}: size {} sha256 {}", bytes.len(), sha256::hex(&sha256::sha256(bytes)));
         }
         let ja = Addon::find("ja").unwrap();
-        assert_eq!(ja.url(&ja.files[0]), "https://halo.local.invalid/releases/download/addon-ja-1/ja-readings.dic.zst");
+        assert_eq!(ja.url(&ja.files[0]), "https://github.com/kolijijani/halo-island/releases/download/addon-ja-1/ja-readings.dic.zst");
         assert_eq!(Status::Off.line(ja, false), ja.blurb);
         assert_eq!(Status::Ready.line(ja, false), "On · 3.8 MB on this PC");
         // The Mac app has no Windows reason to give, and says Mac.
@@ -549,7 +549,7 @@ mod tests {
     #[test]
     fn files_come_from_the_release() {
         let a = Addon::find("sholat").unwrap();
-        assert_eq!(a.url(&a.files[1]), "https://halo.local.invalid/releases/download/addon-sholat-3/adzan.m4a");
+        assert_eq!(a.url(&a.files[1]), "https://github.com/kolijijani/halo-island/releases/download/addon-sholat-3/adzan.m4a");
         assert_eq!(a.size(), 959_349);
         assert!(Addon::find("nope").is_none());
     }
@@ -619,7 +619,7 @@ mod tests {
         }
         assert_eq!(ytdlp_tags[0], ytdlp_tags[1], "yt-dlp: the same version on Windows and the Mac");
         // Our own builds and the notices: each add-on's own pre-release.
-        let ours = "https://halo.local.invalid/releases/download";
+        let ours = "https://github.com/kolijijani/halo-island/releases/download";
         assert_eq!(w.url(&w.files[2]), format!("{ours}/addon-downloader-1/ffmpeg.exe"));
         assert_eq!(w.url(&w.files[3]), format!("{ours}/addon-downloader-1/NOTICE.txt"));
         for (f, name) in m.files[1..].iter().zip(["qjs", "ffmpeg", "NOTICE.txt"]) {
@@ -672,7 +672,7 @@ mod tests {
         for (d, bytes) in [(DOWNLOADER_WINDOWS, windows), (DOWNLOADER_MAC, mac)] {
             let notice = d.files.iter().find(|f| f.name == "NOTICE.txt").unwrap();
             assert!(notice.matches(bytes), "{}: size {} sha256 {}", d.tag, bytes.len(), sha256::hex(&sha256::sha256(bytes)));
-            assert_eq!(d.url(notice), format!("https://halo.local.invalid/releases/download/{}/NOTICE.txt", d.tag));
+            assert_eq!(d.url(notice), format!("https://github.com/kolijijani/halo-island/releases/download/{}/NOTICE.txt", d.tag));
         }
     }
 

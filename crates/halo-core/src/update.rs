@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 /// Where every copy looks.
 pub const FEED_URL: &str = "https://kolijijani.github.io/halo-island/latest.json";
 /// Downloads only ever come from this repository's releases.
-const DOWNLOADS: &str = "https://halo.local.invalid/releases/download/v";
-const RELEASE_PAGE: &str = "https://halo.local.invalid/releases/tag/v";
+const DOWNLOADS: &str = "https://github.com/kolijijani/halo-island/releases/download/v";
+const RELEASE_PAGE: &str = "https://github.com/kolijijani/halo-island/releases/tag/v";
 /// The file's layout this version reads. A file with a newer one is ignored
 /// (a later version of the app will read it).
 pub const SCHEMA: u64 = 1;
