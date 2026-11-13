@@ -10,7 +10,6 @@ Halo Island belongs to the Halo family. Halo is the orange cat of the Halo Islan
 | `art/halo-peek.webp` | Halo peeking over the island while it plays music (README, link preview) |
 | `art/halo-asleep.webp` | Halo asleep on the island while it plays music (the website's Halo theme section) |
 | `art/poses/halo-*.webp` | Halo with each page's prop: music, focus, health, shelf, tasks, clipboard, today, system (a processor chip), games (a controller), prayer (a lantern) (README pictures and website) |
-| `readme-hero.webp` | The README banner: a 200 % screenshot of the website's hero (`site/index.html`), so the README shows the site's type |
 | `social-preview.png` | The card GitHub shows when the repo link is shared (Settings → General → Social preview) |
 
 `python3 tools/make_brand.py` redraws the logo, `crates/halo/res/halo.ico` and everything in `installer/art` from these files.
