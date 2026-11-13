@@ -150,7 +150,7 @@ pub const JAPANESE_READINGS: Addon = Addon {
     tag: "addon-ja-1",
     files: &[
         AddonFile { name: JA_READINGS_FILE, size: 3_790_036, sha256: "4950e5e42a2a48ad50396304c6bfbb8f9a97b33947e147007943361d65d856c8", url: None },
-        AddonFile { name: "NOTICE.txt", size: 4_792, sha256: "623c1d088060941c305ffce261a34765eea9b932678d23c0093e9bbe30d83a7f", url: None },
+        AddonFile { name: "NOTICE.txt", size: 4_797, sha256: "bb8fe3b2285d8898234fb6e368554a41e903b7a44fb7f5a6720d14a0e7883cea", url: None },
     ],
     pro: false,
 };
@@ -281,7 +281,7 @@ pub const DOWNLOADER_WINDOWS: Addon = Addon {
         },
         // tools/build-ffmpeg-min.sh's build (FFmpeg 9.0.2, the same bytes every time).
         AddonFile { name: "ffmpeg.exe", size: 2_298_880, sha256: "8a42638bc2c9bed20670a3e89ccb7117345a941e245d8151aa60066cac0b3993", url: None },
-        AddonFile { name: "NOTICE.txt", size: 32_610, sha256: "d679196672295dfec7c784ae134c87e24e69a56ed699363ee4f7fae9e7aa7256", url: None },
+        AddonFile { name: "NOTICE.txt", size: 32_606, sha256: "01e2747ec4a5cbba518bbfa229941b70cc72a2cd3f9b0da11c583e209a4185c3", url: None },
     ],
     pro: true,
 };
