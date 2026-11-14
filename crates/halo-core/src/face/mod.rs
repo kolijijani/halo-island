@@ -26,12 +26,13 @@ use std::sync::OnceLock;
 
 // The colours, as 0xRRGGBB (what `geom::Color::hex` takes).
 
-/// The head, and the ear tip's front while it stands up.
-pub const ORANGE: u32 = 0xF0892E;
-/// The ear tip's back, which shows while it lies folded.
-pub const FOLD_ORANGE: u32 = 0xC9581A;
-/// The eyes.
-pub const INK: u32 = 0x171717;
+/// The head's fur, and the ear tip's front while it stands up: the rebranded
+/// grey British Shorthair (mascot design B).
+pub const ORANGE: u32 = 0x626270;
+/// The ear tip's back, which shows while it lies folded: charcoal inner ear.
+pub const FOLD_ORANGE: u32 = 0x29272D;
+/// The eyes: olive-yellow capsules.
+pub const INK: u32 = 0xE4D98A;
 /// Love's hearts.
 pub const PINK: u32 = 0xFF4F8B;
 /// The logged tick.

@@ -273,9 +273,9 @@ mod tests {
             Canvas::face(96.0),
             "halo",
         );
-        assert!(svg.contains("fill=\"#F0892E\""));
-        assert!(svg.contains("fill=\"#C9581A\""));
-        assert!(svg.contains("fill=\"#171717\""));
+        assert!(svg.contains("fill=\"#626270\""));
+        assert!(svg.contains("fill=\"#29272D\""));
+        assert!(svg.contains("fill=\"#E4D98A\""));
         assert!(!svg.contains("<mask"));
     }
 
@@ -329,9 +329,9 @@ mod tests {
 
     #[test]
     fn colours_are_written_as_css_hex() {
-        assert_eq!(css(ORANGE), "#F0892E");
-        assert_eq!(css(FOLD_ORANGE), "#C9581A");
-        assert_eq!(css(INK), "#171717");
+        assert_eq!(css(ORANGE), "#626270");
+        assert_eq!(css(FOLD_ORANGE), "#29272D");
+        assert_eq!(css(INK), "#E4D98A");
         assert_eq!(css(PINK), "#FF4F8B");
         assert_eq!(css(GREEN), "#1E9E4A");
         assert_eq!(css(0x00000A), "#00000A");
