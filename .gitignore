@@ -1,0 +1,17 @@
+/target
+/dist
+/out
+/.cc-handoff.md
+/.cc-notes.md
+*.log
+.DS_Store
+/selftest-out
+/.claude/
+/design-review
+/after
+/ci-artifacts
+/_site
+__pycache__/
+*.pyc
+/server/license-data
+*.pem

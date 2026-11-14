@@ -1,0 +1,46 @@
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"
+	>
+	<channel>
+		<atom:link href="https://www.aljazeera.com/xml/rss/all.xml" rel="self" type="application/rss+xml"/>
+		<title>Al Jazeera &#8211; Breaking News, World News and Video from Al Jazeera</title>
+		<link>https://www.aljazeera.com</link>
+		<managingEditor>apps.support@aljazeera.net (Apps Support)</managingEditor>
+		<webMaster>apps.support@aljazeera.net (Apps Support)</webMaster>
+		<description>Breaking News, World News and Video from Al Jazeera</description>
+		<copyright>© 2026 Al Jazeera Media Network</copyright>
+		<lastBuildDate>Fri, 13 Nov 2026 09:43:30 +0000</lastBuildDate>
+		<language>en</language>
+		<image>
+			<url>https://www.aljazeera.com/images/logo_aje.png</url>
+			<title>Al Jazeera &#8211; Breaking News, World News and Video from Al Jazeera</title>
+			<link>https://www.aljazeera.com</link>
+			<description>Breaking News, World News and Video from Al Jazeera</description>
+		</image>
+		<generator>https://wordpress.org/?v=7.0.8</generator>
+<site xmlns="com-wordpress:feed-additions:1">213497099</site>			<item>
+				<link>https://www.aljazeera.com/news/2026/11/13/with-every-rainfall-gaza-risks-losing-access-to-power-and-healthcare?traffic_source=rss</link>
+				<title>With every rainfall, Gaza risks losing access to power and healthcare</title>
+				<description><![CDATA[Heavy rains flood shelters, damage solar power systems and threat essential healthcare services.]]></description>
+				<pubDate>Fri, 13 Nov 2026 09:43:30 +0000</pubDate>
+				<category>News</category>
+				<guid isPermaLink="false">https://www.aljazeera.com/?t=1794549291</guid>
+				<post-id xmlns="com-wordpress:feed-additions:1">5147997</post-id>			</item>
+<item>
+				<link>https://www.aljazeera.com/news/2026/11/13/microsoft-hit-by-global-outages-what-happened-and-why?traffic_source=rss</link>
+				<title>Microsoft hit by global outages: What happened and why?</title>
+				<description><![CDATA[Outlook, Teams and Copilot remain disrupted in 74 countries as Microsoft reports ‘marginal success’ in fixing outage.]]></description>
+				<pubDate>Fri, 13 Nov 2026 09:30:55 +0000</pubDate>
+				<category>News</category>
+				<guid isPermaLink="false">https://www.aljazeera.com/?t=1794556169</guid>
+				<post-id xmlns="com-wordpress:feed-additions:1">5147997</post-id>			</item>
+<item>
+				<link>https://www.aljazeera.com/video/newsfeed/2026/11/13/pope-leo-xiv-warns-on-pressures-facing-modern-families?traffic_source=rss</link>
+				<title>Pope Leo XIV warns on pressures facing modern families</title>
+				<description><![CDATA[Pope Leo XIV has warned that digital technology risks replacing genuine human interaction. ]]></description>
+				<pubDate>Fri, 13 Nov 2026 09:11:37 +0000</pubDate>
+				<category>Show Types</category>
+				<guid isPermaLink="false">https://www.aljazeera.com/?t=1794554669</guid>
+				<post-id xmlns="com-wordpress:feed-additions:1">5147997</post-id>			</item>
+
+			</channel>
+</rss>

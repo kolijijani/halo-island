@@ -1,0 +1,40 @@
+Prayer times add-on for Halo Island: what it holds and where it comes from
+
+places.json
+  Every location in Kemenag RI's (Bimas Islam) prayer schedule, named as
+  Kemenag writes them, each with a reference point fitted to Kemenag's
+  published 2026 schedule; plus Makkah, Madinah and Jeddah (coordinates
+  from en.wikipedia.org). Part of Halo Island, under its MIT license.
+
+adzan.m4a
+  "The Adhan - Muslim Call to Prayer - Aaqib Azeez" by Atcovi, from
+  Wikimedia Commons (the version uploaded on 11 December 2025):
+  https://commons.wikimedia.org/wiki/File:The_Adhan_-_Muslim_Call_to_Prayer_-_Aaqib_Azeez.mp3
+  License: Creative Commons Attribution-ShareAlike 4.0 International
+  (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/
+  Changes: made mono, the rumble below 70 Hz filtered out, its loudness
+  levelled (a few peaks limited), faded in and out, and saved as AAC
+  (80 kbit/s). This adzan.m4a is shared under the same license,
+  CC BY-SA 4.0.
+
+adzan-makkah.m4a (addon-sholat-4, downloaded only when picked)
+  "Maghrib Adhan at the Masjid al Haram, Mecca - 25 Feb, 2012" by
+  3omar Faruq (YouTube: yodasdad), from Wikimedia Commons:
+  https://commons.wikimedia.org/wiki/File:Maghrib_Adhan_at_the_Masjid_al_Haram,_Mecca_-_25_Feb,_2012.webm
+  License: Creative Commons Attribution 3.0 Unported (CC BY 3.0),
+  https://creativecommons.org/licenses/by/3.0/ (reviewed on Commons by
+  YouTubeReviewBot, 14 Feb 2020)
+  Changes: only the adzan kept (1:54 to 4:52 of the video), made mono,
+  faded in and out, its loudness levelled, and saved as AAC (80 kbit/s).
+  The same file addon-sholat-1 held.
+
+adzan-subuh.m4a (addon-sholat-4, downloaded with any adzan voice)
+  "Eid al-Fitr Fajr azan at Malmö Mosque - 19 August 2012", recited by
+  Besim Azemi, by Islamic Center Malmö, from Wikimedia Commons:
+  https://commons.wikimedia.org/wiki/File:Eid_al-Fitr_Fajr_azan_at_Malm%C3%B6_Mosque_-_19_August_2012.webm
+  License: Creative Commons Attribution 3.0 Unported (CC BY 3.0),
+  https://creativecommons.org/licenses/by/3.0/ (reviewed on Commons by
+  YouTubeReviewBot, 12 Feb 2020)
+  Changes: only the adzan kept (0:04.6 to 3:57.2 of the video), made
+  mono, the rumble below 70 Hz filtered out, faded in and out, its
+  loudness levelled (a few peaks limited), and saved as AAC (80 kbit/s).
