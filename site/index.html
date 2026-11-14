@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Halo Island · A living notch for Windows and Mac</title>
-<meta name="description" content="Halo Island is a free, open-source living notch for Windows 10 and 11 and macOS 14 or later: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away at the top of your screen.">
+<title>Halo Island · A living notch for Windows</title>
+<meta name="description" content="Halo Island is a free, open-source living notch for Windows 10 and 11: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away at the top of your screen.">
 <link rel="canonical" href="https://kolijijani.github.io/halo-island/">
 <!-- Link previews (WhatsApp, X, LinkedIn, Facebook, Slack, Discord...). URLs are
      absolute because the networks read these tags without loading the page. The
@@ -14,16 +14,16 @@
 <meta property="og:site_name" content="Halo Island">
 <meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://kolijijani.github.io/halo-island/">
-<meta property="og:title" content="Halo Island · A living notch for Windows and Mac">
-<meta property="og:description" content="A free, open-source island at the top of your screen, on Windows and Mac: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away.">
+<meta property="og:title" content="Halo Island · A living notch for Windows">
+<meta property="og:description" content="A free, open-source island at the top of your screen, on Windows: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away.">
 <meta property="og:image" content="https://kolijijani.github.io/halo-island/assets/share/halo-island-share.jpg?v=2">
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The Halo Island island hanging from the top of the screen, open on the Music page with synced lyrics, and Halo the cat peeking over the island.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Halo Island · A living notch for Windows and Mac">
-<meta name="twitter:description" content="A free, open-source island at the top of your screen, on Windows and Mac: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away.">
+<meta name="twitter:title" content="Halo Island · A living notch for Windows">
+<meta name="twitter:description" content="A free, open-source island at the top of your screen, on Windows: music with synced lyrics, a focus timer, a file shelf your phone can drop into, tasks and your day, one hover away.">
 <meta name="twitter:image" content="https://kolijijani.github.io/halo-island/assets/share/halo-island-share.jpg?v=2">
 <meta name="twitter:image:alt" content="The Halo Island island hanging from the top of the screen, open on the Music page with synced lyrics, and Halo the cat peeking over the island.">
 <meta name="theme-color" content="#ffffff">
@@ -110,7 +110,6 @@ html[data-look="halo"] .look-classic { display: none !important; }
 /* ---------- type, as measured on apple.com (desktop, then narrower columns) */
 .t-hero-eyebrow { font: 600 28px/1.14286 var(--font-display); letter-spacing: 0.007em; }
 .t-hero, .t-xl { font: 600 80px/1.05 var(--font-display); letter-spacing: -0.015em; }
-.t-compare { font: 600 64px/1.0625 var(--font-display); letter-spacing: -0.009em; }
 .t-l { font: 600 56px/1.07143 var(--font-display); letter-spacing: -0.005em; }
 .t-m { font: 600 48px/1.08349 var(--font-display); letter-spacing: -0.003em; }
 .t-card { font: 600 28px/1.14286 var(--font-display); letter-spacing: 0.007em; }
@@ -281,7 +280,6 @@ main { container-type: inline-size; }
 .buybox span.fine { display: block; margin-top: 3px; font: 400 12px/1.33337 var(--font-text); letter-spacing: -0.01em; color: var(--gray); }
 .buybox a.notes { color: var(--link); text-decoration: none; }
 .buybox a.notes:hover { text-decoration: underline; }
-.hero-other { margin-top: 12px; font-size: 14px; }
 .hero-halo { align-self: end; height: 100%; max-height: 240px; width: auto; max-width: min(420px, 80%); object-fit: contain; object-position: center bottom; transform: translate3d(0, calc((1 - var(--p, 1)) * 30%), 0); will-change: transform; }
 @media (max-height: 820px) and (min-width: 700px) { .hero-halo { display: none; } }
 
@@ -322,11 +320,6 @@ main { container-type: inline-size; }
 .news-visual.top > img { position: absolute; top: 0; width: 150%; max-width: none; max-height: none; }
 .news-visual.top.left > img { left: 7%; }
 .news-visual.top.right > img { right: 7%; width: 190%; }
-.mac-alert { width: 258px; display: grid; justify-items: center; gap: 10px; padding: 20px 18px 16px; border-radius: 16px; background: rgba(246, 246, 246, 0.95); box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3); text-align: center; font: 600 12.5px/1.35 var(--font-text); letter-spacing: -0.01em; color: #1d1d1f; }
-.mac-alert img { width: 52px; height: 52px; }
-.mac-alert-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; margin-top: 4px; font-weight: 500; }
-.mac-alert-btns span { padding: 5px 0; border-radius: 7px; background: rgba(0, 0, 0, 0.08); }
-.mac-alert-btns .go { background: #0a84ff; color: #fff; }
 .ctx-menu { position: absolute; right: 7%; top: 26%; display: grid; min-width: 168px; padding: 5px; border-radius: 9px; background: rgba(248, 248, 248, 0.96); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35); font: 500 11.5px/1.2 var(--font-text); color: #1d1d1f; text-align: left; }
 .ctx-menu span { position: relative; padding: 4px 10px 4px 22px; border-radius: 5px; white-space: nowrap; }
 .ctx-menu span:first-child { background: #0a84ff; color: #fff; }
@@ -507,24 +500,6 @@ main { container-type: inline-size; }
 .gap-t { margin-top: 16px; }
 .band-cream { background: linear-gradient(180deg, var(--bg), var(--cream) 12%, var(--cream) 88%, var(--bg)); }
 
-/* ---------- the Mac */
-.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(0, 0, 0, 0.06); margin-bottom: 26px; }
-.seg button { all: unset; cursor: pointer; padding: 6px 16px; border-radius: 7px; font: 500 13px/1.2 var(--font-text); color: var(--gray); }
-.seg button[aria-checked="true"] { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
-.seg button:focus-visible { outline: 2px solid var(--blue); }
-.mac-strips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-
-/* ---------- compare */
-.cmp-wrap { overflow-x: auto; }
-.cmp { width: 100%; border-collapse: collapse; }
-.cmp th, .cmp td { padding: 16px 10px; border-bottom: 1px solid var(--line); text-align: left; font: 400 17px/1.47059 var(--font-text); letter-spacing: -0.022em; vertical-align: middle; }
-.cmp thead th { border-bottom: 0; padding-bottom: 24px; }
-.cmp thead .os { text-align: center; font: 600 24px/1.16667 var(--font-display); letter-spacing: 0.009em; }
-.cmp thead .os small { display: block; margin-top: 6px; font: 400 14px/1.42859 var(--font-text); letter-spacing: -0.016em; color: var(--gray); }
-.cmp thead .os .ico { width: 32px; height: 32px; margin: 0 auto 12px; display: block; }
-.cmp td.c { text-align: center; width: 22%; }
-.cmp .yes svg { width: 20px; height: 20px; display: inline-block; vertical-align: middle; fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.cmp .no { font: 400 14px/1 var(--font-text); color: var(--gray-2); }
 
 /* ---------- Halo Island: a dark tile inside the light page */
 .dark { background: #000; color: #f5f5f7; border-radius: var(--r); overflow: hidden; }
@@ -620,7 +595,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
 /* ---------- narrower columns (the docked sidebar narrows the page too) */
 @container (max-width: 1000px) {
   .t-hero, .t-xl { font-size: 64px; line-height: 1.0625; letter-spacing: -0.009em; }
-  .t-compare, .t-l { font-size: 48px; line-height: 1.08349; letter-spacing: -0.003em; }
+  .t-l { font-size: 48px; line-height: 1.08349; letter-spacing: -0.003em; }
   .t-m { font-size: 40px; line-height: 1.1; letter-spacing: 0; }
   .t-hero-eyebrow, .t-card { font-size: 24px; line-height: 1.16667; letter-spacing: 0.009em; }
   .t-label { font-size: 21px; line-height: 1.19048; letter-spacing: 0.011em; }
@@ -637,7 +612,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
 @container (max-width: 640px) {
   .t-hero { font-size: 40px; line-height: 1.1; letter-spacing: 0; }
   .t-xl { font-size: 48px; line-height: 1.08349; letter-spacing: -0.003em; }
-  .t-compare { font-size: 40px; line-height: 1.1; letter-spacing: 0; }
   .t-l { font-size: 28px; line-height: 1.14286; letter-spacing: 0.007em; }
   .t-m { font-size: 32px; line-height: 1.125; letter-spacing: 0.004em; }
   .t-hero-eyebrow, .t-card { font-size: 21px; line-height: 1.19048; letter-spacing: 0.011em; }
@@ -647,7 +621,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   .t-avail { font-size: 14px; line-height: 1.28577; letter-spacing: -0.016em; }
   .sec { --sp: 88px; }
   .head { margin-bottom: 36px; }
-  .bento, .duo, .stats, .stats.two, .facts, .facts.two, .os-cards, .price-cards, .cards3, .mac-strips, .news, .news.two { grid-template-columns: minmax(0, 1fr); }
+  .bento, .duo, .stats, .stats.two, .facts, .facts.two, .os-cards, .price-cards, .cards3, .news, .news.two { grid-template-columns: minmax(0, 1fr); }
   .news-tile { padding: 24px 24px 26px; border-radius: 18px; }
   .news-tile.wide { grid-column: auto; }
   .news-tile.shot { padding: 0 0 26px; }
@@ -680,12 +654,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   .ruby { padding: 10px 12px 8px; border-radius: 14px; }
   .ruby b { font-size: 20px; }
   .ruby i { font-size: 12px; }
-  .cmp th, .cmp td { padding: 13px 6px; font-size: 15px; }
-  .cmp td.c { width: 64px; }
-  .cmp thead .os { font-size: 17px; }
-  .cmp thead .os small { display: none; }
-  .cmp thead .os .ico { width: 24px; height: 24px; margin-bottom: 6px; }
-  .cmp .no { font-size: 13px; }
   .steps-row li { font-size: 17px; line-height: 1.47; letter-spacing: -0.022em; }
   .os-card { padding: 36px 24px; }
   .price-card { padding: 30px 24px 28px; border-radius: 18px; }
@@ -769,7 +737,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
        in black, then filled white on top, so the outline goes round the whole hand. The fingertip is at (7, 1). -->
   <symbol id="i-hand" viewBox="0 0 20 24"><g fill="#000" stroke="#000" stroke-width="2" stroke-linejoin="round"><rect x="5.5" y="1" width="3" height="14" rx="1.5"/><rect x="8.5" y="7.6" width="3" height="8" rx="1.5"/><rect x="11.5" y="8.6" width="3" height="8" rx="1.5"/><rect x="14.5" y="10" width="2.8" height="7" rx="1.4"/><path d="M5.5 12.5H17.3V17.2Q17.3 22 12.6 22H10.1Q6.6 22 5.6 18.6L2.4 13.6Q1.7 12.4 2.8 11.8Q3.8 11.3 4.6 12.2L5.5 13.4Z"/></g><g fill="#fff"><rect x="5.5" y="1" width="3" height="14" rx="1.5"/><rect x="8.5" y="7.6" width="3" height="8" rx="1.5"/><rect x="11.5" y="8.6" width="3" height="8" rx="1.5"/><rect x="14.5" y="10" width="2.8" height="7" rx="1.4"/><path d="M5.5 12.5H17.3V17.2Q17.3 22 12.6 22H10.1Q6.6 22 5.6 18.6L2.4 13.6Q1.7 12.4 2.8 11.8Q3.8 11.3 4.6 12.2L5.5 13.4Z"/></g><path d="M8.5 9.8V12.6M11.5 10.6V13.2M14.5 11.8V13.8" fill="none" stroke="#000" stroke-width="0.8" stroke-linecap="round"/></symbol>
   <symbol id="i-laptop" viewBox="0 0 24 24"><path d="M4.5 16V6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2V16M2.5 16h19l-1 3.5h-17z"/><path d="M10.5 4.5h3v1a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1z"/></symbol>
-  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M12 4v16M3 9.5h18"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7.5V5a1.5 1.5 0 0 0-1.5-1.5H5.5a2.5 2.5 0 0 0 0 5h14A1.5 1.5 0 0 1 21 10v3h-3.5a2 2 0 0 0 0 4H21v1.5a1.5 1.5 0 0 1-1.5 1.5h-14A2.5 2.5 0 0 1 3 17.5V6"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 21.5s8-3.8 8-10V5.2L12 2.5 4 5.2v6.3c0 6.2 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="11" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
@@ -783,7 +750,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6.5 9.5 17 4 11.5"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 4.9v6.9a1.5 1.5 0 0 0 .44 1.06l7.6 7.6a1.5 1.5 0 0 0 2.12 0l6.8-6.8a1.5 1.5 0 0 0 0-2.12l-7.6-7.6a1.5 1.5 0 0 0-1.06-.44H4.9a1.4 1.4 0 0 0-1.4 1.4z"/><circle cx="8.3" cy="8.3" r="1.4"/></symbol>
   <symbol id="i-win" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M2 2h9.2v9.2H2zm10.8 0H22v9.2h-9.2zM2 12.8h9.2V22H2zm10.8 0H22V22h-9.2z"/></symbol>
-  <symbol id="i-apple" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></symbol>
 </svg>
 
 <!-- The sidebar lists every chapter of the page, grouped, the way a chat app
@@ -803,7 +769,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <div class="side-sec">
       <p class="side-group">Overview</p>
       <a class="side-item" href="#top" data-k="home start download hero notch island"><i class="ic" style="--c:#1d1d1f"><svg class="ico"><use href="#i-screen"/></svg></i><span>A living notch</span></a>
-      <a class="side-item" href="#new" data-k="new release 0.2.40 latest changes stocks klci bursa yahoo weather location city mireld balance tokens halo pro trial license countdown adzan voices makkah subuh every setting 0.2.40 caffeine coffee kopi espresso americano latte cappuccino flat white mocha es kopi susu shots beans arabica blend robusta decaf kopi tubruk instant sachet filter cold brew tea green tea energy drink cola your own mg last call bedtime sleep reminder half-life day limit 0.2.40 slide the glass ball drag hand day night switch sunset dusk diorama long pill as long as a notch lamp post bushes fence whole island matches frame cream indigo open card notices 0.2.40 prayer times kemenag muhammadiyah khgt kalender hijriah global tunggal hijri date tanggal hijriah majelis tarjih subuh 18 isbat ramadan syawal 0.2.40 diorama fifth look theme pixel art house tree cat sky day night dawn golden hour sunset sunrise moon stars glass ball resting pill see what pro brings studio pro add-ons every pro feature ai usage claude ultra 10x max 20x clearer adzan azan athan adhan prayer times sound recording antigravity agy ai tab mac top bar mydockfinder menu bar over notifications store tabs phone drop double tap zoom move the island drag along the top edge left right side browser tabs out of the way centre center mac macbook notch pill menu bar settings in the island againgear advanced settings window island closes update in version row check now settings window glides smooth motion 144 fps 120 hz promotion slide switches highlight trackpad scroll reduce motion downloader progress youtube puzzle solving meeting notes mac ielts coach speaking band downloader video sound studio pro settings window gear every setting one place sidebar light dark mode mac window title bar meeting notes record call transcript summary action items pro ai tab usage codex claude code opencode go gemini cursor copilot kimi glm minimax openrouter limits plans resets heads-up tabs hide switch off music today shelf tasks focus prayer countdown ok lyrics come back steps two hours ielts notifications whatsapp telegram mac signed developer id notarized checked by apple opens open anyway gone privacy security permissions once more right click menu stays open island stays open always looks for new versions version check now bluetooth pop-ups headphones speakers paired quiet connected disconnected check for updates every hour check now update available stays lyrics bar zen firefox stocks prices fixed getting prices mac updates install in place ihsg idx saham watchlist chart trade.halo.island today five weeks week ahead schedule month grid dots allow turn on prayer times anywhere world city mac youtube spotify browser now playing pill notch halo halo-island tab system health add-ons clipboard history gone today your day google calendar gmail meeting join flights bills clipboard add-on touch screen tablet taps tap through notch eyes hide and seek macbook camera update available new version install now next start updater mac installer dmg window steps health halo-island sign in mac headphones full screen power island stays maximized windows sing along romaji lyrics mac prayer script reader teleprompter games power"><i class="ic" style="--c:#bf4800"><svg class="ico"><use href="#i-spark"/></svg></i><span>New in 0.2.40</span></a>
+      <a class="side-item" href="#new" data-k="new release 0.2.40 latest changes stocks klci bursa yahoo weather location city mireld balance tokens halo pro trial license countdown adzan voices makkah subuh every setting 0.2.40 caffeine coffee kopi espresso americano latte cappuccino flat white mocha es kopi susu shots beans arabica blend robusta decaf kopi tubruk instant sachet filter cold brew tea green tea energy drink cola your own mg last call bedtime sleep reminder half-life day limit 0.2.40 slide the glass ball drag hand day night switch sunset dusk diorama long pill as long as a notch lamp post bushes fence whole island matches frame cream indigo open card notices 0.2.40 prayer times kemenag muhammadiyah khgt kalender hijriah global tunggal hijri date tanggal hijriah majelis tarjih subuh 18 isbat ramadan syawal 0.2.40 diorama fifth look theme pixel art house tree cat sky day night dawn golden hour sunset sunrise moon stars glass ball resting pill see what pro brings studio pro add-ons every pro feature ai usage claude ultra 10x max 20x clearer adzan azan athan adhan prayer times sound recording antigravity agy ai tab top bar menu bar over notifications store tabs phone drop double tap zoom move the island drag along the top edge left right side browser tabs out of the way centre center notch pill menu bar settings in the island againgear advanced settings window island closes update in version row check now settings window glides smooth motion 144 fps 120 hz promotion slide switches highlight trackpad scroll reduce motion downloader progress youtube puzzle solving meeting notes ielts coach speaking band downloader video sound studio pro settings window gear every setting one place sidebar light dark mode window title bar meeting notes record call transcript summary action items pro ai tab usage codex claude code opencode go gemini cursor copilot kimi glm minimax openrouter limits plans resets heads-up tabs hide switch off music today shelf tasks focus prayer countdown ok lyrics come back steps two hours ielts notifications whatsapp telegram signed developer id checked by apple opens open anyway gone privacy security permissions once more right click menu stays open island stays open always looks for new versions version check now bluetooth pop-ups headphones speakers paired quiet connected disconnected check for updates every hour check now update available stays lyrics bar zen firefox stocks prices fixed getting prices updates install in place ihsg idx saham watchlist chart trade.halo.island today five weeks week ahead schedule month grid dots allow turn on prayer times anywhere world city youtube spotify browser now playing pill notch halo halo-island tab system health add-ons clipboard history gone today your day google calendar gmail meeting join flights bills clipboard add-on touch screen tablet taps tap through notch eyes hide and seek camera update available new version install now next start updater installer window steps health halo-island sign in headphones full screen power island stays maximized windows sing along romaji lyrics prayer script reader teleprompter games power"><i class="ic" style="--c:#bf4800"><svg class="ico"><use href="#i-spark"/></svg></i><span>New in 0.2.40</span></a>
       <a class="side-item" href="#highlights" data-k="best gallery overview"><i class="ic" style="--c:#ff9f0a"><svg class="ico"><use href="#i-spark"/></svg></i><span>Highlights</span></a>
       <a class="side-item" href="#features" data-k="rest idle music timer volume charging headphones bluetooth clock eyes prayer countdown"><i class="ic" style="--c:#636366"><svg class="ico"><use href="#i-island"/></svg></i><span>While it rests</span></a>
     </div>
@@ -840,16 +806,14 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <a class="side-item" href="#diorama" data-k="diorama pixel art house tree cat sky day night dawn golden hour sunset sunrise moon stars glass ball slide drag switch long pill notch lamp post whole island cream indigo frame clock theme look"><i class="ic" style="--c:#6f9048"><svg class="ico"><use href="#i-diorama"/></svg></i><span>Diorama</span></a>
     </div>
     <div class="side-sec">
-      <p class="side-group">Mac and account</p>
-      <a class="side-item" href="#mac" data-k="mac macos macbook notch apple"><i class="ic" style="--c:#8e8e93"><svg class="ico"><use href="#i-laptop"/></svg></i><span>On a Mac</span></a>
-      <a class="side-item" href="#compare" data-k="compare windows mac which features"><i class="ic" style="--c:#007aff"><svg class="ico"><use href="#i-columns"/></svg></i><span>Windows and Mac</span></a>
+      <p class="side-group">Account</p>
       <a class="side-item" href="#halo-island" data-k="halo-island account sign in today pro"><i class="ic" style="--c:#f0892e"><svg class="ico"><use href="#i-wallet"/></svg></i><span>Halo Island account</span></a>
     </div>
     <div class="side-sec">
       <p class="side-group">Get it</p>
       <a class="side-item" href="#privacy" data-k="privacy data light fast size open source mit"><i class="ic" style="--c:#007aff"><svg class="ico"><use href="#i-lock"/></svg></i><span>Privacy</span></a>
       <a class="side-item" href="#pricing" data-k="pricing price prices cost free pro plan subscription monthly yearly trial buy ai usage ielts downloader meeting notes notetaker record transcript summary meet zoom teams notifications whatsapp telegram phone link"><i class="ic" style="--c:#34c759"><svg class="ico"><use href="#i-tag"/></svg></i><span>Pricing</span></a>
-      <a class="side-item" href="#get" data-k="install download setup smartscreen dmg get"><i class="ic" style="--c:#0071e3"><svg class="ico"><use href="#i-download"/></svg></i><span>Get Halo Island</span></a>
+      <a class="side-item" href="#get" data-k="install download setup smartscreen get"><i class="ic" style="--c:#0071e3"><svg class="ico"><use href="#i-download"/></svg></i><span>Get Halo Island</span></a>
     </div>
     <p class="side-empty" id="sideEmpty" hidden>No feature by that name. Try "lyrics" or "files".</p>
   </nav>
@@ -874,7 +838,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <a class="top-title" href="#top">Halo Island</a>
   <nav class="top-links" aria-label="Page">
     <a href="#top">Overview</a>
-    <a href="#compare">Compare</a>
     <a href="#pricing">Pricing</a>
     <a href="#get">Install</a>
     <a class="btn btn-sm top-dl" data-download="bar" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe">Download</a>
@@ -905,10 +868,9 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
             <p class="t-hero">A living notch.</p>
             <a class="t-avail" href="#new">New in 0.2.40: real stock prices, weather that finds you, and a choice of adzan voices.</a>
             <div class="buybox">
-              <div><b>Free for Windows and Mac</b><span class="fine">Open source · Windows <span data-release="size">3.1&nbsp;MB</span> · Mac <span data-release="mac-size">5.3&nbsp;MB</span> · <a class="notes" data-release="notes" href="https://github.com/kolijijani/halo-island/releases/latest">What's new in <span data-release="version">0.2.40</span></a></span></div>
+              <div><b>Free for Windows</b><span class="fine">Open source · Windows <span data-release="size">3.1&nbsp;MB</span> · <a class="notes" data-release="notes" href="https://github.com/kolijijani/halo-island/releases/latest">What's new in <span data-release="version">0.2.40</span></a></span></div>
               <a class="btn dl-primary" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe"><span class="dl-word">Download</span><span class="send-word">Send to your computer</span></a>
             </div>
-            <a class="link hero-other dl-other" data-release="mac-link" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Mac.dmg">Download for Mac</a>
           </div>
           <img class="hero-halo" src="brand/art/halo-peek.webp" alt="Halo, an orange plush cat, peeking over the island while a song plays" width="1200" height="661">
         </div>
@@ -1078,7 +1040,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <div class="content head rv">
       <p class="t-label">Music</p>
       <h3 class="t-l" id="music-title">Music, with the words.</h3>
-      <p class="t-intro">Lyrics scroll in time with <b>Spotify, Apple Music, YouTube</b> or any app in Windows' media controls or the Mac's Now Playing.</p>
+      <p class="t-intro">Lyrics scroll in time with <b>Spotify, Apple Music, YouTube</b> or any app in Windows' media controls.</p>
       <button class="more" type="button" data-more="m-music">More about Music<i><svg class="ico"><use href="#i-plus"/></svg></i></button>
     </div>
     <div class="content">
@@ -1273,7 +1235,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <div class="content head rv">
       <p class="t-label">Prayer times</p>
       <h3 class="t-l" id="prayer-title">Prayer times, for your city.</h3>
-      <p class="t-intro">As <b>Kemenag RI</b> publishes them, or as <b>Muhammadiyah</b> does, with a live countdown, today on one arc, the Hijri date, the qibla and the adzan, on Windows and Mac. New in 0.2.40: Muhammadiyah's times and the KHGT calendar.</p>
+      <p class="t-intro">As <b>Kemenag RI</b> publishes them, or as <b>Muhammadiyah</b> does, with a live countdown, today on one arc, the Hijri date, the qibla and the adzan. New in 0.2.40: Muhammadiyah's times and the KHGT calendar.</p>
       <button class="more" type="button" data-more="m-prayer">More about prayer times<i><svg class="ico"><use href="#i-plus"/></svg></i></button>
     </div>
     <div class="content">
@@ -1297,7 +1259,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <div class="content head rv">
       <p class="t-label new">New in 0.2.40: real prices</p>
       <h3 class="t-l" id="stocks-title">Stocks, on the island.</h3>
-      <p class="t-intro">Bursa Malaysia's KLCI and up to 10 stocks from anywhere, laid out like Stocks on a Mac: <b>the day's line</b>, the price and the change, and a chart over a day, a month or a year.</p>
+      <p class="t-intro">Bursa Malaysia's KLCI and up to 10 stocks from anywhere, laid out like Apple's Stocks app: <b>the day's line</b>, the price and the change, and a chart over a day, a month or a year.</p>
     </div>
     <div class="content">
       <figure class="shot-card rv-zoom">
@@ -1412,7 +1374,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <div class="head rv">
         <p class="t-label">Stays on top</p>
         <h3 class="t-l" id="ontop-title">Above every window.</h3>
-        <p class="t-intro">In full-screen games and videos, <b>you choose</b>: hide it, or keep it on top. Over maximized windows it stays where you can see it. Press it and drag it along the top edge, out of your browser's tabs: on Windows, and new in 0.2.40, on a Mac.</p>
+        <p class="t-intro">In full-screen games and videos, <b>you choose</b>: hide it, or keep it on top. Over maximized windows it stays where you can see it. Press it and drag it along the top edge, out of your browser's tabs.</p>
       </div>
     </div>
   </section>
@@ -1577,97 +1539,11 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     </div>
   </section>
 
-  <section class="sec band" id="mac" aria-labelledby="mac-title">
-    <div class="content head rv">
-      <p class="t-label">Mac</p>
-      <h2 class="t-l" id="mac-title">On a Mac, it wraps the notch.</h2>
-      <p class="t-intro">What's playing sits either side of the camera. <b>It opens down from the notch.</b></p>
-      <button class="more" type="button" data-more="m-mac">More about the Mac<i><svg class="ico"><use href="#i-plus"/></svg></i></button>
-    </div>
-    <div class="content">
-      <div class="seg" role="radiogroup" aria-label="Look on the Mac" id="macSeg">
-        <button type="button" role="radio" aria-checked="true" data-k="classic">Classic</button>
-        <button type="button" role="radio" aria-checked="false" data-k="halo">Halo</button>
-        <button type="button" role="radio" aria-checked="false" data-k="pill">Pill</button>
-      </div>
-      <div class="mac-set" data-k="classic">
-        <div class="mac-strips">
-          <figure class="shot-card"><img src="assets/shots/mac/classic/media-activity.webp" alt="A MacBook's menu bar while music plays: the album art left of the camera notch, the equalizer on its right" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Music.</b> Art left, beat right.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/classic/timer-activity.webp" alt="A focus timer around the notch: its progress ring on the left, the minutes left on the right" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Focus.</b> Ring left, minutes right.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/classic/idle-clock.webp" alt="The resting island on a MacBook: the time to the right of the notch" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Resting.</b> The clock beside the notch.</figcaption></figure>
-        </div>
-        <div class="duo gap-t">
-          <figure class="shot-card"><img src="assets/shots/mac/classic/page-media.webp" alt="The open island hanging below a MacBook's notch: the Music page with synced lyrics" width="710" height="288" loading="lazy"><figcaption class="t-tile"><b>Music,</b> with the words.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/classic/page-today-day.webp" alt="The Today page below the notch: five weeks of days beside the meeting on now with Join, then the rest of the day and tomorrow" width="710" height="340" loading="lazy"><figcaption class="t-tile"><b>Today,</b> your weeks at a glance.</figcaption></figure>
-        </div>
-      </div>
-      <div class="mac-set" data-k="halo" hidden>
-        <div class="mac-strips">
-          <figure class="shot-card"><img src="assets/shots/mac/halo/media-activity.webp" alt="The same in the Halo theme: black like the notch, the album art on the left and Halo on the right" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Music.</b> Art left, Halo right.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/halo/timer-activity.webp" alt="The focus timer around the notch in the Halo theme" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Focus.</b> Ring left, minutes right.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/halo/idle-clock.webp" alt="The resting island in the Halo theme: Halo peeking left of the notch, the time on its right" width="420" height="68" loading="lazy"><figcaption class="t-tile"><b>Resting.</b> Halo peeks by the notch.</figcaption></figure>
-        </div>
-        <div class="duo gap-t">
-          <figure class="shot-card"><img src="assets/shots/mac/halo/page-media.webp" alt="The open island in the Halo theme, black around the notch with cream type and an orange play button: the Music page with synced lyrics" width="710" height="288" loading="lazy"><figcaption class="t-tile"><b>Black</b> like the notch itself.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/halo/page-today-day.webp" alt="The Today page in the Halo theme below the notch: five weeks beside your schedule" width="710" height="340" loading="lazy"><figcaption class="t-tile"><b>Today,</b> your weeks at a glance.</figcaption></figure>
-        </div>
-      </div>
-      <div class="mac-set" data-k="pill" hidden>
-        <div class="mac-strips">
-          <figure class="shot-card"><img src="assets/shots/mac/pill/idle-clock.webp" alt="Pill resting on a MacBook: back inside the camera notch, with nothing beside it" width="420" height="108" loading="lazy"><figcaption class="t-tile"><b>Resting</b> in the notch.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/pill/media-activity.webp" alt="Pill on a MacBook while a lyric line is sung: a black capsule floating just below the notch, with the album art, the line and an equalizer in the album's colour" width="420" height="108" loading="lazy"><figcaption class="t-tile"><b>Lyrics</b> float below the notch.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/pill/volume-hud.webp" alt="The volume pop-up in Pill on a MacBook: a capsule floating just below the notch" width="420" height="108" loading="lazy"><figcaption class="t-tile"><b>Pop-ups</b> float there too.</figcaption></figure>
-        </div>
-        <div class="duo gap-t">
-          <figure class="shot-card"><img src="assets/shots/mac/pill/page-media.webp" alt="The open island in Pill on a MacBook: a black card with four rounded corners floating below the notch, on the Music page with synced lyrics" width="710" height="296" loading="lazy"><figcaption class="t-tile"><b>Open,</b> below the notch.</figcaption></figure>
-          <figure class="shot-card"><img src="assets/shots/mac/pill/page-today-day.webp" alt="The Today page in Pill on a MacBook, in the same floating card: five weeks beside your schedule" width="710" height="348" loading="lazy"><figcaption class="t-tile"><b>Every page</b> in the same card.</figcaption></figure>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="sec" id="compare" aria-labelledby="compare-title">
-    <div class="content head center rv">
-      <h2 class="t-compare" id="compare-title">One island, on both.</h2>
-      <p class="t-intro">A few features reach the Mac later.</p>
-    </div>
-    <div class="content cmp-wrap rv">
-      <table class="cmp">
-        <thead>
-          <tr>
-            <th scope="col"><span style="position:absolute;left:-9999px">Feature</span></th>
-            <th scope="col" class="os"><svg class="ico" style="stroke:none"><use href="#i-win"/></svg>Windows<small>10 and 11</small></th>
-            <th scope="col" class="os"><svg class="ico" style="stroke:none"><use href="#i-apple"/></svg>Mac<small>macOS 14 or later</small></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row">Music, with synced lyrics</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Readings under Korean, Japanese and Chinese lines</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Focus timer and tasks</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">AI usage, with heads-up notices (Pro)</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Shelf, with Phone drop over the same Wi-Fi</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">System page, an add-on</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Stocks, an add-on</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Caffeine, an add-on</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Volume and charging pop-ups</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Classic, Halo, Glass, Pill and Diorama</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Paired phones, from any network</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c no">Not yet</td></tr>
-          <tr><th scope="row">Halo Island sign-in</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Script reader</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Prayer times</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Show over games</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c no">Not yet</td></tr>
-          <tr><th scope="row">Headphone pop-ups</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-          <tr><th scope="row">Hiding in full-screen apps</th><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="c yes"><svg viewBox="0 0 24 24" role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
   <section class="sec" id="halo-island" aria-labelledby="halo-island-title">
     <div class="content">
       <div class="dark halo-island rv">
         <div class="head" style="margin:0">
-          <p class="t-label">Halo Island account · Windows and Mac</p>
+          <p class="t-label">Halo Island account</p>
           <h2 class="t-l" id="halo-island-title" style="color:#f5f5f7">Your Halo Island, at the top of your screen.</h2>
           <p class="t-intro">Sign in with a code, like on a TV. <b>Your day on Today</b>, from the account you already have.</p>
           <button class="more" type="button" data-more="m-halo-island">More about Halo Island<i><svg class="ico"><use href="#i-plus"/></svg></i></button>
@@ -1699,7 +1575,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       </div>
       <div class="specs rv">
         <div class="spec"><b data-release-copy="size">3.1&nbsp;MB</b><span class="t-small">Windows installer</span></div>
-        <div class="spec"><b data-release-copy="mac-size">5.3&nbsp;MB</b><span class="t-small">Mac app</span></div>
         <div class="spec"><b>240&nbsp;Hz</b><span class="t-small">In step with your screen, on Windows</span></div>
         <div class="spec"><b>MIT</b><span class="t-small">Free and open source</span></div>
       </div>
@@ -1715,7 +1590,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <article class="price-card rv" aria-labelledby="price-free-title">
         <h3 class="t-card" id="price-free-title">Free</h3>
         <p class="price"><b>$0</b></p>
-        <p class="t-tile">Everything outside Pro, on Windows and Mac. <b>No account needed.</b> Free and open source.</p>
+        <p class="t-tile">Everything outside Pro. <b>No account needed.</b> Free and open source.</p>
         <ul class="price-list t-tile">
           <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Music with synced lyrics, and Read along</span></li>
           <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Focus, Tasks, the Shelf and Phone drop</span></li>
@@ -1743,7 +1618,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
           <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span><b>Your recordings go to Halo Island's server</b> to be written up or scored, and are deleted once that's done.</span></li>
           <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span><b>Up to 3 computers</b> on one Halo Island account.</span></li>
         </ul>
-        <p class="t-small">On Windows 10 and 11, and macOS 14 and later (Meeting notes hears the Mac's sound on 14.2 and later). Prices in US dollars, before tax.</p>
+        <p class="t-small">On Windows 10 and 11. Prices in US dollars, before tax.</p>
       </article>
     </div>
     <div class="content facts price-facts">
@@ -1764,7 +1639,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <article class="os-card send-card" id="send">
         <svg class="ico"><use href="#i-laptop"/></svg>
         <h3 class="t-card">Send it to your computer</h3>
-        <p class="t-tile">Studio runs on Windows and Mac, not on phones. Send yourself the link, then open it on your computer.</p>
+        <p class="t-tile">Studio runs on Windows, not on phones. Send yourself the link, then open it on your computer.</p>
         <button class="btn" type="button" data-send="share" data-tap="send-pc:share" hidden>Share the link</button>
         <p class="send-alt">
           <a class="link" data-send="whatsapp" data-tap="send-pc:whatsapp" href="https://wa.me/?text=Halo Island%20Studio%20for%20my%20computer%3A%20https%3A%2F%2Fkolijijani.github.io%2Fhalo-island%2F%3Futm_content%3Dsend-to-pc%23get">WhatsApp it to me</a>
@@ -1782,13 +1657,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
         <p class="t-tile">Windows 10 and 11. Installs just for you.</p>
         <a class="btn" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe">Download for Windows</a>
         <button class="link" type="button" data-more="m-install-win">How to install</button>
-      </article>
-      <article class="os-card rv">
-        <svg class="ico"><use href="#i-apple"/></svg>
-        <h3 class="t-card">Mac</h3>
-        <p class="t-tile">macOS 14 or later, Apple silicon or Intel.</p>
-        <a class="btn" data-release="mac-link" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Mac.dmg">Download for Mac</a>
-        <button class="link" type="button" data-more="m-install-mac">How to install</button>
       </article>
     </div>
   </section>
@@ -1811,7 +1679,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <div class="sheet-body">
     <p class="t-label">Music</p>
     <h2 class="t-m" id="m-music-t">Music, with the words.</h2>
-    <p>Controls for whatever is playing: <b>Spotify, Apple Music, YouTube in your browser, or any app that shows up in Windows' media controls or the Mac's Now Playing.</b> Lyrics scroll in time with the song, from the free LRCLIB library, or Apple Music's own synced lyrics if you have a subscription.</p>
+    <p>Controls for whatever is playing: <b>Spotify, Apple Music, YouTube in your browser, or any app that shows up in Windows' media controls.</b> Lyrics scroll in time with the song, from the free LRCLIB library, or Apple Music's own synced lyrics if you have a subscription.</p>
     <p>YouTube videos find theirs too, even when the title carries subtitle tags or puts the song name first. After an intro or a break, the waiting dots fold away the moment the next line starts.</p>
     <p>Drag the time bar to jump anywhere in a song: the times follow as you slide, and it jumps when you let go. That works with Apple Music too, and so does Back: the island uses Apple Music's own slider and back button. Lyrics glide into place instead of stepping a pixel at a time.</p>
     <p><b>New in 0.2.40: the closed island sings along.</b> The line being sung shows on it in Classic, Halo and Glass, as it does in Pill. Japanese, Korean and Chinese lines bring their reading in Latin letters along, under the line.</p>
@@ -1824,14 +1692,14 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <h2 class="t-m" id="m-read-t">Read along in Korean, Japanese and Chinese.</h2>
     <p>Like Apple Music's Show Pronunciation, each word of a lyric line gets its reading in Latin letters, set small underneath: <b>the syllables for Korean, romaji for Japanese and pinyin with tone marks for Chinese.</b></p>
     <p><b>New in 0.2.40: on the closed island too.</b> While a song with readings plays, the closed island is two rows tall in every look: the line as it's written, and its reading right under it, so you can sing along without opening it. A line that needs no reading sits on its own, and songs without readings keep the one-row island. Switch off Lyrics pronunciation in Settings and the readings go, on the island and on the Music page.</p>
-    <p>Japanese kanji are read with Windows' own reading analyzer. On PCs without Windows' Japanese data, kana lines read right away, and Japanese readings, a 3.8 MB add-on that reads every kanji line, <b>switch themselves on for the first Japanese song whose kanji go unread</b> (new in 0.2.40). That happens only while readings are on and if you never switched the add-on yourself: switched off by hand, it stays off. On a Mac, Japanese readings are an add-on in the Add-ons tab too.</p>
+    <p>Japanese kanji are read with Windows' own reading analyzer. On PCs without Windows' Japanese data, kana lines read right away, and Japanese readings, a 3.8 MB add-on that reads every kanji line, <b>switch themselves on for the first Japanese song whose kanji go unread</b> (new in 0.2.40). That happens only while readings are on and if you never switched the add-on yourself: switched off by hand, it stays off.</p>
     <p>It reads closer to how the words are sung: numbers with their counters (<span lang="ja">二人</span> futari, <span lang="ja">一歩</span> ippo), <span lang="ja">は</span> as "wa" after every word (<span lang="ja">心には</span> kokoro ni wa), and words like <span lang="ja">愛おしい</span> and <span lang="ja">失くす</span>. Turn it off in Settings or the tray menu.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-ai" aria-labelledby="m-ai-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
-    <p class="t-label new">Studio Pro · Windows and Mac</p>
+    <p class="t-label new">Studio Pro</p>
     <h2 class="t-m" id="m-ai-t">Your AI limits, before you hit them.</h2>
     <div class="sheet-shot"><div class="sky-fill"></div><div class="isl"><img class="look-classic" src="assets/shots/classic/page-ai.webp" alt="The AI tab: a card for each AI service, with each limit as a bar" width="660" height="335" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-ai.webp" alt="The AI tab in the Halo theme" width="660" height="335" loading="lazy"></div></div>
     <p>Track your AI usage. The AI tab sits right after Focus. <b>Each AI service on your computer gets a card:</b> your plan, each limit as a bar with when it resets, credits or balance left, and today's spend where the service tells it. Services it doesn't find stay off the list. Under Services, hide any of them, or add one with its key.</p>
@@ -1853,26 +1721,25 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <p>Switch them on and the island tells you <b>when a limit is nearly used up, when it runs out, and when it's back</b> after it resets. For that it reads the files on your computer every few minutes and asks the services at most every 10 minutes, and it rests while your computer is locked, the screen is off or battery saver is on. With notices off, nothing runs while the tab is closed: it reads when you open it.</p>
     <h4>Your sign-ins stay yours</h4>
     <p>Each service's sign-in is read on your computer and goes only to that service's own server. <b>Nothing about your usage goes to Halo Island.</b> Halo Island only reads: it never changes another app's files or renews its sign-in, so it can't sign you out of that app. When a sign-in has run out, the card says so: open that app once and it's back.</p>
-    <p><b>Claude Code through the Claude app.</b> If you run Claude Code from the Claude app, its card uses the sign-in the app keeps for Claude Code. When Claude Code is signed out, its card has <b>Sign in</b>: it starts Claude Code's own sign-in in a terminal window, or opens the Claude app. On a Mac, macOS asks once before the Claude app's or Cursor's sign-in is read: choose Always Allow.</p>
-    <p><b>Antigravity, on a Mac.</b> Google answers Antigravity's limits only to Antigravity itself, so the AI tab asks Antigravity's own <code>agy</code>, through its <code>/usage</code> command, which uses none of your quota. It runs it only while the AI tab is open, at most every 15 minutes, and never opens a browser: when <code>agy</code> wants you to sign in again, the card says so; sign in to Antigravity, then press Refresh. It needs <code>agy</code> 1.1.11 or later. New in 0.2.40; on Windows, not yet.</p>
+    <p><b>Claude Code through the Claude app.</b> If you run Claude Code from the Claude app, its card uses the sign-in the app keeps for Claude Code. When Claude Code is signed out, its card has <b>Sign in</b>: it starts Claude Code's own sign-in in a terminal window, or opens the Claude app.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-notes" aria-labelledby="m-notes-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
-    <p class="t-label new">Studio Pro · Windows and Mac</p>
+    <p class="t-label new">Studio Pro</p>
     <h2 class="t-m" id="m-notes-t">Your call, written up.</h2>
     <div class="sheet-shot"><div class="sky-fill"></div><div class="isl"><img class="look-classic" src="assets/shots/classic/page-notes-listening.webp" alt="The Notes page while Halo listens: the time so far and a bar for each sound" width="660" height="259" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-notes-listening.webp" alt="The Notes page while Halo listens, in the Halo theme" width="660" height="259" loading="lazy"></div></div>
     <p><b>One click, and Halo listens to your call</b> in Meet, Zoom, Teams or WhatsApp, with no bot joining. He hears your microphone and your computer's own sound. Stop when it's over, and he writes up the summary, the decisions and who does what, with the whole transcript.</p>
     <p>While he listens, the closed island shows him with a red dot and the time so far. The notes are saved on your computer.</p>
-    <p><b>Your recording goes to Halo Island's server</b> to be written up, and is deleted once your notes are saved. On a Mac, hearing the computer's own sound takes macOS 14.2 or later.</p>
+    <p><b>Your recording goes to Halo Island's server</b> to be written up, and is deleted once your notes are saved.</p>
   </div>
 </dialog>
 
 <dialog class="more-sheet" id="m-ielts" aria-labelledby="m-ielts-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
-    <p class="t-label new">Studio Pro · Windows and Mac</p>
+    <p class="t-label new">Studio Pro</p>
     <h2 class="t-m" id="m-ielts-t">Practise IELTS Speaking, out loud.</h2>
     <div class="sheet-shot cut"><div class="sky-fill"></div><div class="isl"><img class="look-classic" src="assets/shots/classic/page-ielts.webp" alt="The IELTS page: Halo beside five levels, each with its target band, the first ones done and the rest still locked" width="660" height="198" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-ielts.webp" alt="The IELTS page in the Halo theme" width="660" height="198" loading="lazy"></div></div>
     <p><b>Halo asks IELTS Speaking questions out loud,</b> listens to your answers through your microphone and gives you a band.</p>
@@ -1884,7 +1751,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
 <dialog class="more-sheet" id="m-downloader" aria-labelledby="m-downloader-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
-    <p class="t-label new">Studio Pro · Windows and Mac</p>
+    <p class="t-label new">Studio Pro</p>
     <h2 class="t-m" id="m-downloader-t">Paste a link. Keep the video or the sound.</h2>
     <div class="sheet-shot"><div class="sky-fill"></div><div class="isl"><img class="look-classic" src="assets/shots/classic/page-downloads.webp" alt="The Downloads page: paste a link, pick Video or Sound, and each download with its progress" width="660" height="335" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-downloads.webp" alt="The Downloads page in the Halo theme" width="660" height="335" loading="lazy"></div></div>
     <p><b>Paste a link, pick Video or Sound,</b> and watch it come in to Downloads and the Shelf. Only what you have the right to keep.</p>
@@ -1901,7 +1768,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <p><b>An add-on:</b> System is built in and off until you switch it on under Add-ons. Off, there's no System tab and nothing reads the counters.</p>
     <p>It reads Windows' own kernel counters and keeps the last minute while the page is closed, so the charts are full the moment it opens. That minute rests while your PC is locked, the screen is off or battery saver is on. Keeping it takes about a third of a millisecond each second, and the tray menu turns it off. No driver, no admin rights, and nothing leaves your PC.</p>
     <p><b>New in 0.2.40, on a desktop: Power.</b> What the whole PC draws, split into the CPU, the graphics card and the rest. It comes from the power supply itself when it reports over USB (Corsair HXi and RMi, and MSI MEG and MPG Ai models), and is estimated otherwise: the CPU's and the graphics card's own readings plus about 40 W for the board, memory, drives and fans, labelled as an estimate. The graphics card's watts come from NVIDIA's driver; AMD and Intel cards aren't read yet, and without a card reading there's no estimate. It reads only while the System page is open. Laptops keep their Battery module.</p>
-    <p>On a Mac it reads macOS's own counters the way Stats does, and rests while the screen is asleep or the Mac is locked. On a Mac without a battery (a Mac mini, Studio, iMac or Mac Pro with Apple silicon), Power shows what the whole Mac draws, from its own sensor, the number Stats shows as System total; macOS doesn't split it by part. A MacBook keeps its Battery module.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-phone" aria-labelledby="m-phone-t">
@@ -1919,10 +1785,9 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <div class="sheet-body">
     <p class="t-label">Prayer times · An add-on</p>
     <h2 class="t-m" id="m-prayer-t">Prayer times, for your city.</h2>
-    <p>Today's times as Kemenag RI publishes them for your kab/kota, the next prayer and how long until it, and the qibla. <b>New in 0.2.40:</b> the page counts down to the next prayer in hours, minutes and seconds, and shows today's five prayers on one arc, with the sun or the moon. <b>New in 0.2.40:</b> anywhere in the world. Type any city, or let the location find it: 33,000 cities, each with the method its country follows, on its own clock, summer time included. <b>Your computer's location finds the nearest of Kemenag's 517 places</b>, from Windows' location or the Mac's Location Services, and checks again when your laptop travels, or you type your city. The point stays on your computer: it only picks the place.</p>
+    <p>Today's times as Kemenag RI publishes them for your kab/kota, the next prayer and how long until it, and the qibla. <b>New in 0.2.40:</b> the page counts down to the next prayer in hours, minutes and seconds, and shows today's five prayers on one arc, with the sun or the moon. <b>New in 0.2.40:</b> anywhere in the world. Type any city, or let the location find it: 33,000 cities, each with the method its country follows, on its own clock, summer time included. <b>Your computer's location finds the nearest of Kemenag's 517 places</b>, from Windows' location, and checks again when your laptop travels, or you type your city. The point stays on your computer: it only picks the place.</p>
     <p>In the ten minutes before each prayer the island counts down, and when it's time it says so, with a short tone, the adzan, or nothing. <b>New in 0.2.40:</b> a clearer adzan, a new recording without the crowd and the echo of the old one ("The Adhan - Muslim Call to Prayer - Aaqib Azeez" by Atcovi, Wikimedia Commons, CC BY-SA 4.0). Checked against Kemenag's 2026 schedule: 98.2% of 227,367 times to the minute, none more than a minute off. Makkah, Madinah and Jeddah use Umm al-Qura.</p>
     <p><b>New in 0.2.40: Kemenag or Muhammadiyah.</b> Click Change place and pick under Times and Hijri dates. Kemenag, the default, keeps Kemenag's schedule and the government's Hijri calendar (MABIMS, with the months the sidang isbat announced). Muhammadiyah (KHGT) gives places in Indonesia Majelis Tarjih's schedule, with Subuh at 18°, and the Kalender Hijriah Global Tunggal: one Hijri date for the whole world, as Muhammadiyah publishes it up to 1451 H, and worked out from the moon after that. Its times match khgt.muhammadiyah.or.id to the minute, or within one. Either way, today's Hijri date shows above the arc.</p>
-    <p><b>New in 0.2.40: on the Mac.</b> Prayer times is in the Mac's Add-ons tab too, with the adzan. Around a MacBook's notch the countdown sits beside the camera: the moon on the left, the minutes on the right.</p>
     <p>Prayer times is an add-on: open the + at the end of the tabs and switch it on. It downloads then, 959 KB, checked against the fingerprint built into the app, and switching it off deletes its files.</p>
   </div>
 </dialog>
@@ -1933,8 +1798,8 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <h2 class="t-m" id="m-script-t">A teleprompter, under your webcam.</h2>
     <p>Paste a script, or drop a .txt or .md file on the island while the Script page shows. <b>The line to say stays bright, with the next ones dim below it</b>, the way the Music page shows lyrics, and the reader moves a line at a time at the pace you pick: 60 to 300 words a minute, 140 to start.</p>
     <p>Click the script to steer it from the keyboard: <kbd>Space</kbd> pauses, <kbd>←</kbd> and <kbd>→</kbd> step back or on a line, <kbd>↑</kbd> and <kbd>↓</kbd> change the pace, and <kbd>Esc</kbd> lets go. On Windows, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> pauses or resumes it from any app.</p>
-    <p><b>On Windows, the island is left out of screen shares and screen captures while the Script page shows</b>, so the people watching don't see your lines. On a Mac it shows in full-screen shares: macOS no longer lets an app keep itself out of them.</p>
-    <p>Script reader is an add-on that's built into the app, so there's nothing to download: open the + at the end of the tabs and switch it on, and a Script tab appears. Switched off, the island is as it was: no Script tab, no shortcut and nothing running for it. It's in the Mac's Add-ons tab too.</p>
+    <p><b>On Windows, the island is left out of screen shares and screen captures while the Script page shows</b>, so the people watching don't see your lines.</p>
+    <p>Script reader is an add-on that's built into the app, so there's nothing to download: open the + at the end of the tabs and switch it on, and a Script tab appears. Switched off, the island is as it was: no Script tab, no shortcut and nothing running for it.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-games" aria-labelledby="m-games-t">
@@ -1946,8 +1811,8 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <p>Staying adds about a frame of delay: any window over a borderless game makes Windows combine the two before they reach the screen. If you'd rather have no added delay, pick Peeks: System › Games › Readout › Peeks, or right-click the island › In full-screen apps › Only for a few seconds. The readout then shows for a few seconds when the game comes to the front, when the frame rate drops sharply, and when you press Alt+Shift+F.</p>
     <p>Switch it on in System › Games, or right-click the island › In full-screen apps › Show FPS, GPU and CPU over games.</p>
     <p>Frames are counted the way Intel's PresentMon and Xbox Game Bar count them, from Windows' own log of each frame a game shows. Nothing is loaded into the game, so anti-cheat has nothing to see. DirectX 9 to 12, Vulkan and OpenGL. The first time, Windows asks once for an admin OK, as Game Bar's FPS counter does, and FPS shows from your next sign-in. Over a full-screen app, Glass draws smoked glass instead of copying the screen.</p>
-    <p><b>Stays on top:</b> when another window covers the island, such as a browser left on top after full screen or an app set to stay on top, the island goes back on top. In full-screen games and videos you choose: right-click the island or open Settings, then In full-screen apps › Hide or Stay on top (on a Mac, the menu bar under Halo's mark). Hide is the default. A game in exclusive full-screen mode still covers every window.</p>
-    <p><b>Over maximized windows it stays.</b> The island starts in the middle of the top edge, so over a maximized browser it can cover the tabs there. <b>Press the island and drag it left or right along the top edge</b>, out of the way, on Windows and on a Mac. It stays where you leave it, also after a restart, and opens away from the screen's edge. To bring it back, drag it to the middle, or right-click it › Move island to the centre (on a Mac, it's in the menu bar's menu too). On a MacBook with a notch, Classic, Halo and Glass stay at the camera, in the menu bar, where they don't cover the tabs; Pill's floating island drags, and slides back into the notch when it rests; Diorama's resting pill stays where you leave it. Or pick <b>Hidden until hover</b> as the idle look: while nothing plays, only an invisible strip stays at the top edge until you point at it. (0.2.40 and 0.2.40 stepped aside over maximized windows by default, which made the island seem to vanish; 0.2.40 drops that.)</p>
+    <p><b>Stays on top:</b> when another window covers the island, such as a browser left on top after full screen or an app set to stay on top, the island goes back on top. In full-screen games and videos you choose: right-click the island or open Settings, then In full-screen apps › Hide or Stay on top. Hide is the default. A game in exclusive full-screen mode still covers every window.</p>
+    <p><b>Over maximized windows it stays.</b> The island starts in the middle of the top edge, so over a maximized browser it can cover the tabs there. <b>Press the island and drag it left or right along the top edge</b>, out of the way. It stays where you leave it, also after a restart, and opens away from the screen's edge. To bring it back, drag it to the middle, or right-click it › Move island to the centre. Or pick <b>Hidden until hover</b> as the idle look: while nothing plays, only an invisible strip stays at the top edge until you point at it. (0.2.40 and 0.2.40 stepped aside over maximized windows by default, which made the island seem to vanish; 0.2.40 drops that.)</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-halo" aria-labelledby="m-halo-t">
@@ -1996,7 +1861,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <li>A soft shadow and a fine rim keep it apart from the wallpaper, light or dark. Colour only where it means something: the album's colour for music, green for a charging battery, red for a low one.</li>
       <li>The pages and features are the same as in Classic. Classic stays the default look.</li>
     </ul>
-    <p>Right-click the island, then <kbd>Theme</kbd> › <kbd>Pill</kbd>. Or open the island, press the gear and pick <kbd>Pill</kbd> under Theme. On a Mac, it's in the menu bar's Theme menu.</p>
+    <p>Right-click the island, then <kbd>Theme</kbd> › <kbd>Pill</kbd>. Or open the island, press the gear and pick <kbd>Pill</kbd> under Theme.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-diorama" aria-labelledby="m-diorama-t">
@@ -2004,7 +1869,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <div class="sheet-body">
     <p class="t-label new">New in 0.2.40</p>
     <h2 class="t-m" id="m-diorama-t">Diorama. A little place that keeps your day.</h2>
-    <p>Diorama is Pill with a picture in its resting capsule: a small window onto a pixel-art place, as long as a MacBook's notch. Behind a raised frame, cream by day and indigo at night, stand a house at one end and a tree at the other, with a letter box, a garden fence, two bushes and a lamp post between them, and the time written in the sky.</p>
+    <p>Diorama is Pill with a picture in its resting capsule: a small window onto a pixel-art place, as long as a notch. Behind a raised frame, cream by day and indigo at night, stand a house at one end and a tree at the other, with a letter box, a garden fence, two bushes and a lamp post between them, and the time written in the sky.</p>
     <div class="dio-film"><figure class="shot-card">
       <div class="strip"><div class="sky-fill"></div>
         <picture>
@@ -2023,42 +1888,19 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <li><b>The time</b> is 12- or 24-hour as you've set it. On a laptop, a bolt stands beside it while the battery charges, and a red battery at 20% or less. Idle look › Minimal shows the place without the clock, and Hidden until hover hides it. Diorama has no eyes and no status bar.</li>
       <li><b>Your own sunrise and sunset:</b> with the Prayer times add-on on and a place picked, the sun rises and sets when it does there. Otherwise it rises at six and sets at six.</li>
       <li><b>The whole island matches:</b> the open card, the music pill, timers, pop-ups and notices are the same raised frame round a pane, cream with slate ink by day, indigo with cream ink and the window's gold at night, in the Outfit typeface. They change with the ball. Their pages and sizes are Pill's.</li>
-      <li><b>On a MacBook with a notch,</b> the resting pill floats just below the notch instead of hiding in it, and stays where you drag it.</li>
       <li><b>Nothing new runs at rest:</b> the picture is painted once a minute, with the tick the clock already wakes for. The ball's roll draws frames for about a second and a half, and a slide draws one each time the pointer moves.</li>
     </ul>
     <div><figure class="shot-card">
       <div class="strip tall"><div class="sky-fill"></div><div class="isl"><img src="assets/shots/diorama/page-settings-day.webp" alt="Settings in the island, in Diorama by day: Diorama picked under Theme, Clock under Idle look, and Version 0.2.40" width="620" height="330" loading="lazy"></div></div>
       <figcaption class="t-tile"><b>Diorama, picked in Settings.</b> The gear opens it in the island.</figcaption>
     </figure></div>
-    <p>Right-click the island, then <kbd>Theme</kbd> › <kbd>Diorama</kbd>. Or open the island, press the gear and pick <kbd>Diorama</kbd> under Theme. On a Mac, it's in the menu bar's Theme menu. Classic stays the default look.</p>
-  </div>
-</dialog>
-<dialog class="more-sheet" id="m-mac" aria-labelledby="m-mac-t">
-  <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
-  <div class="sheet-body">
-    <p class="t-label">Mac</p>
-    <h2 class="t-m" id="m-mac-t">On a Mac, it wraps the notch.</h2>
-    <p>On a MacBook with a camera notch, the island lives around it: what's playing sits either side of the camera, and the island opens downward from the notch when you point at it. On a Mac without a notch, or on another display, it hangs from the top of the screen as it does on Windows. Around the notch, the Halo theme goes black like the notch itself, with Halo's cream type, his orange and his face on it.</p>
-    <ul>
-      <li>Whatever plays: the Music and Spotify apps, YouTube, YouTube Music or Spotify in your browser, and any other player in the Mac's Now Playing, with synced lyrics from LRCLIB, or Apple Music's own with your token, and the reading under Japanese, Korean and Chinese lines, on the closed island too.</li>
-      <li>The focus timer, the Shelf with Phone drop over the same Wi-Fi, tasks, and the System add-on with your Mac's CPU, graphics, memory, drives, network, battery and busiest apps.</li>
-      <li>Pop-ups for volume, charging and Bluetooth headphones (without the battery level; macOS shows AirPods' own when they connect), the Classic, Halo, Glass, Pill and Diorama themes, and start at login. Every option is in the menu bar, under Halo's mark.</li>
-      <li>Full-screen apps: while a video, a game or a slideshow is full screen, the island stays out of its way and comes back after, as on Windows. Or it stays on top: the menu bar's In full-screen apps, or Settings.</li>
-      <li>Halo Island sign-in: Today on the island, as on Windows. The Mac's key stays in a file only your Mac account can read.</li>
-      <li>Glass is macOS's own glass, Liquid Glass on macOS 26 and a dark blur before it, with a black strip where it meets the notch.</li>
-      <li>Pill: on a MacBook with a notch, the resting island goes back into the notch; music, the timer, the prayer countdown, pop-ups, notices and the open island float as the pill just below it. Without a notch it floats below the top of the screen, as on Windows.</li>
-      <li>Diorama: its resting pill floats just below the notch, where its picture shows, instead of going back into it, and stays where you drag it. Everything else hangs below the notch as Pill's does, in Diorama's frame.</li>
-    </ul>
-    <p><b>New in 0.2.40:</b> Japanese readings and Script reader are add-ons in the Mac's Add-ons tab, so the download is about a third of what it was.</p>
-    <p><b>New in 0.2.40:</b> Prayer times, in the Mac's Add-ons tab: Location Services finds your city, or you type it, the adzan plays when it's time, and around the notch the countdown sits beside the camera.</p>
-    <p><b>New in 0.2.40:</b> move the island. On a Mac without a notch, or on another display, press it and drag it left or right along the top edge, in every theme. On a MacBook with a notch, Pill's floating island drags the same way and slides back into the notch to rest; Classic, Halo and Glass stay at the camera. Move island to the centre, in the menu bar's menu, brings it back.</p>
-    <p>macOS 14 or later, on Apple silicon or Intel. One app for both, <span data-release-copy="mac-size">5.3&nbsp;MB</span>. It's signed with an Apple Developer ID and checked by Apple, so it opens like any Mac app.</p>
+    <p>Right-click the island, then <kbd>Theme</kbd> › <kbd>Diorama</kbd>. Or open the island, press the gear and pick <kbd>Diorama</kbd> under Theme. Classic stays the default look.</p>
   </div>
 </dialog>
 <dialog class="more-sheet" id="m-halo-island" aria-labelledby="m-halo-island-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
-    <p class="t-label">Halo Island account · On Windows and Mac</p>
+    <p class="t-label">Halo Island account</p>
     <h2 class="t-m" id="m-halo-island-t">Your Halo Island, at the top of your screen.</h2>
     <p>Sign in with your <a class="link" href="https://halo.island">halo.island</a> account the way you sign in on a TV: press the gear, choose Sign in with Halo Island, and approve the code the island shows at halo.island/connect. No password is ever typed into Halo Island. Today then fills in from it.</p>
     <ul>
@@ -2080,20 +1922,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <p>Your data: <code>%APPDATA%\Halo\</code>. Cache and log: <code>%LOCALAPPDATA%\Halo\</code>. Uninstalling removes the app, cache and log, and keeps your data.</p>
   </div>
 </dialog>
-<dialog class="more-sheet" id="m-install-mac" aria-labelledby="m-install-mac-t">
-  <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
-  <div class="sheet-body">
-    <p class="t-label">macOS 14 or later</p>
-    <h2 class="t-m" id="m-install-mac-t">Ready in under a minute.</h2>
-    <ol>
-      <li><b>Download the app:</b> Halo-Island-Mac.dmg, from the latest release. One app for Apple silicon and Intel.</li>
-      <li><b>Drag it into Applications.</b> Open the DMG: its window shows Halo Island and your Applications folder. Drag the one onto the other.</li>
-      <li><b>Open it:</b> the first time, macOS asks whether to open an app downloaded from the internet. Click Open. It's signed with an Apple Developer ID and checked by Apple, so there's nothing to allow in Privacy &amp; Security.</li>
-    </ol>
-    <h4>Where things live</h4>
-    <p>Your data: <code>~/Library/Application Support/Halo/</code>. Log: <code>~/Library/Logs/Halo/</code>.</p>
-  </div>
-</dialog>
 <dialog class="more-sheet" id="m-new" aria-labelledby="m-new-t">
   <form method="dialog"><button class="sheet-x" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></form>
   <div class="sheet-body">
@@ -2113,7 +1941,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
 (function () {
   var root = document.documentElement;
   var WIN = 'https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe';
-  var MAC = 'https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Mac.dmg';
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var desk = window.matchMedia('(min-width: 1024px)');
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -2332,14 +2159,6 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   sws.forEach(function (s) { s.addEventListener('click', function () { pickLook(s.dataset.k); }); });
   radioKeys(sws, pickLook);
 
-  // ---- The Mac's own look picker.
-  var segs = [].slice.call(document.querySelectorAll('#macSeg button'));
-  function pickMac(k) {
-    segs.forEach(function (s) { s.setAttribute('aria-checked', String(s.dataset.k === k)); });
-    document.querySelectorAll('.mac-set').forEach(function (m) { m.hidden = m.dataset.k !== k; });
-  }
-  segs.forEach(function (s) { s.addEventListener('click', function () { pickMac(s.dataset.k); }); });
-  radioKeys(segs, pickMac);
   function radioKeys(group, pick) {
     group.forEach(function (b, i) {
       b.addEventListener('keydown', function (e) {
@@ -2359,25 +2178,13 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     d.addEventListener('click', function (e) { if (e.target === d) d.close(); });
   });
 
-  // ---- On a Mac (not an iPad, which also says "Mac"), downloads offer the Mac app first.
-  var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-  var primary = document.querySelector('.hero .dl-primary'), other = document.querySelector('.hero .dl-other');
-  if (/^Mac/i.test(platform) && !(navigator.maxTouchPoints > 1)) {
-    document.querySelectorAll('[data-download="bar"]').forEach(function (a) {
-      a.href = MAC;
-      a.setAttribute('data-release', 'mac-link');
-    });
-    document.querySelectorAll('[data-download-label]').forEach(function (s) { s.textContent = 'Download for Mac'; });
-    primary.href = MAC; primary.setAttribute('data-release', 'mac-link');
-    other.href = WIN; other.removeAttribute('data-release'); other.textContent = 'Download for Windows';
-  }
+  var primary = document.querySelector('.hero .dl-primary');
   // On a phone the downloads lead to Get Halo Island, which there sends the link to your computer. The head
   // script sets .phone with the same check, so the page paints right the first time.
   var phone = document.documentElement.classList.contains('phone');
   if (phone) {
     [document.querySelector('.top-dl'), document.querySelector('.side-dl'), primary].forEach(function (a) { if (a) { a.href = '#get'; a.removeAttribute('data-release'); } });
     document.querySelectorAll('.side-dl [data-download-label]').forEach(function (s) { s.textContent = 'Send to your computer'; });
-    other.hidden = true;
   }
 
   // ---- Send it to your computer. The link keeps this visit's utm tags (a creator's link, say) and adds
@@ -2417,21 +2224,17 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     var src = document.querySelector('[data-release="' + key + '"]');
     if (src) document.querySelectorAll('[data-release-copy="' + key + '"]').forEach(function (el) { el.textContent = src.textContent; });
   }
-  ['version', 'size', 'mac-size'].forEach(copy);
+  ['version', 'size'].forEach(copy);
   if (window.fetch) {
     fetch('https://api.github.com/repos/kolijijani/halo-island/releases/latest')
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (rel) {
         if (!rel || !/^v\d/.test(rel.tag_name || '')) return;
         var setup = (rel.assets || []).filter(function (a) { return a.name === 'Halo-Island-Setup.exe'; })[0];
-        var dmg = (rel.assets || []).filter(function (a) { return a.name === 'Halo-Island-Mac.dmg'; })[0];
         fill('version', function (el) { el.textContent = rel.tag_name.slice(1); });
         if (setup) fill('size', function (el) { el.textContent = (setup.size / 1e6).toFixed(1) + ' MB'; });
-        if (dmg) fill('mac-size', function (el) { el.textContent = (dmg.size / 1e6).toFixed(1) + ' MB'; });
-        // A release without the Mac app yet: its buttons open the release instead of a missing file.
-        else if (rel.html_url) fill('mac-link', function (el) { el.href = rel.html_url; });
         if (rel.html_url) fill('notes', function (el) { el.href = rel.html_url; });
-        ['version', 'size', 'mac-size'].forEach(copy);
+        ['version', 'size'].forEach(copy);
       })
       .catch(function () {});
   }

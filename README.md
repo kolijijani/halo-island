@@ -4,14 +4,12 @@
 
 <h1 align="center">Halo Island</h1>
 
-<h3 align="center">A living notch for Windows and Mac</h3>
+<h3 align="center">A living notch for Windows</h3>
 
 <p align="center">Like the Dynamic Island on a phone, for your computer. A small island hangs from the top of your screen, shows what's playing, counting down and arriving, and opens into quick pages when you point at it.</p>
 
 <p align="center">
   <a href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-0078D4?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI%2BPHBhdGggZD0iTTIgMmg5LjJ2OS4ySDJ6bTEwLjggMEgyMnY5LjJoLTkuMnpNMiAxMi44aDkuMlYyMkgyem0xMC44IDBIMjJWMjJoLTkuMnoiLz48L3N2Zz4=" height="34" alt="Download for Windows"></a>
-  &nbsp;
-  <a href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Mac.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-333333?style=for-the-badge&logo=apple&logoColor=white" height="34" alt="Download for Mac"></a>
 </p>
 
 <p align="center">
@@ -35,7 +33,7 @@
 
 <p align="center"><img src="docs/brand/readme/halo/hero.webp" width="880" alt="The island hanging from the top of the screen, open on the Music page with lyrics in time, and Halo the cat peeking over a playing island"></p>
 
-<p align="center"><sub>Free and open source &nbsp;·&nbsp; Windows 10 and 11 &nbsp;·&nbsp; macOS 14 or later &nbsp;·&nbsp; No account needed</sub></p>
+<p align="center"><sub>Free and open source &nbsp;·&nbsp; Windows 10 and 11 &nbsp;·&nbsp; No account needed</sub></p>
 
 
 ## Features
@@ -79,9 +77,9 @@ Switch on **Show over games** and, while a borderless full-screen game is in fro
 
 ### Your whole computer on one page
 
-CPU, GPU, memory, drives, network and battery: rings and gauges, each core's load, the last minute of history and the apps using the most. Read straight from Windows' own counters, with no drivers and no admin rights, and it never leaves your PC. On a Mac it reads macOS's own counters, the way Stats does. **System** is an [add-on](#add-ons): its tab shows once you switch it on, and until then nothing reads the counters.
+CPU, GPU, memory, drives, network and battery: rings and gauges, each core's load, the last minute of history and the apps using the most. Read straight from Windows' own counters, with no drivers and no admin rights, and it never leaves your PC. **System** is an [add-on](#add-ons): its tab shows once you switch it on, and until then nothing reads the counters.
 
-On a desktop, **Power** shows what the whole PC draws: split into the CPU, the graphics card and the rest. A Corsair HXi or RMi, or an MSI MEG Ai or MPG Ai…TS power supply reports the real number over its USB cable, with what it pulls from the wall, its efficiency and its temperature; Halo Island only reads it, while the page is open. With any other power supply, the page estimates: the CPU's own reading, the graphics card's (NVIDIA cards report theirs through the driver), and about 40 W for the board, memory, drives and fans. On a Mac without a battery (a Mac mini, Studio, iMac or Mac Pro with Apple silicon), Power reads what the whole Mac draws from its own sensor, the number Stats shows as System total; macOS doesn't split it by part, so the CPU's and the graphics' load stand beside it. A MacBook keeps its Battery module.
+On a desktop, **Power** shows what the whole PC draws: split into the CPU, the graphics card and the rest. A Corsair HXi or RMi, or an MSI MEG Ai or MPG Ai…TS power supply reports the real number over its USB cable, with what it pulls from the wall, its efficiency and its temperature; Halo Island only reads it, while the page is open. With any other power supply, the page estimates: the CPU's own reading, the graphics card's (NVIDIA cards report theirs through the driver), and about 40 W for the board, memory, drives and fans.
 
 <p align="center"><img src="docs/brand/readme/halo/system.webp" width="880" alt="The System page: CPU temperature, load and clock rings, usage history, each core's load and the top processes"></p>
 
@@ -99,7 +97,7 @@ On a desktop, **Power** shows what the whole PC draws: split into the CPU, the g
 
 ### Black, Halo, Glass, Pill or Diorama
 
-The island is black by default, like the one on a phone. **Halo** turns it warm cream, and Halo the cat moves in: he peeks over the edge, follows your pointer and sleeps from midnight to five. **Glass** bends and frosts whatever is behind it, after Apple's Liquid Glass; on a Mac it's macOS's own glass. **Pill** changes the shape: the island floats just below the top of the screen as a black capsule, with the time and battery at rest, the song and the line being sung while music plays, and a rounded card when it opens. **Diorama** is Pill with a picture in its resting capsule: a small window onto a pixel-art place, a house, a tree and a sky that follows your clock from dawn to night.
+The island is black by default, like the one on a phone. **Halo** turns it warm cream, and Halo the cat moves in: he peeks over the edge, follows your pointer and sleeps from midnight to five. **Glass** bends and frosts whatever is behind it, after Apple's Liquid Glass. **Pill** changes the shape: the island floats just below the top of the screen as a black capsule, with the time and battery at rest, the song and the line being sung while music plays, and a rounded card when it opens. **Diorama** is Pill with a picture in its resting capsule: a small window onto a pixel-art place, a house, a tree and a sky that follows your clock from dawn to night.
 
 <p align="center"><img src="docs/brand/readme/halo/themes.webp" width="880" alt="The Music page in Classic, in the Halo theme, in the Glass theme over a light and a dark page, in the Pill theme as a card floating below the top edge, beside Pill's capsule while music plays, and the Diorama theme's resting pill by day and at night: a pixel-art house and tree under a blue sky, then under the moon and stars"></p>
 
@@ -113,19 +111,11 @@ It reads the feed only while Today is open: as it opens, when the last read is o
 
 ### Prayer times for your city
 
-Today's times for your kab/kota as Kemenag RI publishes them, or for your city anywhere else in the world, a countdown in the ten minutes before each prayer, the adzan, and the qibla. It's an add-on: under 1 MB, downloaded only when you switch it on. On Windows and Mac.
+Today's times for your kab/kota as Kemenag RI publishes them, or for your city anywhere else in the world, a countdown in the ten minutes before each prayer, the adzan, and the qibla. It's an add-on: under 1 MB, downloaded only when you switch it on.
 
 <p align="center"><img src="docs/brand/readme/halo/prayer.webp" width="880" alt="Eight minutes to Ashar on the resting island, and the Prayer tab with today's times for Kota Jakarta"></p>
 
 [Add-ons](#add-ons)
-
-### On a Mac, it wraps the notch
-
-On a MacBook, the island lives around the camera notch: the album art on one side, the beat on the other, and it opens downward when you point at it. Whatever plays, with lyrics: Music, Spotify, YouTube and Spotify in your browser, any player that macOS's own now playing shows; the focus timer, the Shelf and Phone drop, tasks, Today and the System add-on are all there, in the Classic, Halo, Glass, Pill or Diorama theme.
-
-<p align="center"><img src="docs/brand/readme/halo/mac.webp" width="880" alt="On a MacBook: music playing and a focus timer either side of the notch, and the Music page opening below it"></p>
-
-[What's on the Mac so far](#on-a-mac)
 
 ## Light by design
 
@@ -144,7 +134,7 @@ On Windows it draws on your graphics card in step with your display's refresh ra
 
 - **No account, no tracking.** Tasks, the Shelf, focus history and the drinks you add to Caffeine are files in your own user folder. There are no ads and no analytics.
 - **Your files stay yours.** Phone drop asks before it takes anything and uses your own Wi-Fi. Files from paired phones are encrypted with keys made on the two devices, and the meeting server never sees them.
-- **Little goes online.** Lyrics lookups go to LRCLIB while a song plays, and once at start the app reads one small file to see whether a new version is out. Apple Music lyrics, Halo, paired phones and add-ons connect only after you turn them on, and the AI tab asks your AI services only while it's open or its notices are on. [PRIVACY.md](PRIVACY.md) lists every request.
+- **Little goes online.** Lyrics lookups go to LRCLIB while a song plays, and a couple of minutes after start (at most once a day once it gets through) the app reads one small file to see whether a new version is out. Apple Music lyrics, Halo, paired phones and add-ons connect only after you turn them on, and the AI tab asks your AI services only while it's open or its notices are on. [PRIVACY.md](PRIVACY.md) lists every request.
 
 ## Install
 
@@ -157,10 +147,6 @@ On Windows it draws on your graphics card in step with your display's refresh ra
 Builds aren't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Click **More info → Run anyway**.
 
 Your data lives in `%APPDATA%\Halo\`, and cache plus log in `%LOCALAPPDATA%\Halo\`. Uninstalling removes the app, cache and log, and keeps your data.
-
-### Mac
-
-macOS 14 or later, Apple silicon or Intel (one app for both): **[download Halo-Island-Mac.dmg](https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Mac.dmg)**, open it and drag Halo Island into Applications (had Halo Island? Quit it first; Halo Island moves the old app to the Trash). It's signed with an Apple Developer ID and checked by Apple: the first time, macOS only asks whether to open an app downloaded from the internet, so click **Open**. What's on the Mac so far: [On a Mac](#on-a-mac). Your data lives in `~/Library/Application Support/Halo/`, the log in `~/Library/Logs/Halo/`.
 
 ## FAQ
 
@@ -184,7 +170,7 @@ It's built not to. It's native code with no web view, it draws nothing while not
 <summary><b>Why does Windows say "Windows protected your PC"?</b></summary>
 <br>
 
-The Windows builds aren't code-signed yet, so Windows SmartScreen doesn't know them. Click **More info → Run anyway**. The Mac app is signed with an Apple Developer ID and notarized by Apple, so a Mac only asks whether to open it.
+The Windows builds aren't code-signed yet, so Windows SmartScreen doesn't know them. Click **More info → Run anyway**.
 
 </details>
 
@@ -197,18 +183,10 @@ Yes, on Windows 10 and 11. Glass needs Windows 10 version 2004 or later to bend 
 </details>
 
 <details>
-<summary><b>What's different on a Mac?</b></summary>
-<br>
-
-The island wraps the notch, and the Mac has music with lyrics, Focus, the Shelf with Phone drop, Tasks, Today, the System add-on, Prayer times, the Classic, Halo, Glass, Pill and Diorama themes, headphone pop-ups, hiding in full-screen apps, Halo sign-in and start at login. Not on the Mac yet: paired phones and Show over games. [On a Mac](#on-a-mac) has the details.
-
-</details>
-
-<details>
 <summary><b>Can it hide during games and videos?</b></summary>
 <br>
 
-Yes: right-click the island › **In full-screen apps** › **Hide**. Pick **Stay on top** instead to keep it over borderless games and videos, or turn on [Show over games](#show-over-games) for a frame rate readout. On a Mac the same choice is in the menu bar under Halo's mark (and in Settings): with **Hide**, macOS keeps the island off a full-screen app's Space until you leave it.
+Yes: right-click the island › **In full-screen apps** › **Hide**. Pick **Stay on top** instead to keep it over borderless games and videos, or turn on [Show over games](#show-over-games) for a frame rate readout.
 
 </details>
 
@@ -216,7 +194,7 @@ Yes: right-click the island › **In full-screen apps** › **Hide**. Pick **Sta
 <summary><b>Does it cover my browser tabs?</b></summary>
 <br>
 
-It sits over the middle of the top edge, so over a maximized browser it can cover the tabs there. You can move it: press the closed island and drag it left or right along the top edge. It stays where you leave it, also after a restart, and opens away from the screen's edge. To put it back, drag it to the middle (it snaps there) or right-click it › **Move island to the centre** (on a Mac, also in the menu bar under Halo's mark). On a MacBook with a notch the island lives in the menu bar around the camera, above your tabs, and stays there; only the Pill and Diorama themes' island, which floats below the menu bar, moves, and Pill's docks back in the notch to rest. To keep the top edge clear while nothing plays, right-click the island › **Idle look** › **Hidden until hover**: only an invisible strip stays at the top edge until you point at it.
+It sits over the middle of the top edge, so over a maximized browser it can cover the tabs there. You can move it: press the closed island and drag it left or right along the top edge. It stays where you leave it, also after a restart, and opens away from the screen's edge. To put it back, drag it to the middle (it snaps there) or right-click it › **Move island to the centre**. To keep the top edge clear while nothing plays, right-click the island › **Idle look** › **Hidden until hover**: only an invisible strip stays at the top edge until you point at it.
 
 </details>
 
@@ -224,7 +202,7 @@ It sits over the middle of the top edge, so over a maximized browser it can cove
 <summary><b>Where are my files and settings?</b></summary>
 <br>
 
-On Windows in `%APPDATA%\Halo\` (cache and log in `%LOCALAPPDATA%\Halo\`); on a Mac in `~/Library/Application Support/Halo/` (log in `~/Library/Logs/Halo/`). Uninstalling keeps your data.
+In `%APPDATA%\Halo\` (cache and log in `%LOCALAPPDATA%\Halo\`). Uninstalling keeps your data.
 
 </details>
 
@@ -242,11 +220,9 @@ The gear at the top right of the open island opens **Settings**: your Halo accou
 - start with Windows, which version you have (**About Halo Island**, with the build's day; it opens that version's release notes), and quit
 - in Settings only: which version you have, with **Check now** ([New versions](#new-versions)); in Advanced settings, everything the menu doesn't have
 
-On a Mac the gear opens the same Settings, and **Advanced settings** the same window, a real Mac window with the title bar buttons over its sidebar; the menu bar item under Halo's mark has **Advanced settings…** (⌘,) and the quick options.
-
 ### The Halo theme
 
-The island stays black by default. Switch on the Halo theme (the gear › **Theme › Halo**, or right-click › **Theme › Halo**) and the whole island becomes Halo's: warm cream with dark brown text, his orange on the play button, the bars and the switches, and Outfit, the Halo Island typeface. Halo, the Halo cat, moves in too: he peeks over the island's edge while it rests, watches your pointer when it comes near, sits beside the clock, peeks up beside the pin when the island is open and bobs along while music plays. He sleeps from midnight to five. Where the island wraps a MacBook's notch, the theme goes black like the notch itself, with Halo's cream type, his orange and his face on it. He is drawn from the Halo logo, not a picture, so he stays sharp at any scaling, and he only moves for a moment now and then, so he costs no CPU at rest.
+The island stays black by default. Switch on the Halo theme (the gear › **Theme › Halo**, or right-click › **Theme › Halo**) and the whole island becomes Halo's: warm cream with dark brown text, his orange on the play button, the bars and the switches, and Outfit, the Halo Island typeface. Halo, the Halo cat, moves in too: he peeks over the island's edge while it rests, watches your pointer when it comes near, sits beside the clock, peeks up beside the pin when the island is open and bobs along while music plays. He sleeps from midnight to five. He is drawn from the Halo logo, not a picture, so he stays sharp at any scaling, and he only moves for a moment now and then, so he costs no CPU at rest.
 
 ![The Music page in Classic, in the Halo theme, in Glass and in Pill](docs/brand/readme/halo/themes.webp)
 
@@ -256,24 +232,21 @@ Glass turns the island into liquid glass, after Apple's Liquid Glass. Its rim be
 
 To bend what's under it, Glass copies the part of the screen behind its window (the island and the space it opens into) whenever something there changes, and not while the island is hidden, a full-screen app is in front (there it draws smoked glass, so a game's frames aren't copied) or the PC is locked. The copy stays in your PC's memory and on its graphics card, and each new copy replaces the last; it's never saved or sent. While Glass is on, Windows leaves Halo Island out of screenshots, screen recordings and screen sharing. On a display in HDR, Halo Island maps the copy back to ordinary colours itself. Where it can't copy the screen (the software renderer, Windows 10 before version 2004, Remote Desktop, a laptop display that no graphics card lets it copy), Glass draws smoked glass instead: the same shape, light and shadow over a see-through tint, and it stays in screenshots.
 
-On a Mac, Glass is macOS's own glass: Liquid Glass on macOS 26, and a dark blur on macOS 14 and 15. It's the dark kind, so white text stays readable over any wallpaper, and where the island meets the notch it keeps a black strip that fades into the glass. macOS draws the glass itself, so Halo Island doesn't copy your screen for it. If Glass looks flat, turn off **Reduce transparency** in System Settings › Accessibility › Display.
-
 ### The Pill theme
 
-Pill changes the island's shape and layouts, not only its colours. Pick it with right-click › **Theme › Pill**, or the gear › **Theme › Pill**; on a Mac, in the menu bar's Theme menu.
+Pill changes the island's shape and layouts, not only its colours. Pick it with right-click › **Theme › Pill**, or the gear › **Theme › Pill**.
 
 - **It floats.** The island sits a little below the top edge: a capsule while it rests, and a card with all four corners rounded when it opens. A soft shadow and a fine rim keep it apart from the wallpaper, light or dark.
 - **At rest** it shows the time and, on a laptop, the battery's percentage and the battery on the right, with a bolt while it's plugged in. A desktop shows the time alone. Pick **Idle look › Status bar** and it widens into a status bar: the volume, the date and time in an inner pill, and the battery. Status bar is Pill's own; the other themes keep the clock.
 - **While music plays** it shows the album art, the line being sung (or the title and artist between lines) and bars in the album's colour, with a glow of it along the bottom edge.
 - **Open**, it's a card with Classic's tabs. The Music page lays out like a player card: the art, the player's name over the song, the time on one line and big controls, with the lyrics beside them. Pop-ups, notices and the focus timer take the capsule shape too.
 - **Colour only where it means something:** the album's colour for music, green for a charging battery, red for a low one, and your Windows accent elsewhere.
-- **On a MacBook with a notch**, Pill is either the pill or the notch: at rest it goes back into the notch (the menu bar already shows the time and the battery; the Eyes look still peeks out beside the camera), and music, from the first note to the end of a pause, the timer, pop-ups, notices and the open card float just below the notch. Without a notch it floats below the top of the screen, as on Windows.
 
 The pages and features are the same as in Classic.
 
 ### The Diorama theme
 
-Diorama is Pill with a picture in its resting capsule: a long, small window onto a pixel-art place that keeps the hours of your day, as long as a MacBook's notch. Pick it with right-click › **Theme › Diorama**, or the gear › **Theme › Diorama**; on a Mac, in the menu bar's Theme menu.
+Diorama is Pill with a picture in its resting capsule: a long, small window onto a pixel-art place that keeps the hours of your day. Pick it with right-click › **Theme › Diorama**, or the gear › **Theme › Diorama**.
 
 - **The place.** Behind a raised frame, cream by day and indigo at night, stand a house at one end and a tree at the other, with a letter box, a garden fence and a lamp post between them and hills behind. The lamp is lit from dusk through the night.
 - **It follows your clock.** Dawn is pink, the day is blue with the sun crossing the sky and clouds drifting by, the light turns golden from about an hour before sunset, and after dusk the stars come out one by one under the moon in tonight's phase. The window is lit until midnight and again from five, with smoke from the chimney while breakfast and supper cook.
@@ -282,7 +255,6 @@ Diorama is Pill with a picture in its resting capsule: a long, small window onto
 - **Slide it.** Press the glass ball and slide it along: the place runs on through the day with it, through the golden hour and the sunset into the night (or at night through the small hours into the morning). Let go and it rolls on to the end it was nearer, or the one you threw it toward; tap it to send it to the other end. Left on the other side of the day, the whole theme keeps that side until the clock comes round to it: by day, 45 minutes after sunset; at night, 50 minutes after sunrise. Pressing the ball never opens or moves the island; press anywhere else on it for that.
 - **The time** is written in the sky between the house and the tree, 12- or 24-hour as you've set it. On a laptop, a bolt stands beside it while the battery charges, and a red battery at 20% or less. Pick **Idle look › Minimal** for the place without the clock.
 - **Your own sunrise and sunset.** With the [Prayer times](#add-ons) add-on on and a place picked, the sun rises and sets when it does there. Otherwise it rises at six and sets at six.
-- **On a MacBook with a notch**, the resting pill floats just below the notch instead of hiding in it, and stays where you drag it along the top edge.
 - **The whole island matches.** The open card, the music pill, timers, pop-ups and notices are the same raised frame round a pane: cream with slate ink by day, indigo with cream ink and the window's gold at night, in the Outfit typeface. They change with the ball.
 - **What it costs:** the picture is painted once a minute, with the tick the clock already wakes for, and nothing runs in between. The ball's roll draws frames for about a second and a half; a slide draws one each time the pointer moves.
 
@@ -295,14 +267,6 @@ Switch on **Show over games** (System › Games, or right-click › In full-scre
 The frame rate is counted the way Intel's PresentMon and Xbox Game Bar count it: Windows logs every frame a game hands to the screen, and Halo Island reads that log for the game in front. Nothing is loaded into the game, so there is nothing for anti-cheat to see. DirectX 9 to 12 games are counted from their own Present calls; Vulkan and OpenGL games from the graphics kernel's log of their frames. The GPU and CPU numbers come from the same readers as the System page. Nothing runs while no game is in front or while the readout is off.
 
 Windows lets only admins and the **Performance Log Users** group read that log. The first time, System › Games asks for a one-time OK: an admin prompt adds your Windows account to that group (Xbox Game Bar's FPS counter asks for the same), and Windows applies it the next time you sign in. Until then the FPS slot shows a dash and the rest works. To undo it, remove your account from Performance Log Users in Computer Management, or run `net localgroup "Performance Log Users" <your user name> /delete` as an admin. A game in exclusive full-screen mode still covers the island, as it covers every window.
-
-### On a Mac
-
-On a MacBook with a camera notch, the island lives around it: what's playing sits either side of the camera (the album art on the left and the beat on the right, a timer's ring and its minutes the same way), and the island opens downward from the notch when you point at it. On a Mac without a notch, or on another display, it hangs from the top of the screen as it does on Windows. Around the notch, the Halo theme goes black like the notch itself, with Halo's cream type, his orange and his face on it. Pick the eyes as the idle look and they play hide and seek with the camera: they peek out beside it on your pointer's side and follow your pointer anywhere on the screen, and when it crosses over they duck behind the camera and come out on the other side. Halo does the same in his theme.
-
-The Mac app has the island, whatever plays with synced lyrics (Music, Spotify, a browser's YouTube or Spotify tab, any player in macOS's own now playing, read through the open-source MediaRemote adapter; Apple Music's own lyrics with [your token](#apple-music-lyrics)), the focus timer, the Shelf with [Phone drop](#phone-drop) over the same Wi-Fi, tasks, Today with your Mac's CPU, memory, disk and battery, the System add-on with your Mac's CPU, graphics, memory, drives, network, battery and busiest apps, pop-ups for volume, charging and Bluetooth headphones (without the battery level; macOS shows AirPods' own when they connect), [Prayer times](#add-ons) (Location Services finds your city, or you type it), the Classic, Halo, Glass, Pill and Diorama themes ([Pill](#the-pill-theme) floats just below the notch for music, pop-ups and the open card, and rests inside it; [Diorama](#the-diorama-theme) rests just below it too), hiding in full-screen apps (or staying on top of them), [Halo sign-in](#halo-optional) and start at login. Every option is in the menu bar, under Halo's mark. Not on the Mac yet: paired phones and Show over games.
-
-The Mac pictures come from the Mac app itself (`halo --render <dir> --notch`, run by the `mac` workflow on a macOS runner with a MacBook's notch drawn in).
 
 ### Apple Music lyrics
 
@@ -356,14 +320,14 @@ The phone and PC meet through a small server (`drop.halo.com`, code in [`server/
 
 Signing in to [Halo](https://halo.app) is optional and works like a TV: no password is typed into Halo Island. It tells the island whether your account has Studio Pro.
 
-1. Open the island, press the gear at the top right, and choose **Sign in with Halo** (right-click the island or the tray icon → **Halo** → **Sign in to Halo…** works too; on a Mac, the menu bar under Halo's mark). The island shows an 8-letter code.
+1. Open the island, press the gear at the top right, and choose **Sign in with Halo** (right-click the island or the tray icon → **Halo** → **Sign in to Halo…** works too). The island shows an 8-letter code.
 2. Open halo.app/connect on your phone or this computer (**Open halo.app** fills the code in), check the computer's name, and choose **Connect**.
 
-This PC gets a key of its own that can do only these things: it reads nothing about your money (no transactions, balances, bills, account numbers, notes or receipts), and it can't change or delete anything or touch your account. The key is stored encrypted for your Windows account (`%LOCALAPPDATA%\Halo\halo-link.bin`); on a Mac, in a file only your Mac account can read (`~/Library/Application Support/Halo/halo-link.bin`). Halo Island asks Halo only whether your account has Studio Pro, when a page that needs it opens. **Disconnect** in Settings (or **Halo › Disconnect** in the menu) signs this PC out; you can also disconnect it in halo.app under Connected apps.
+This PC gets a key of its own that can do only these things: it reads nothing about your money (no transactions, balances, bills, account numbers, notes or receipts), and it can't change or delete anything or touch your account. The key is stored encrypted for your Windows account (`%LOCALAPPDATA%\Halo\halo-link.bin`). Halo Island asks Halo only whether your account has Studio Pro, when a page that needs it opens. **Disconnect** in Settings (or **Halo › Disconnect** in the menu) signs this PC out; you can also disconnect it in halo.app under Connected apps.
 
 ### New versions
 
-Halo Island looks for a new version a couple of minutes after it starts, by reading one small signed file from kolijijani.github.io/halo-island. It doesn't look while your PC is locked, the screen is off or battery saver is on. **Check for updates…** in the menu looks right away and says on the island what it found; **Check now** in Settings does the same and answers there. When there is a new version, the island says **Update available** with the version and keeps saying it until you click it or **Hide** it. The new version is already downloaded by then, and checked: click the notice for the Update sheet, then **Install now** (Halo Island closes, updates and opens again in a few seconds, your settings and data stay) or **Install on next start**. On a Mac this works where Halo Island can replace itself, as in Applications; opened straight from the DMG, its sheet downloads the DMG instead. Until you update, the right-click menu starts with **Update to Halo Island x…** and Settings has a last row with **Update**. After you update, the island says **Updated to x** once, with **What's new**. How the file is made and signed: [docs/updates.md](docs/updates.md).
+Halo Island looks for a new version a couple of minutes after it starts, by reading one small signed file from kolijijani.github.io/halo-island. If that look fails, it tries again every 30 minutes until one gets through, and it makes at most one successful look a day. It doesn't look while your PC is locked, the screen is off or battery saver is on. **Check for updates…** in the menu looks right away and says on the island what it found; **Check now** in Settings does the same and answers there. When there is a new version, the island says **Update available** with the version and keeps saying it until you click it or **Hide** it. The new version is already downloaded by then, and checked: click the notice for the Update sheet, then **Install now** (Halo Island closes, updates and opens again in a few seconds, your settings and data stay) or **Install on next start**. Until you update, the right-click menu starts with **Update to Halo Island x…** and Settings has a last row with **Update**. After you update, the island says **Updated to x** once, with **What's new**. How the file is made and signed: [docs/updates.md](docs/updates.md).
 
 ### Notifications
 
@@ -373,24 +337,24 @@ In the Microsoft Store copy, other apps' notifications show on the island: a Wha
 
 The **+** at the end of the tabs lists features that stay off until you switch them on. Most aren't part of the download: switching one on downloads its files from this project's releases, or from this repository's own copy at a fixed public commit while a release isn't published (each checked against the size and SHA-256 built into the app either way), and switching it off deletes them. Its row says what's happening: no internet, the server timing out or down (both try again by themselves), a file that isn't available, or a file that came back wrong (never kept). While every add-on is off, nothing is downloaded and nothing of theirs runs.
 
-**Prayer times** (959 KB) shows today's times for your kab/kota as Kemenag RI publishes them, with Imsak and Terbit, the next prayer and how long until it, and the qibla. Makkah, Madinah and Jeddah use Umm al-Qura. Outside Indonesia, any of 33,000 cities (every one of 15,000 people or more, looked up online as you type, so the add-on doesn't carry them) gets the times of the method its country follows, named beside the place: the Moonsighting Committee in the UK, the US and Canada, Umm al-Qura on the Arabian Peninsula, Dubai, Qatar, Kuwait, Singapore's for Singapore, Malaysia and Brunei, Diyanet in Turkey, Tehran in Iran, Karachi in South Asia (Hanafi Ashar there and in Central Asia), the Egyptian authority in Africa, Syria and Lebanon, and the Muslim World League everywhere else, on the city's own clock, summer time included. In the 10 minutes before each prayer the island counts down, and at the time it says so with a short tone, an adzan, or nothing. The adzan has two voices: Aaqib Azeez, or the Maghrib adzan at Masjid al-Haram in Makkah (1.8 MB, downloaded only when you pick it), and Subuh plays its own adzan with "as-salatu khairum min an-naum" (2.4 MB, with either voice). The play button beside the choice lets you hear it first. Music pauses for the adzan; **Stop** ends it. **OK** on the countdown puts it away until that prayer's time, and the song and its sung line come back (around a MacBook's notch the countdown sits beside the camera, without OK).
+**Prayer times** (959 KB) shows today's times for your kab/kota as Kemenag RI publishes them, with Imsak and Terbit, the next prayer and how long until it, and the qibla. Makkah, Madinah and Jeddah use Umm al-Qura. Outside Indonesia, any of 33,000 cities (every one of 15,000 people or more, looked up online as you type, so the add-on doesn't carry them) gets the times of the method its country follows, named beside the place: the Moonsighting Committee in the UK, the US and Canada, Umm al-Qura on the Arabian Peninsula, Dubai, Qatar, Kuwait, Singapore's for Singapore, Malaysia and Brunei, Diyanet in Turkey, Tehran in Iran, Karachi in South Asia (Hanafi Ashar there and in Central Asia), the Egyptian authority in Africa, Syria and Lebanon, and the Muslim World League everywhere else, on the city's own clock, summer time included. In the 10 minutes before each prayer the island counts down, and at the time it says so with a short tone, an adzan, or nothing. The adzan has two voices: Aaqib Azeez, or the Maghrib adzan at Masjid al-Haram in Makkah (1.8 MB, downloaded only when you pick it), and Subuh plays its own adzan with "as-salatu khairum min an-naum" (2.4 MB, with either voice). The play button beside the choice lets you hear it first. Music pauses for the adzan; **Stop** ends it. **OK** on the countdown puts it away until that prayer's time, and the song and its sung line come back.
 
-- **Your place:** Windows' location (Location Services on a Mac) picks the nearest of Kemenag's 517 places or of the world's cities, and checks again every few hours, so a trip moves the place. Away from Kemenag's places, the cities of the 5-degree squares around you come from this repository's city files (`site/places/1/`, at a fixed public commit); the point itself is used on your computer and never saved or sent. Only the place picked is saved, with its clock, so its times need nothing online. With location off, the computer's time zone suggests a place; **Change place** lets you type yours: a kab/kota, or any city.
+- **Your place:** Windows' location picks the nearest of Kemenag's 517 places or of the world's cities, and checks again every few hours, so a trip moves the place. Away from Kemenag's places, the cities of the 5-degree squares around you come from this repository's city files (`site/places/1/`, at a fixed public commit); the point itself is used on your computer and never saved or sent. Only the place picked is saved, with its clock, so its times need nothing online. With location off, the computer's time zone suggests a place; **Change place** lets you type yours: a kab/kota, or any city.
 - **Accuracy:** replayed against Kemenag's published 2026 schedule for all 517 places, 98.2% of 227,367 times match to the minute and none is more than a minute off. Outside Indonesia the times are [Adhan](https://github.com/batoulapps/adhan-js)'s own, checked to the minute against adhan-js on 47 cities over two years; near the poles, on days without a sunrise, a sunset or room for Ashar, they come from the nearest latitude that has them (`cargo test -p halo-core prayer`; details in [addons/sholat](addons/sholat/README.md)).
 
-**Japanese readings** (3.8 MB) gives romaji under the kanji in Japanese lyrics on PCs where Windows can't read them (Windows keeps its Japanese reading data in the Japanese typing feature, which most PCs outside Japan don't have). Only people who play Japanese songs get it: the first time a song's kanji go unread, it switches itself on and downloads once, and the romaji show a moment later. Switch it off in Add-ons and it stays off; the Music page then offers it under the lyrics, one click away. Kana, Korean and Chinese read without it. On a Mac it gives romaji under every kanji the same way, and the Mac's Add-ons tab switches it too. Details in [addons/ja](addons/ja/README.md).
+**Japanese readings** (3.8 MB) gives romaji under the kanji in Japanese lyrics on PCs where Windows can't read them (Windows keeps its Japanese reading data in the Japanese typing feature, which most PCs outside Japan don't have). Only people who play Japanese songs get it: the first time a song's kanji go unread, it switches itself on and downloads once, and the romaji show a moment later. Switch it off in Add-ons and it stays off; the Music page then offers it under the lyrics, one click away. Kana, Korean and Chinese read without it. Details in [addons/ja](addons/ja/README.md).
 
 **System** (built in, nothing to download) adds the **System** tab: [your whole computer on one page](#your-whole-computer-on-one-page). It is off until you switch it on. Switched off, there's no tab and nothing reads the counters at rest; Show over games keeps its own switch.
 
-**Stocks** (built in, nothing to download) adds a **Stocks** tab, laid out like Apple's Stocks on a Mac: Bursa Malaysia's FTSE KLCI and up to 10 stocks, each with its day's line against the previous close, its price and a change pill (click any pill to switch them all between percent and points). The one you pick fills the right side: its chart over 1D, 1M, 6M or 1Y (point at the chart to read any moment), and the day's high and low, previous close, volume, 52-week high and low, currency and exchange. **Add a stock** finds Bursa's biggest companies by name, short name or number (Maybank, 1155) at once, and any stock, fund or index in the world by its name or symbol (Apple, AAPL, 7203.T) from Yahoo Finance's search once you stop typing; **Edit** removes and reorders them. Prices come from Yahoo Finance (no key; `HALO_STOCKS_URL` points a test build elsewhere), as current as Yahoo has them, and are asked for only while the tab is open: every minute while a market on your list trades, every 10 minutes while all are shut. Without internet the tab says so; Yahoo asking it to slow down says "market closed or limited"; a timeout, an error or an answer that isn't prices says that instead, keeps the last prices with their time and tries again with a growing wait. No price is ever made up. Switched off, there's no tab and nothing is asked.
+**Stocks** (built in, nothing to download) adds a **Stocks** tab, laid out like Apple's Stocks app: Bursa Malaysia's FTSE KLCI and up to 10 stocks, each with its day's line against the previous close, its price and a change pill (click any pill to switch them all between percent and points). The one you pick fills the right side: its chart over 1D, 1M, 6M or 1Y (point at the chart to read any moment), and the day's high and low, previous close, volume, 52-week high and low, currency and exchange. **Add a stock** finds Bursa's biggest companies by name, short name or number (Maybank, 1155) at once, and any stock, fund or index in the world by its name or symbol (Apple, AAPL, 7203.T) from Yahoo Finance's search once you stop typing; **Edit** removes and reorders them. Prices come from Yahoo Finance (no key; `HALO_STOCKS_URL` points a test build elsewhere), as current as Yahoo has them, and are asked for only while the tab is open: every minute while a market on your list trades, every 10 minutes while all are shut. Without internet the tab says so; Yahoo asking it to slow down says "market closed or limited"; a timeout, an error or an answer that isn't prices says that instead, keeps the last prices with their time and tries again with a growing wait. No price is ever made up. Switched off, there's no tab and nothing is asked.
 
 **Caffeine** (built in, nothing to download) adds a **Caffeine** tab: how much caffeine is still in you, hour by hour, from 06:00 to 06:00. Add what you drink: an espresso drink (Americano, Latte, Cappuccino and the rest) by how many shots and the beans (Arabica, Blend, Robusta or Decaf), the others by the cup, spoon, sachet, bottle or can, or **Your own** with a name and its mg. Coffee chains in Indonesia don't publish how many shots go into a drink, so that number is yours to enter. A drink's time starts at now: change it before you add it, or later by dragging its dot. **Last call** is the latest time today your usual drink can go in and leave at most 35 mg in you at bedtime, after a 2023 review of 24 studies of caffeine and sleep, and the island reminds you 30 minutes before it. The page warns past 400 mg in a day. Set your bedtime and your half-life in its settings, or switch the reminder off. The numbers are averages, not a reading of your body: what each one is, and where it comes from, is in [docs/caffeine.md](docs/caffeine.md). Your drinks stay on your computer, two weeks of them, and nothing is sent anywhere. Switched off, there's no tab and no reminder.
 
-**IELTS** (built in, nothing to download) adds an **IELTS** tab: Halo becomes your IELTS Speaking examiner, GoPrep-style. Sign in to Halo, pick a level (1 to 5; each opens once you reach the target band on the level before it) and how Halo talks to you in Indonesian (**Sopan**, **Gaul** or **Ngegas**), and press **Mulai**. He asks Part 1 to 3 out loud, in English; tap the mic to answer and tap again when you're done (it stops by itself at the question's time). Part 2 gives you its card and a minute to prepare, then records by itself. At the end: your band, Fluency & Coherence, Lexical Resource, Grammar and Pronunciation with his notes, a roast and three tips. Music pauses while he talks or you answer and plays again after. Your answers go to Halo's server to be heard (see [PRIVACY.md](PRIVACY.md)); switched off, there's no tab, no microphone and nothing asked. IELTS® is a trademark of the IELTS partners; this isn't official IELTS material and isn't endorsed by them. On a Mac the tab says it's coming soon.
+**IELTS** (built in, nothing to download) adds an **IELTS** tab: Halo becomes your IELTS Speaking examiner, GoPrep-style. Sign in to Halo, pick a level (1 to 5; each opens once you reach the target band on the level before it) and how Halo talks to you in Indonesian (**Sopan**, **Gaul** or **Ngegas**), and press **Mulai**. He asks Part 1 to 3 out loud, in English; tap the mic to answer and tap again when you're done (it stops by itself at the question's time). Part 2 gives you its card and a minute to prepare, then records by itself. At the end: your band, Fluency & Coherence, Lexical Resource, Grammar and Pronunciation with his notes, a roast and three tips. Music pauses while he talks or you answer and plays again after. Your answers go to Halo's server to be heard (see [PRIVACY.md](PRIVACY.md)); switched off, there's no tab, no microphone and nothing asked. IELTS® is a trademark of the IELTS partners; this isn't official IELTS material and isn't endorsed by them.
 
 **Meeting notes** (built in, nothing to download; Windows) adds a **Notes** tab: one click and Halo listens to your meeting, then writes it up. Sign in to Halo and press the record button under him. He hears your microphone and your PC's own sound together, so a call in Google Meet, Zoom, Teams or WhatsApp is heard with no bot joining it, and a meeting in the room through the microphone; his head moves with the voices, a bar for each shows they're coming through, and the closed island shows him listening with the time. Press **Stop** when it's over: the meeting goes to Halo's server, Halo writes for a minute or two (you can close the island; a notice says when the notes are ready), and the notes are saved to Documents › Halo Island › Notes as a Markdown file: a title, a summary, the decisions, the action items with who and when, the topics, and the whole transcript with who said what. **Open notes**, **Copy** (the notes without the transcript, ready to paste into a chat or a doc) and the folder are on the page. Meetings up to 3 hours are written up. If something goes wrong, the recording stays on your PC for **Try again** until you throw it away. Let the people in the meeting know you're taking notes. Your meeting goes to Halo's server to be written up (see [PRIVACY.md](PRIVACY.md)); switched off, there's no tab, no recording and nothing sent.
 
-**Script reader** (built in, nothing to download) adds a **Script** tab: a teleprompter right under your webcam. Paste a script or drop a `.txt` file on the island and press **Read**. The line to say stays bright with the next ones dim below, moving a line at a time at 60 to 300 words a minute. Space pauses, the arrow keys step a line or change the pace, and on Windows **Alt+Shift+S** pauses or resumes from any app. On Windows the island stays out of screen shares and recordings while the page shows; macOS no longer lets an app keep itself out of captures, so on a Mac it shows in full-screen shares. Switched off, there's no tab, no shortcut and nothing running.
+**Script reader** (built in, nothing to download) adds a **Script** tab: a teleprompter right under your webcam. Paste a script or drop a `.txt` file on the island and press **Read**. The line to say stays bright with the next ones dim below, moving a line at a time at 60 to 300 words a minute. Space pauses, the arrow keys step a line or change the pace, and on Windows **Alt+Shift+S** pauses or resumes from any app. On Windows the island stays out of screen shares and recordings while the page shows. Switched off, there's no tab, no shortcut and nothing running.
 
 **Screen recorder** (built in, nothing to download) adds a **Record** tab once [Halo Island Recorder](https://kolijijani.github.io/halo-island/) is installed: the island becomes the recorder's face, so the recorder shows no floating bar of its own. Pick **Screen** (the screen the island is on), **Window** or **Area** (the recorder's overlay asks for the window or the area), switch the **Camera**, **Mic** and **Sound** on or off, and press **Record**. While it records, the closed island shows the red dot and the time ahead of everything else; open it for **Pause** and **Stop**, which saves the video and opens the recorder's editor. The island stays out of the video. It switches itself on with the recorder (switch it off in Add-ons to get the recorder's own bar back) and is Windows-only for now.
 
@@ -404,7 +368,7 @@ Halo Island is a Cargo workspace:
 | `crates/studio-usage` | The AI tab's readers: how much of each AI coding plan is left, from the computer and each service's own server. Unit-tested on any OS. |
 | `crates/studio-diorama` | The Diorama theme's picture: its pixel-art place at any minute of the day, painted in plain Rust with no dependencies. Unit-tested on any OS. |
 | `server` | The meeting server and phone page for paired phones (`drop.halo.com`); Node, no dependencies. |
-| `crates/halo` | The app. On Windows: Win32 + Direct2D + WinRT through [windows-rs](https://github.com/microsoft/windows-rs). On a Mac (`src/mac/`): AppKit, Core Graphics and Core Text through [objc2](https://github.com/madsmtm/objc2), drawing the same pages. |
+| `crates/halo` | The app. On Windows: Win32 + Direct2D + WinRT through [windows-rs](https://github.com/microsoft/windows-rs). |
 
 On Windows, with Rust stable and the MSVC toolchain:
 
@@ -420,15 +384,6 @@ cargo wcheck                          # type-check the Windows app
 cargo wbuild                          # target/x86_64-pc-windows-gnu/release/halo.exe
 NSIS_HOST=user@linux-box tools/package.sh   # exe + portable zip + installer into dist/
 ```
-
-On a Mac, with Rust stable:
-
-```
-cargo build -p halo --release        # target/release/halo
-target/release/halo --render shots --notch   # every island state as a picture, with a MacBook's notch
-```
-
-`tools/make_mac_app.sh` turns the Apple silicon and Intel builds into `Halo Island.app` and its DMG (the `mac` workflow does it for every pull request, push to main and tag). From Linux or Windows, `cargo mcheck` type-checks the Mac app (`rustup target add aarch64-apple-darwin`).
 
 ### Testing without clicking around
 
@@ -446,7 +401,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit: threads, the rend
 
 ### Website
 
-The website is `site/index.html`, published with GitHub Pages by `.github/workflows/pages.yml` whenever `site/` or `docs/brand/` changes on main. Every release updates it too ([AGENTS.md](AGENTS.md#every-release-updates-the-website) has the checklist). A page that names a version not released yet waits until that release is published, and a release whose page wasn't updated opens an issue. Preview it with `tools/build_site.sh && python3 -m http.server -d _site 8000`. Its island screenshots come from the self-test at 200 % (Classic and Halo, plus Pill and Diorama for their own sections), and its Mac pictures from the `mac` workflow's renders (`tools/site_shots.py`).
+The website is `site/index.html`, published with GitHub Pages by `.github/workflows/pages.yml` whenever `site/` or `docs/brand/` changes on main. Every release updates it too ([AGENTS.md](AGENTS.md#every-release-updates-the-website) has the checklist). A page that names a version not released yet waits until that release is published, and a release whose page wasn't updated opens an issue. Preview it with `tools/build_site.sh && python3 -m http.server -d _site 8000`. Its island screenshots come from the self-test at 200 % (Classic and Halo, plus Pill and Diorama for their own sections; `tools/site_shots.py`).
 
 The README's feature pictures are drawn from those same screenshots by `tools/make_readme_art.py` (from `tools/readme_art.html`) into `docs/brand/readme/halo/`. Rerun it after retaking the screenshots.
 
@@ -456,7 +411,7 @@ The README's feature pictures are drawn from those same screenshots by `tools/ma
 
 ## Status
 
-Early, but in daily use on Windows 11. The Mac app is newer: it runs on GitHub's macOS runners on every change, and a real MacBook's notch, music apps and drag and drop are where it most needs reports. Most rough edges are in places a test machine can't fully exercise: specific media players, Bluetooth devices, and multi-monitor setups. Issues and pull requests are welcome. Please attach `%LOCALAPPDATA%\Halo\halo.log` (on a Mac, `~/Library/Logs/Halo/halo.log`) when something misbehaves.
+Early, but in daily use on Windows 11. Most rough edges are in places a test machine can't fully exercise: specific media players, Bluetooth devices, and multi-monitor setups. Issues and pull requests are welcome. Please attach `%LOCALAPPDATA%\Halo\halo.log` when something misbehaves.
 
 ## Credits
 
