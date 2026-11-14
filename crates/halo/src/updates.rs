@@ -4,10 +4,10 @@
 //! `halo_core::update`, the reading in `services::update`. Both apps keep one
 //! [`Updater`] and drive it from their own timers.
 //!
-//! Costs at rest: one read of a ~1 KB file a couple of minutes after start
-//! and then every hour; the checks are always on. A read that comes due
-//! while nobody is at the PC (locked, display off) or on battery saver waits
-//! until it is back; the app asks [`Updater::due_in`] again then. Check for
+//! Costs at rest: one read of a ~1 KB file a couple of minutes after each
+//! start, and nothing after that on its own. The look at start waits while
+//! nobody is at the PC (locked, display off) or on battery saver, until
+//! someone is back; the app asks [`Updater::due_in`] again then. Check for
 //! updates… in the menu reads it at once ([`Updater::ask`]) and says on the
 //! island what it found.
 //!
@@ -29,7 +29,7 @@ use crate::state::{AppState, InlineAction, Notice, NoticeAction, Said};
 use crate::version::VERSION;
 use halo_core::geom::{palette, Color};
 use halo_core::store::{load_json, save_json_atomic};
-use halo_core::update::{self, Memory, Release};
+use halo_core::update::{Memory, Release};
 use halo_core::update::Download;
 use std::path::PathBuf;
 
@@ -53,8 +53,11 @@ const ASK_OPEN_S: u64 = 120;
 pub struct Updater {
     path: PathBuf,
     memory: Memory,
-    /// When to read the file next (Unix seconds); None while a read runs.
+    /// When to read the file next (Unix seconds); None once the look at
+    /// start is done, or while a read runs.
     due: Option<u64>,
+    /// A read is on the add-on thread (its answer still to come).
+    reading: bool,
     /// "Updated to" waits for the island to be free.
     updated: bool,
     /// Check for updates… was picked at this time (Unix seconds), and its
@@ -105,6 +108,7 @@ impl Updater {
             path,
             memory,
             due,
+            reading: false,
             updated,
             asked: None,
             told: None,
@@ -128,6 +132,7 @@ impl Updater {
     /// The read starts now (on the add-on thread).
     pub fn begin(&mut self) {
         self.due = None;
+        self.reading = true;
     }
 
     /// Check for updates… (the menu), at `now`: its answer goes on the
@@ -137,7 +142,7 @@ impl Updater {
     pub fn ask(&mut self, now: u64) -> bool {
         crate::pinfo!("updates: Check for updates… picked");
         self.asked = Some(now);
-        self.due.is_some()
+        !self.reading
     }
 
     /// The file's answer, at `now` (Unix seconds). True when the app should
@@ -145,14 +150,14 @@ impl Updater {
     /// found a new version that can be installed.
     pub fn checked(&mut self, st: &mut AppState, r: Result<Release, String>, now: u64) -> bool {
         let read = r.is_ok();
-        match r {
-            Ok(rel) => {
-                self.memory.read(rel, now);
-                self.due = Some(now + update::CHECK_EVERY_S);
-            }
-            // The file is kept as last read; the next look is in an hour.
-            Err(_) => self.due = Some(now + update::RETRY_S),
+        if let Ok(rel) = r {
+            self.memory.read(rel, now);
         }
+        // The look at start is all there is this run: no hourly repeat, so
+        // the next read is the next start or Check for updates… (a failed
+        // look waits for one of those too, not a timer).
+        self.reading = false;
+        self.due = None;
         save(&self.path, &self.memory);
         self.show(st);
         if self.asked.is_some() { self.answer(st, read) } else { false }
@@ -573,7 +578,7 @@ mod tests {
         u.begin();
         assert!(!u.checked(&mut st, Err("offline".into()), now));
         assert_eq!(st.notice.as_ref().map(|n| n.title.as_str()), Some("Couldn't check for updates"));
-        // The hourly looks say nothing.
+        // An automatic look (not asked) says nothing.
         st.notice = None;
         u.begin();
         assert!(!u.checked(&mut st, Err("offline".into()), now));

@@ -15,13 +15,8 @@ const RELEASE_PAGE: &str = "https://github.com/kolijijani/halo-island/releases/t
 /// The file's layout this version reads. A file with a newer one is ignored
 /// (a later version of the app will read it).
 pub const SCHEMA: u64 = 1;
-/// Every hour: releases often come out several a day, and one reaches every
-/// copy in use within the hour, for one request of about 1 KB.
-pub const CHECK_EVERY_S: u64 = 3600;
-/// The first look after start waits this long, out of the way of the start.
+/// The look at start waits this long, out of the way of the start.
 pub const FIRST_CHECK_S: u64 = 120;
-/// After a look that failed (no network, the site busy).
-pub const RETRY_S: u64 = 3600;
 /// The headline is one line on the island.
 const HEADLINE_MAX: usize = 90;
 /// The file is about 1 KB: anything much bigger isn't it.
@@ -203,10 +198,10 @@ pub struct Memory {
 
 impl Memory {
     /// When to read the file next (Unix seconds): a couple of minutes after
-    /// this run began (`started`), but not before an hour has passed since
-    /// the last look, so starting the app often costs nothing.
+    /// this run began (`started`). Every start looks once; after that only
+    /// Check for updates… (the menu or Settings) reads again.
     pub fn next_check(&self, started: u64) -> u64 {
-        (started + FIRST_CHECK_S).max(self.checked.saturating_add(CHECK_EVERY_S))
+        started + FIRST_CHECK_S
     }
 
     /// The release to offer: a later one than `running`, with a download for
@@ -354,14 +349,12 @@ mod tests {
     }
 
     #[test]
-    fn checks_wait_for_an_hour_but_start_soon_after_a_long_break() {
+    fn every_start_looks_a_couple_of_minutes_in() {
         let start = 1_000_000;
         let m = Memory::default();
         assert_eq!(m.next_check(start), start + FIRST_CHECK_S, "never looked: two minutes after start");
         let m = Memory { checked: start - 600, ..Memory::default() };
-        assert_eq!(m.next_check(start), start - 600 + CHECK_EVERY_S, "looked ten minutes ago: 50 minutes to go");
-        let m = Memory { checked: start - 2 * CHECK_EVERY_S, ..Memory::default() };
-        assert_eq!(m.next_check(start), start + FIRST_CHECK_S);
+        assert_eq!(m.next_check(start), start + FIRST_CHECK_S, "every start looks, whatever the last check");
     }
 
     #[test]

@@ -4183,7 +4183,8 @@ impl App {
         let secs = self.updater.as_ref().and_then(|u| u.due_in(crate::updates::unix_now()));
         unsafe {
             match secs {
-                // SetTimer waits at most about 24 days; reads are an hour apart.
+                // SetTimer waits at most about 24 days; the only timed read
+                // is the one at start.
                 Some(s) => {
                     SetTimer(self.hwnd, TIMER_UPDATE, s.saturating_mul(1000).clamp(1000, 0x7FFF_FFFF) as u32, None);
                 }
