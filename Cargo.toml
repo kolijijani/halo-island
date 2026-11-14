@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/halo-core", "crates/studio-usage", "crates/studio-diorama", "crates/halo"]
 
 [workspace.package]
-version = "0.2.40"
+version = "0.2.41"
 edition = "2021"
 publish = false
 license = "MIT"

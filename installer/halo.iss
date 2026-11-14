@@ -3,7 +3,7 @@
 ; Releases ship installer/halo.nsi (NSIS), which 0.1.x installs came from; CI builds this one too as a check.
 ;
 ; Build after `cargo build -p halo --release`:
-;   iscc installer\halo.iss                      -> dist\Halo-Island-Setup-0.2.40.exe
+;   iscc installer\halo.iss                      -> dist\Halo-Island-Setup-0.2.41.exe
 ;   iscc /DAppVersion=0.2.0 installer\halo.iss   (another version)
 ;
 ; Per-user install: no admin rights and no UAC prompt. The app goes to
@@ -11,7 +11,7 @@
 ; survive uninstalling (only the cache in %LOCALAPPDATA%\Halo is removed).
 
 #ifndef AppVersion
-  #define AppVersion "0.2.40"
+  #define AppVersion "0.2.41"
 #endif
 #ifndef ExeSource
   #define ExeSource "..\target\release\halo.exe"

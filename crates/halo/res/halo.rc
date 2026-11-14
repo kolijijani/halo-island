@@ -2,8 +2,8 @@
 1 24 "halo.manifest"
 
 1 VERSIONINFO
-FILEVERSION 0,2,30,0
-PRODUCTVERSION 0,2,30,0
+FILEVERSION 0,2,41,0
+PRODUCTVERSION 0,2,41,0
 FILEOS 0x40004
 FILETYPE 0x1
 BEGIN
@@ -13,12 +13,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "kolijijani\0"
       VALUE "FileDescription", "Halo Island - a living notch for Windows\0"
-      VALUE "FileVersion", "0.2.40\0"
+      VALUE "FileVersion", "0.2.41\0"
       VALUE "InternalName", "halo\0"
       VALUE "LegalCopyright", "Copyright (C) 2026\0"
       VALUE "OriginalFilename", "halo.exe\0"
       VALUE "ProductName", "Halo Island\0"
-      VALUE "ProductVersion", "0.2.40\0"
+      VALUE "ProductVersion", "0.2.41\0"
     END
   END
   BLOCK "VarFileInfo"
