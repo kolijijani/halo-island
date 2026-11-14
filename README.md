@@ -1,6 +1,4 @@
-> **Halo Island by kolijijani.** Halo Island is MIT licensed; the copyright notice is in [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
-
-<p align="center"><img src="docs/brand/halo-logo.svg" width="96" alt="Halo Island logo: an orange tile with the black island at the top playing music, and a white Halo below"></p>
+<p align="center"><img src="docs/brand/art/halo-peek.webp" width="640" alt="Halo the grey cat plush peeking over the Halo Island notch"></p>
 
 <h1 align="center">Halo Island</h1>
 
