@@ -14,6 +14,7 @@ Writes:
   installer/art/nsis-*.bmp           the same two for installer/halo.nsi
   docs/brand/halo-logo.svg      the logo as a vector
   docs/brand/halo-logo-512.png
+  mockups/mascot-options/icon-preview-512.png   the app icon at 512 px, for review
 """
 import re
 import sys
@@ -28,7 +29,14 @@ ART = ROOT / "installer" / "art"
 
 ORANGE, FOLD, INK = "#F0892E", "#C9581A", "#171717"
 ISLAND, EQ, SUN = "#0A0A0A", "#FFA24A", "#FFE2B8"
-MASCOT_TILE, MASCOT_EYES = "#0B0D12", "#F2F5FA"  # the island's ground and Halo's eyes (dark look)
+# The mascot, approved design B (mockups/mascot-options/chosen-b.svg): a grey British Shorthair head, small round
+# ears with charcoal inner ears, olive-yellow capsule eyes. Path data in the design's own units.
+MASCOT_FUR, MASCOT_INNER, MASCOT_EYES = "#626270", "#29272D", "#E4D98A"
+MASCOT_EARS = "M18 -33C25 -45 36 -51 42 -48C47 -45 47 -33 45 -17ZM-18 -33C-25 -45 -36 -51 -42 -48C-47 -45 -47 -33 -45 -17Z"
+MASCOT_INNER_EARS = "M26 -33C30 -40 35 -44 39 -43C42 -41 42 -33 41 -24ZM-26 -33C-30 -40 -35 -44 -39 -43C-42 -41 -42 -33 -41 -24Z"
+MASCOT_HEAD = "M0 -36C28 -36 45 -26 49 -9C52 4 58 13 56 26C53 40 30 47 0 47C-30 47 -53 40 -56 26C-58 13 -52 4 -49 -9C-45 -26 -28 -36 0 -36Z"
+MASCOT_BOX = (-57.0, -50.0, 57.0, 47.0)  # the head's bounds: x0, y0, x1, y1
+MASCOT_EYE_X, MASCOT_EYE_Y, MASCOT_EYE_W, MASCOT_EYE_H = 21.0, -3.0, 11.0, 22.0  # eye centres at +-x, top y
 COVER = [(0.0, "#FFB37A"), (0.45, "#F0708A"), (0.55, "#2B4F86"), (1.0, "#1B2F55")]  # sunset over the sea
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
 # Inno Setup picks the file closest to its image area: 100%, 150% and 200% scaling.
@@ -51,8 +59,8 @@ def mark_paths(name: str) -> list[str]:
 
 
 def flatten(d: str, steps: int = 16) -> list[list[tuple[float, float]]]:
-    """Absolute M/L/Q/Z path data (all the mark uses) to polygons."""
-    toks = re.findall(r"[MLQZ]|-?\d*\.?\d+(?:e-?\d+)?", d)
+    """Absolute M/L/Q/C/Z path data (all the mark and the mascot use) to polygons."""
+    toks = re.findall(r"[MLQCZ]|-?\d*\.?\d+(?:e-?\d+)?", d)
     polys, pts, i = [], [], 0
     num = lambda k: float(toks[k])
     while i < len(toks):
@@ -70,6 +78,12 @@ def flatten(d: str, steps: int = 16) -> list[list[tuple[float, float]]]:
                 u = s / steps
                 pts.append(((1 - u) ** 2 * x0 + 2 * (1 - u) * u * cx + u * u * x1, (1 - u) ** 2 * y0 + 2 * (1 - u) * u * cy + u * u * y1))
             i += 5
+        elif t == "C":
+            (x0, y0), (ax, ay), (bx, by), (x1, y1) = pts[-1], *((num(i + k), num(i + k + 1)) for k in (1, 3, 5))
+            for s in range(1, steps + 1):
+                u, v = s / steps, 1 - s / steps
+                pts.append((v**3 * x0 + 3 * v * v * u * ax + 3 * v * u * u * bx + u**3 * x1, v**3 * y0 + 3 * v * v * u * ay + 3 * v * u * u * by + u**3 * y1))
+            i += 7
         elif t == "Z":
             polys.append(pts)
             pts, i = [], i + 1
@@ -163,20 +177,26 @@ def draw_logo(size: int, ss: int = 8) -> Image.Image:
 
 
 def draw_mascot(size: int, ss: int = 8) -> Image.Image:
-    """The app icon: Halo the mascot as Settings draws it (settings_window::halo_mascot), two capsule eyes
-    (8 x 16 of 48, #F2F5FA) on a near-black tile (#0B0D12) with the icon's rounded corners. Every size is laid
-    out on whole pixels first, so the eyes stay two crisp shapes down to 16 px, then drawn large and scaled."""
-    inset = round(size * INSET)
-    t = size - 2 * inset
-    eye_w, eye_h = max(2, round(t * 8 / 48)), max(4, round(t * 16 / 48))
-    gap = max(2, round(t * 2 / 48))
-    x0, y0 = (size - (2 * eye_w + gap)) // 2, (size - eye_h) // 2
+    """The app icon: Halo the mascot, design B (chosen-b.svg), the grey head with its ears on a transparent
+    square. Every size is laid out on whole pixels first: the eyes keep their 1:2 capsule on whole pixels, at least
+    2 x 4, so they stay two crisp shapes down to 16 px; below 24 px the head fills the square edge to edge and the
+    inner ears, under two pixels there, are left out so the ears read as one clean shape. Then drawn large and scaled."""
+    inset = 0 if size < 24 else round(size * INSET)
+    x0, y0, x1, y1 = MASCOT_BOX
+    k = (size - 2 * inset) / (x1 - x0)
+    cx, top = size / 2, (size - (y1 - y0) * k) / 2 - y0 * k  # where the design's origin lands
     s = size * ss
+    to_px = lambda d: [[((cx + px * k) * ss, (top + py * k) * ss) for px, py in poly] for poly in flatten(d)]
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([inset * ss, inset * ss, (inset + t) * ss - 1, (inset + t) * ss - 1], radius=0.2237 * t * ss, fill=MASCOT_TILE)
-    for x in (x0, x0 + eye_w + gap):
-        d.rounded_rectangle([x * ss, y0 * ss, (x + eye_w) * ss - 1, (y0 + eye_h) * ss - 1], radius=eye_w * ss / 2, fill=MASCOT_EYES)
+    dr = ImageDraw.Draw(img)
+    for d, fill in [(MASCOT_EARS, MASCOT_FUR), (MASCOT_INNER_EARS, MASCOT_INNER if size >= 24 else None), (MASCOT_HEAD, MASCOT_FUR)]:
+        for poly in to_px(d) if fill else []:
+            dr.polygon(poly, fill=fill)
+    ew = max(2, round(MASCOT_EYE_W * k))
+    eh, ey = 2 * ew, round(top + MASCOT_EYE_Y * k)
+    ex = round(cx + MASCOT_EYE_X * k - ew / 2)  # the right eye; the left one mirrors it about the centre
+    for x in (ex, 2 * cx - ex - ew):
+        dr.rounded_rectangle([x * ss, ey * ss, (x + ew) * ss - 1, (ey + eh) * ss - 1], radius=ew * ss / 2, fill=MASCOT_EYES)
     return img.resize((size, size), Image.LANCZOS)
 
 
@@ -231,6 +251,7 @@ def main() -> int:
     stale = RES / "halo-512.png"
     if stale.exists():
         stale.unlink()
+    draw_mascot(512).save(ROOT / "mockups" / "mascot-options" / "icon-preview-512.png", optimize=True)  # for review
 
     BRAND.joinpath("halo-logo.svg").write_text(logo_svg())
     draw_logo(512).save(BRAND / "halo-logo-512.png", optimize=True)

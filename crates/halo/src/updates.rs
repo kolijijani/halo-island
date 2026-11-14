@@ -33,12 +33,10 @@ use halo_core::update::{self, Memory, Release};
 use halo_core::update::Download;
 use std::path::PathBuf;
 
-/// Halo Island reads no update file yet. Halo Island's feed
-/// (`halo_core::update::FEED_URL`) isn't signed with this fork's own key
-/// yet. With this off there is no updater: no timer, no read, no Check now.
-/// ponytail: off until Halo Island has its own signed feed; then point
-/// `FEED_URL` and `trusted_key` at it and turn this on.
-pub const FEED_ON: bool = false;
+/// Halo Island reads its own signed feed (`halo_core::update::FEED_URL`,
+/// keys in halo-core's data/update-keys.txt). With this off there is no
+/// updater: no timer, no read, no Check now.
+pub const FEED_ON: bool = true;
 
 /// Which download is this system's.
 const MAC: bool = cfg!(target_os = "macos");
