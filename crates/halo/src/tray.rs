@@ -321,12 +321,18 @@ mod tests {
             unsafe { GetDIBits(dc, info.hbmColor, 0, px as u32, Some(bgra.as_mut_ptr() as *mut _), &mut bmi, DIB_RGB_COLORS) };
             unsafe { windows::Win32::Graphics::Gdi::ReleaseDC(None, dc) };
             let at = |x: i32, y: i32| &bgra[((y * px + x) * 4) as usize..][..4];
-            // A clear corner, the near-black tile, and an eye left of centre.
+            // A clear corner, grey fur, and the yellow capsule eyes.
             assert_eq!(at(0, 0)[3], 0, "{px} px corner is see-through");
-            let tile = at(px / 2, px / 4);
-            assert!(tile[3] >= 250 && tile[0] < 40 && tile[1] < 40 && tile[2] < 40, "{px} px tile {tile:?}");
-            let eye = at(px / 2 - px / 12 - 1, px / 2);
-            assert!(eye[3] >= 250 && eye[0] > 200 && eye[1] > 200 && eye[2] > 200, "{px} px eye {eye:?}");
+            let fur = at(px / 2, px / 2);
+            assert!(fur[3] >= 250 && fur[1] >= 60 && fur[1] <= 140 && fur[2] >= 60 && fur[2] <= 140, "{px} px fur {fur:?}");
+            let mut eye = false;
+            for y in 0..px {
+                for x in 0..px {
+                    let p = at(x, y);
+                    eye |= p[3] >= 250 && p[2] > 180 && p[1] > 170 && p[0] < 175;
+                }
+            }
+            assert!(eye, "{px} px has no yellow eye");
             unsafe {
                 let _ = DeleteObject(info.hbmColor);
                 let _ = DeleteObject(info.hbmMask);

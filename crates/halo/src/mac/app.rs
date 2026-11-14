@@ -4929,7 +4929,10 @@ impl App {
             "halo-page" => {
                 let o = &self.st.halo_account;
                 let rows = o.activity.as_ref().map_or(0, |a| a.days.iter().map(|d| d.rows.len()).sum::<usize>());
-                let ok = matches!(o.link, HaloLink::Connected { .. }) && rows > 0 && !o.bills.is_empty();
+                // Bills are hidden for now (`services::halo_account::MONEY`), so
+                // the page must show the connected account and its transactions,
+                // and no bills.
+                let ok = matches!(o.link, HaloLink::Connected { .. }) && rows > 0 && o.bills.is_empty();
                 Some(("halo-page", ok, format!("{:?}; {rows} transactions, {} bills", o.link, o.bills.len())))
             }
             "halo-money" => {
