@@ -69,22 +69,6 @@ glass is made of, so they are kept whole, as glass/<run>-<state>.webp:
     python3 tools/site_shots.py selftest-glass-dark glass dark
     python3 tools/site_shots.py selftest-glass-flip glass flip
 
-The Mac pictures come from the mac workflow's `mac-renders` artifact (the
-Mac app's own `--render`, 200 %, Classic and Halo, with and without a
-MacBook's notch). They show the island with the menu bar and the camera
-notch around it, so they are kept as screen pictures, as
-mac/<theme>/<state>.webp; the resting states are cut to the middle of the
-menu bar:
-
-    gh run download <mac run> -R kolijijani/halo-island -n mac-renders -D mac-renders
-    python3 tools/site_shots.py mac-renders mac
-
-Pill's Mac pictures (mac/pill/, MAC_PILL_KEEP) are cut taller: what hangs
-below the notch floats there. A theme as a fourth argument cuts only that
-theme's pictures:
-
-    python3 tools/site_shots.py mac-renders mac pill
-
 The page shows the small resting states at twice their size (the hero, the
 "While it rests" stage, the games readout). Screens with two or more pixels
 per point get pictures from a 400 % run there, cut into
@@ -143,15 +127,6 @@ PILL_KEEP = {"idle-clock", "idle-status", "media-activity", "timer-activity", "v
 # By run: the open island in light and dark mode, and the resting island
 # over a bright page and over a dark one with Windows still in light mode.
 GLASS_KEEP = {"light": {"page-media", "media-activity"}, "dark": {"page-media"}, "flip": {"media-activity"}}
-# Mac pictures, with the notch: the resting states sit in the menu bar's line,
-# cut to its middle (MAC_STRIP, in pixels at 200 %); the open pages hang below
-# the notch and are kept whole.
-MAC_KEEP = {"idle-clock", "media-activity", "timer-activity", "page-media", "page-today-news", "page-stocks", "page-notes-listening", "notes-activity", "page-ielts", "page-downloads"}
-MAC_STRIP = (840, 136)
-# Pill on a Mac: what hangs below the notch (the line being sung, pop-ups) floats there, so its
-# strips are cut taller to keep the pill and its shadow; the resting island stays in the ears.
-MAC_PILL_KEEP = {"idle-clock", "media-activity", "volume-hud", "page-media", "page-today-news"}
-MAC_PILL_STRIP = (840, 216)
 # Resting states the page shows at twice their size, cut from a 400 % run.
 ZOOM_KEEP = {"idle-clock", "media-activity", "media-lyric", "timer-activity", "volume-hud", "bluetooth-hud", "prayer-countdown", "game-stats"}
 # Diorama: its resting pill at dawn, by day, at the golden hour and at night, from the pictures a
@@ -207,27 +182,6 @@ def glass(src: Path, run: str) -> None:
         print(f"glass/{run}-{name}.webp  {img.width}x{img.height}")
 
 
-def mac(src: Path, only: str | None = None) -> None:
-    for shot in sorted(src.glob("[0-9][0-9]*-*-notch.png")):
-        name = re.sub(r"^\d+-", "", shot.stem)[: -len("-notch")]
-        theme = "classic"
-        for t in ("halo", "pill"):
-            if name.endswith("-" + t):
-                name, theme = name[: -len(t) - 1], t
-        keep, strip = (MAC_PILL_KEEP, MAC_PILL_STRIP) if theme == "pill" else (MAC_KEEP, MAC_STRIP)
-        if name not in keep or (only and theme != only):
-            continue
-        img = Image.open(shot).convert("RGB")
-        if not name.startswith("page-"):
-            w, h = strip
-            x0 = (img.width - w) // 2
-            img = img.crop((x0, 0, x0 + w, h))
-        dst = ROOT / "site" / "assets" / "shots" / "mac" / theme
-        dst.mkdir(parents=True, exist_ok=True)
-        img.save(dst / f"{name}.webp", quality=90, method=6)
-        print(f"mac/{theme}/{name}.webp  {img.width}x{img.height}")
-
-
 def diorama(src: Path, zoom: bool) -> None:
     dst = ROOT / "site" / "assets" / "shots"
     dst = dst / "zoom" / "diorama" if zoom else dst / "diorama"
@@ -267,9 +221,6 @@ def diorama_pages(src: Path, when: str) -> None:
 def main() -> None:
     if len(sys.argv) == 4 and sys.argv[2] == "glass" and sys.argv[3] in ("light", "dark", "flip"):
         glass(Path(sys.argv[1]), sys.argv[3])
-        return
-    if len(sys.argv) in (3, 4) and sys.argv[2] == "mac":
-        mac(Path(sys.argv[1]), sys.argv[3] if len(sys.argv) == 4 else None)
         return
     if sys.argv[2:] in (["diorama", "day"], ["diorama", "night"]):
         diorama_pages(Path(sys.argv[1]), sys.argv[3])

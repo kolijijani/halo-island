@@ -8,8 +8,7 @@ docs/brand/readme/halo/NAME.webp: drawn at 2x (1760 px wide, shown at 880 in the
 README), with see-through rounded corners so it sits well on GitHub's light
 and dark themes. The islands are the website's self-test screenshots
 (site/assets/shots, refreshed by tools/site_shots.py), so rerun this after
-retaking them. The Mac card reads site/assets/shots/mac (tools/site_shots.py
-<mac-renders> mac).
+retaking them.
 
 Needs Playwright for Python with Chromium (pip install playwright, then
 playwright install chromium) and Pillow.
