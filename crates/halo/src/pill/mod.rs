@@ -1,0 +1,169 @@
+//! The Pill theme: the island floats a little below the top edge as a black
+//! capsule instead of hanging from it, and the theme is its layouts as much
+//! as its look. At rest it shows the time and the battery; while music plays,
+//! the song (and the line being sung); open, every page sits on a rounded
+//! card. Everything else (pages' behaviour, services, settings) is shared
+//! with the other themes.
+//!
+//! The Diorama theme is this island too ([`on`] is true for both): only its
+//! resting pill differs, a small window onto a pixel-art place ([`diorama`]).
+//!
+//! How it plugs in: `halo_core::look::PILL` has `Shape::Pill`, the island
+//! floats [`TOP_GAP`] below the edge (`Island::set_floating`), [`shape`]
+//! draws the outline, and the hooks below let each surface lay itself out
+//! and draw the Pill way. A hook that returns `None` / `false` leaves that
+//! surface to the Classic code, so every surface can move over on its own.
+//!
+//! One module per surface: [`idle`] (the resting pill), [`status`] (the
+//! resting pill under the pointer), [`media`] (music, collapsed), [`lyric`]
+//! (the line being sung, for the music pill), [`live`] (timer, prayer,
+//! game), [`hud`] (volume, charging, Bluetooth), [`notice`], [`expanded`]
+//! (the open card's frame and header), [`music`] (the open Music page) and
+//! [`motion`] (how the floating shape moves).
+
+pub mod diorama;
+pub mod expanded;
+pub mod hud;
+pub mod idle;
+pub mod live;
+pub mod lyric;
+pub mod media;
+pub mod motion;
+pub mod music;
+pub mod notice;
+pub mod shape;
+pub mod status;
+
+use crate::activities::{Activity, Mode};
+use crate::island::Geom;
+use crate::state::AppState;
+use crate::ui::Ui;
+use halo_core::geom::Rect;
+use halo_core::settings::Theme;
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// The island floats this far below the screen's top edge (DIPs).
+pub const TOP_GAP: f32 = 8.0;
+
+/// The island floats and lays itself out the Pill way: in the Pill theme
+/// and in Diorama, which is Pill with a picture in its resting capsule.
+pub fn on(theme: Theme) -> bool {
+    matches!(theme, Theme::Pill | Theme::Diorama)
+}
+
+/// The look the island paints in this frame: the theme's
+/// (`halo_core::look::of`, or `around_notch` where it wraps a camera notch),
+/// except that Diorama's takes its night when the picture does
+/// ([`diorama::night`]), the whole island with it. Glass picks its own.
+pub fn look(st: &AppState, around_notch: bool) -> &'static halo_core::look::Look {
+    match st.settings.theme {
+        // It floats below a notch too, so it keeps its look there.
+        Theme::Diorama => {
+            let night = match HELD_NIGHT.load(Ordering::Relaxed) {
+                0 => false,
+                1 => true,
+                _ => diorama::night(st),
+            };
+            halo_core::look::diorama(night)
+        }
+        theme if around_notch => halo_core::look::around_notch(theme),
+        // Halo Island: Classic is Halo's pill, light or dark with Windows,
+        // or the theme builder's colours (Halo Pro).
+        Theme::Classic => match st.settings.custom_look.filter(|_| st.settings.pro) {
+            Some(c) => custom_look(c),
+            None => halo_core::look::halo(st.app_light),
+        },
+        theme => halo_core::look::of(theme),
+    }
+}
+
+/// The theme builder's look, made once per choice of colours.
+/// ponytail: each new choice leaks one small `Look` (a few dozen bytes,
+/// only when the person changes colours); a `Cow` look in gfx avoids it.
+fn custom_look(c: halo_core::halo::CustomLook) -> &'static halo_core::look::Look {
+    type Made = Option<(halo_core::halo::CustomLook, &'static halo_core::look::Look)>;
+    static LAST: std::sync::Mutex<Made> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    match *last {
+        Some((k, l)) if k == c => l,
+        _ => {
+            let l: &'static halo_core::look::Look = Box::leak(Box::new(halo_core::look::custom(&c)));
+            *last = Some((c, l));
+            l
+        }
+    }
+}
+
+/// Self-test only: Diorama's look held by day (0) or at night (1), or
+/// following its picture (anything else, as the app always does).
+static HELD_NIGHT: AtomicU8 = AtomicU8::new(u8::MAX);
+
+/// Self-test only: hold Diorama's look at night (`Some(true)`) or by day,
+/// whatever the picture's sun says, or let it follow the picture again with
+/// `None` (as `clock::hold_local` holds the clock). The Mac has no self-test.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn hold_night(night: Option<bool>) {
+    HELD_NIGHT.store(night.map_or(u8::MAX, u8::from), Ordering::Relaxed);
+}
+
+/// The island's size for `m` in the Pill theme, or `None` for Classic's.
+pub fn geom(m: &Mode, st: &AppState) -> Option<Geom> {
+    diorama::note_theme(st.settings.theme);
+    if !on(st.settings.theme) {
+        return None;
+    }
+    match m {
+        Mode::Idle => idle::geom(st),
+        Mode::Activity(Activity::Media) => media::geom(st),
+        Mode::Activity(a) => live::geom(*a, st),
+        Mode::Hud(t) => hud::geom(*t, st),
+        Mode::Notice => notice::geom(st),
+        Mode::Expanded(p) => expanded::geom(*p, st),
+        // Classic's invisible strip, as for the Hidden idle look.
+        Mode::Aside => None,
+    }
+}
+
+/// Draw the collapsed `m` the Pill way. `false` = draw it as Classic does.
+pub fn draw(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect) -> bool {
+    if st.settings.theme != Theme::Diorama {
+        diorama::put_away(ui);
+    }
+    if !on(st.settings.theme) {
+        return false;
+    }
+    match m {
+        Mode::Idle => idle::draw(ui, st, body),
+        Mode::Activity(Activity::Media) => media::draw(ui, st, body),
+        Mode::Activity(a) => live::draw(ui, st, *a, body),
+        Mode::Hud(t) => hud::draw(ui, st, *t, body),
+        Mode::Notice => notice::draw(ui, st, body),
+        Mode::Expanded(_) | Mode::Aside => false,
+    }
+}
+
+/// Whether the collapsed `m` needs ambient frames in the Pill theme
+/// (`None` = as in Classic).
+pub fn is_live(m: &Mode, st: &AppState) -> Option<bool> {
+    if !on(st.settings.theme) {
+        return None;
+    }
+    match m {
+        Mode::Activity(Activity::Media) => media::is_live(st),
+        Mode::Activity(a) => live::is_live(*a, st),
+        _ => None,
+    }
+}
+
+/// The next time the Pill content of `m` changes on its own (a one-shot
+/// wake, never a poll), on top of Classic's.
+pub fn next_wake(m: &Mode, st: &AppState) -> Option<f64> {
+    if !on(st.settings.theme) {
+        return None;
+    }
+    match m {
+        Mode::Idle => idle::next_wake(st),
+        Mode::Activity(Activity::Media) => media::next_wake(st),
+        _ => None,
+    }
+}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Island — demo sorok fullscreen</title>
+<style>
+  :root{
+    --pill:#0B0D12; --eye:#F2F5FA;
+    --wall-a:#1b2030; --wall-b:#0d1017;
+    --taskbar:#101420;
+    --pdf-bg:#f4f6f8; --pdf-line:#d7dbe2;
+    --cap-bg:rgba(12,14,20,.72); --cap-fg:#e8ecf4;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--wall-b);
+    font-family:"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #stage{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden}
+
+  /* desktop wallpaper */
+  #wall{position:absolute;inset:0;
+    background:radial-gradient(1200px 700px at 75% 15%,#2a3450 0%,#1b2030 45%,#0d1017 100%)}
+
+  /* taskbar */
+  #taskbar{position:absolute;left:0;right:0;bottom:0;height:40px;background:var(--taskbar);
+    box-shadow:0 -1px 0 rgba(255,255,255,.06)}
+  #taskbar .dot{position:absolute;bottom:12px;width:28px;height:28px;border-radius:7px;background:#2a3350}
+  #taskbar .dot.win{left:12px;background:#3b4a75}
+
+  /* PDF viewer window (maximized) */
+  #pdf{position:absolute;left:0;top:0;width:1920px;height:1040px;background:var(--pdf-bg);
+    border-radius:0;box-shadow:0 6px 40px rgba(0,0,0,.45);overflow:hidden}
+  #titlebar{position:absolute;left:0;top:0;width:100%;height:36px;background:#1f232b;
+    display:flex;align-items:center;gap:8px;padding:0 12px}
+  .tbtn{width:12px;height:12px;border-radius:50%}
+  #ttl{flex:1;text-align:center;color:#cfd6e4;font-size:13px;letter-spacing:.2px}
+  #doc{position:absolute;left:0;top:36px;right:0;bottom:0;background:var(--pdf-bg);padding:28px 48px}
+  #doc h1{font-size:22px;color:#202634;margin-bottom:14px}
+  #doc p{height:10px;background:var(--pdf-line);border-radius:5px;margin:10px 0}
+  #doc p.w60{width:60%} #doc p.w85{width:85%} #doc p.w45{width:45%}
+
+  /* island */
+  #island{position:absolute;left:50%;top:8px;width:132px;height:36px;border-radius:18px;
+    background:var(--pill);box-shadow:0 6px 24px rgba(0,0,0,.45);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transform:translateX(-50%);will-change:transform,opacity}
+  .eye{width:8px;height:16px;border-radius:4px;background:var(--eye)}
+
+  /* caption */
+  #cap{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);
+    padding:10px 20px;border-radius:22px;background:var(--cap-bg);color:var(--cap-fg);
+    font-size:19px;letter-spacing:.2px;white-space:nowrap;
+    box-shadow:0 4px 18px rgba(0,0,0,.35)}
+
+  /* cursor */
+  #cursor{position:absolute;left:800px;top:400px;width:0;height:0;pointer-events:none}
+  #cursor::after{content:"";position:absolute;left:0;top:0;
+    border-left:11px solid #fff;border-top:11px solid transparent;border-bottom:11px solid transparent;
+    transform:rotate(18deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wall"></div>
+  <div id="pdf">
+    <div id="titlebar">
+      <div class="tbtn" style="background:#ff5f57"></div>
+      <div class="tbtn" style="background:#febc2e"></div>
+      <div class="tbtn" style="background:#28c840"></div>
+      <div id="ttl">Laporan-Projek.pdf — PDF Viewer</div>
+    </div>
+    <div id="doc">
+      <h1>Laporan Projek Halo Island</h1>
+      <p class="w85"></p><p class="w60"></p><p></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+    </div>
+  </div>
+  <div id="taskbar"><div class="dot win"></div><div class="dot" style="left:52px"></div><div class="dot" style="left:92px"></div></div>
+  <div id="island"><div class="eye"></div><div class="eye"></div></div>
+  <div id="cap">Buka PDF biasa — Halo kekal pill kecil di notch</div>
+  <div id="cursor"></div>
+</div>
+
+<script>
+"use strict";
+const DURATION = 16;
+const S = {
+  island: document.getElementById("island"),
+  eyes: Array.from(document.querySelectorAll(".eye")),
+  pdf: document.getElementById("pdf"),
+  titlebar: document.getElementById("titlebar"),
+  doc: document.getElementById("doc"),
+  cap: document.getElementById("cap"),
+  cursor: document.getElementById("cursor"),
+  taskbar: document.getElementById("taskbar"),
+  wall: document.getElementById("wall"),
+};
+window.DURATION = DURATION;
+window.SCENES = [
+  {seg:"A", t0:0,  t1:6,  id:"pdf-biasa", title:"PDF biasa: island kekal, click-through"},
+  {seg:"B", t0:6,  t1:8,  id:"masuk-fs",  title:"Tekan F11: PDF ke fullscreen"},
+  {seg:"C", t0:8,  t1:12.5,id:"sorok",     title:"Fullscreen: Halo auto sorok"},
+  {seg:"D", t0:12.5,t1:16, id:"balik",     title:"Keluar fullscreen: Halo balik"},
+];
+
+function clamp01(x){return x<0?0:(x>1?1:x)}
+function lerp(a,b,t){return a+(b-a)*t}
+function ease(t){return t*t*(3-2*t)}          // smoothstep
+function easeOut(t){return 1-(1-t)*(1-t)}
+
+// binary blink state: open 0 -> blink -> open, 0.12s, at given time
+function blinkAmt(t, at){
+  const p = t - at;
+  if(p < 0 || p > 0.12) return 0;
+  return Math.sin(Math.PI * clamp01(p/0.12));
+}
+
+// fullscreen progress: 6.0 -> 7.4 enter, 12.5 -> 13.6 exit
+function fsEnter(t){return clamp01((t-6.0)/1.4)}
+function fsExit(t){return clamp01((t-12.5)/1.1)}
+function fullscreen(t){ return t >= 7.4 && t < 12.5 ? 1 : (t < 7.4 ? fsEnter(t) : 1 - fsExit(t)); }
+
+// island hide (slide up + fade): 8.0 -> 8.6 ; return: 12.6 -> 13.2
+function hideAmt(t){return ease(clamp01((t-8.0)/0.6))}
+function showAmt(t){return easeOut(clamp01((t-12.6)/0.6))}
+
+function caption(t){
+  if(t < 3.4) return "Buka PDF biasa — Halo kekal pill kecil di notch";
+  if(t < 6.0) return "Klik & scroll pun lalu-lalang — tak ganggu kerja";
+  if(t < 8.0) return "Tekan F11 — PDF masuk fullscreen";
+  if(t < 12.5) return "Fullscreen: Halo auto sorok, zero gangguan";
+  if(t < 14.0) return "Keluar fullscreen — Halo balik semula";
+  return "Halo Island — duduk diam, bagi laluan bila perlu";
+}
+
+function seek(t){
+  t = ((t % DURATION) + DURATION) % DURATION;
+  const fs = fullscreen(t);
+
+  // PDF window geometry
+  const hMax = 1040 - 40*fs;                       // maximized height -> 1000 at fullscreen? no: fullscreen fills all
+  const pdfTop = 0;
+  const pdfH = 1040 + 40*fs;                       // 1040 -> 1080 (covers taskbar)
+  S.pdf.style.top = pdfTop + "px";
+  S.pdf.style.height = pdfH + "px";
+  S.titlebar.style.opacity = 1 - fs;
+  S.doc.style.top = (36 - 36*fs) + "px";
+  // document scroll while reading in fullscreen (10.2 -> 12.4)
+  const scroll = t > 10.2 && t < 12.4 ? (t-10.2)/2.2 : 0;
+  S.doc.style.transform = "translateY(" + (-46*ease(scroll)) + "px)";
+
+  // island
+  const hide = hideAmt(t), show = showAmt(t);
+  let iy = 8 - 90*hide;
+  let io = 1 - hide;
+  if(show > 0){ iy = -90 + 98*show; io = show; }
+  // hover lift: cursor rests on the island 3.5 -> 4.9
+  const hover = clamp01((t-3.5)/0.3) * (1 - clamp01((t-4.9)/0.3));
+  const scale = 1 + 0.08*hover;
+  S.island.style.top = iy + "px";
+  S.island.style.opacity = io;
+  S.island.style.transform = "translateX(-50%) scale(" + scale + ")";
+  S.island.style.display = io <= 0.001 && show <= 0 ? "none" : "flex";
+
+  // mascot eyes: blink at 1.9s, 14.6s; look toward cursor when hovered
+  const blink = Math.max(blinkAmt(t,1.9), blinkAmt(t,14.6));
+  const look = hover * 2; // px shift toward cursor
+  for(const e of S.eyes){
+    e.style.transform = "scaleY(" + (1 - 0.75*blink) + ") translateX(" + look + "px)";
+  }
+
+  // cursor path
+  let cx = 700 + 320*ease(clamp01(t/3.2));                 // moves across doc
+  let cy = 260 + 60*Math.sin(t*1.6);
+  if(t >= 3.5 && t < 4.9){ cx = 960; cy = 18; }            // rests on island
+  if(t >= 4.9 && t < 6.0){ cx = 1000 + 100*(t-4.9); cy = 340; }
+  if(t >= 6.0 && t < 7.4){ cx = 960 + 240*(t-6.0); cy = 300 + 180*(t-6.0); } // moving toward F11 area
+  if(t >= 7.4 && t < 10.2){ cx = 1320 + 260*ease(clamp01((t-7.4)/2.8)); cy = 520; }
+  if(t >= 10.2 && t < 12.4){ cx = 1100; cy = 620; }        // reading
+  if(t >= 12.4 && t < 12.6){ cx = 1100; cy = 60; }         // Esc
+  if(t >= 12.6 && t < 14.0){ cx = 900; cy = 380; }
+  if(t >= 14.0){ cx = 960; cy = 26; }
+  S.cursor.style.left = cx + "px";
+  S.cursor.style.top = cy + "px";
+
+  // caption
+  const cap = caption(t);
+  S.cap.textContent = cap;
+  S.cap.style.opacity = t > 14.6 ? clamp01((15.2-t)/0.6) : 1;
+
+  // taskbar hidden while fullscreen
+  S.taskbar.style.opacity = 1 - fs;
+}
+
+// live preview loop (skipped with ?capture)
+if(!location.search.includes("capture")){
+  const t0 = performance.now();
+  (function live(){
+    seek((performance.now()-t0)/1000);
+    requestAnimationFrame(live);
+  })();
+}else{
+  seek(0);
+}
+</script>
+</body>
+</html>

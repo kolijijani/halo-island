@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Island — demo 3 mode (desktop, maximize, fullscreen)</title>
+<style>
+  :root{
+    --pill:#0B0D12; --eye:#F2F5FA; --glow:#8fd0ff;
+    --wall-a:#1b2030; --wall-b:#0d1017;
+    --taskbar:#101420;
+    --pdf-bg:#f4f6f8; --pdf-line:#d7dbe2;
+    --cap-bg:rgba(12,14,20,.72); --cap-fg:#e8ecf4;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--wall-b);
+    font-family:"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #stage{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden}
+
+  /* desktop wallpaper + icons */
+  #wall{position:absolute;inset:0;
+    background:radial-gradient(1200px 700px at 75% 15%,#2a3450 0%,#1b2030 45%,#0d1017 100%)}
+  .dicon{position:absolute;left:28px;width:72px;text-align:center;color:#cfd6e4;font-size:12px}
+  .dicon i{display:block;width:44px;height:44px;margin:0 auto 6px;border-radius:10px;background:#2a3350}
+
+  /* taskbar */
+  #taskbar{position:absolute;left:0;right:0;bottom:0;height:40px;background:var(--taskbar);
+    box-shadow:0 -1px 0 rgba(255,255,255,.06)}
+  #taskbar .dot{position:absolute;bottom:6px;width:28px;height:28px;border-radius:7px;background:#2a3350}
+  #taskbar .dot.win{left:12px;background:#3b4a75}
+  #taskbar .dot.app{left:52px;background:#4a6fb3}
+  #run{position:absolute;left:58px;bottom:2px;width:16px;height:3px;border-radius:2px;background:#8fb4ff;opacity:0}
+
+  /* document window */
+  #pdf{position:absolute;background:var(--pdf-bg);box-shadow:0 6px 40px rgba(0,0,0,.45);overflow:hidden;
+    transform-origin:50% 100%;display:none}
+  #titlebar{position:absolute;left:0;top:0;width:100%;height:36px;background:#1f232b;
+    display:flex;align-items:center;gap:8px;padding:0 12px}
+  .tbtn{width:12px;height:12px;border-radius:50%}
+  #ttl{flex:1;text-align:center;color:#cfd6e4;font-size:13px;letter-spacing:.2px}
+  #doc{position:absolute;left:0;top:36px;right:0;bottom:0;background:var(--pdf-bg);padding:28px 48px}
+  #doc h1{font-size:22px;color:#202634;margin-bottom:14px}
+  #doc p{height:10px;background:var(--pdf-line);border-radius:5px;margin:10px 0}
+  #doc p.w60{width:60%} #doc p.w85{width:85%} #doc p.w45{width:45%}
+
+  /* island: one element morphs pill (132x36) <-> mini handle (34x8) */
+  #island{position:absolute;left:50%;top:8px;width:132px;height:36px;border-radius:18px;
+    background:var(--pill);box-shadow:0 6px 24px rgba(0,0,0,.45);overflow:hidden;
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transform:translateX(-50%);will-change:transform,opacity}
+  .eye{flex:none;width:8px;height:16px;border-radius:4px;background:var(--eye)}
+  #hdot{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;
+    background:var(--eye);opacity:0}
+
+  /* caption */
+  #cap{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);
+    padding:10px 20px;border-radius:22px;background:var(--cap-bg);color:var(--cap-fg);
+    font-size:19px;letter-spacing:.2px;white-space:nowrap;
+    box-shadow:0 4px 18px rgba(0,0,0,.35)}
+
+  /* cursor */
+  #cursor{position:absolute;left:800px;top:400px;width:0;height:0;pointer-events:none}
+  #cursor::after{content:"";position:absolute;left:0;top:0;
+    border-left:11px solid #fff;border-top:11px solid transparent;border-bottom:11px solid transparent;
+    transform:rotate(18deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+  #click{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.8);opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wall"></div>
+  <div class="dicon" style="top:28px"><i></i>Dokumen</div>
+  <div class="dicon" style="top:116px"><i style="background:#33405f"></i>Projek</div>
+  <div class="dicon" style="top:204px"><i style="background:#3a3350"></i>Tong Sampah</div>
+  <div id="pdf">
+    <div id="titlebar">
+      <div class="tbtn" style="background:#ff5f57"></div>
+      <div class="tbtn" style="background:#febc2e"></div>
+      <div class="tbtn" style="background:#28c840"></div>
+      <div id="ttl">Pelan-Projek.docx — Editor</div>
+    </div>
+    <div id="doc">
+      <h1>Pelan Projek Halo Island</h1>
+      <p class="w85"></p><p class="w60"></p><p></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+      <p class="w85"></p><p></p><p class="w60"></p><p class="w45"></p>
+    </div>
+  </div>
+  <div id="taskbar"><div class="dot win"></div><div class="dot app"></div><div class="dot" style="left:92px"></div><div id="run"></div></div>
+  <div id="island"><div class="eye"></div><div class="eye"></div><div id="hdot"></div></div>
+  <div id="cap">Desktop: Halo penuh di notch</div>
+  <div id="click"></div>
+  <div id="cursor"></div>
+</div>
+
+<script>
+"use strict";
+const DURATION = 18;
+const S = {
+  island: document.getElementById("island"),
+  eyes: Array.from(document.querySelectorAll(".eye")),
+  hdot: document.getElementById("hdot"),
+  pdf: document.getElementById("pdf"),
+  titlebar: document.getElementById("titlebar"),
+  doc: document.getElementById("doc"),
+  cap: document.getElementById("cap"),
+  cursor: document.getElementById("cursor"),
+  click: document.getElementById("click"),
+  taskbar: document.getElementById("taskbar"),
+  run: document.getElementById("run"),
+};
+window.DURATION = DURATION;
+window.SCENES = [
+  {seg:"A", t0:0,    t1:5,    id:"desktop",   title:"Desktop: Halo penuh di notch"},
+  {seg:"B", t0:5,    t1:7,    id:"maximize",  title:"Buka & maximize app"},
+  {seg:"C", t0:7,    t1:11,   id:"handle",    title:"Maximized: Halo jadi mini handle"},
+  {seg:"D", t0:11,   t1:12.5, id:"f11",       title:"Tekan F11: fullscreen sebenar"},
+  {seg:"E", t0:12.5, t1:15.5, id:"sorok",     title:"Fullscreen: Halo sorok terus"},
+  {seg:"F", t0:15.5, t1:18,   id:"balik",     title:"Balik desktop: Halo penuh semula"},
+];
+const CUTS = [5, 7, 11, 12.5, 15.5];
+
+function clamp01(x){return x<0?0:(x>1?1:x)}
+function lerp(a,b,t){return a+(b-a)*t}
+function ease(t){return t*t*(3-2*t)}          // smoothstep
+function easeOut(t){return 1-(1-t)*(1-t)}
+function seg(t,a,d){return ease(clamp01((t-a)/d))}
+
+// binary blink state: open 0 -> blink -> open, 0.12s, at given time
+function blinkAmt(t, at){
+  const p = t - at;
+  if(p < 0 || p > 0.12) return 0;
+  return Math.sin(Math.PI * clamp01(p/0.12));
+}
+// click ripple: 0.35s ring at given time
+function clickAmt(t, at){ const p = (t-at)/0.35; return p < 0 || p > 1 ? -1 : p; }
+
+// window rects: restored -> maximized (1040, taskbar visible) -> fullscreen (1080)
+const RESTORED = {x:360, y:140, w:1200, h:720};
+const MAXED    = {x:0,   y:0,   w:1920, h:1040};
+
+// island morph pill -> handle 7.0 -> 7.6; reset while hidden (13.1 -> 16.0)
+function morph(t){ return t < 15.5 ? seg(t,7.0,0.6) : 0; }
+// handle hide (slide up + fade) 12.5 -> 13.1; pill return (slide down + fade in) 16.0 -> 16.6
+function hideAmt(t){return t < 15.5 ? seg(t,12.5,0.6) : 0}
+function showAmt(t){return t < 15.5 ? 1 : easeOut(clamp01((t-16.0)/0.6))}
+
+function caption(t){
+  if(t < 5)    return "Desktop: Halo penuh di notch";
+  if(t < 7)    return "Maximize app: Halo masuk mode handle";
+  if(t < 11)   return "Maximize: Halo jadi mini handle — masih running, boleh klik";
+  if(t < 12.5) return "Tekan F11 — fullscreen sebenar";
+  if(t < 15.5) return "Fullscreen: Halo sorok terus, zero gangguan";
+  return "Halo Island — 3 mode, tahu bila bagi laluan";
+}
+
+function seek(t){
+  t = ((t % DURATION) + DURATION) % DURATION;
+
+  // --- window ---
+  const open = seg(t,5.0,0.4), max = seg(t,6.0,0.6), fs = seg(t,11.0,0.8) * (1 - seg(t,15.5,0.5));
+  const minimize = seg(t,15.5,0.7);
+  S.pdf.style.display = t >= 5.0 && minimize < 1 ? "block" : "none";
+  S.pdf.style.left   = lerp(RESTORED.x, MAXED.x, max) + "px";
+  S.pdf.style.top    = lerp(RESTORED.y, MAXED.y, max) + "px";
+  S.pdf.style.width  = lerp(RESTORED.w, MAXED.w, max) + "px";
+  S.pdf.style.height = (lerp(RESTORED.h, MAXED.h, max) + 40*seg(t,11.0,0.8)) + "px";
+  S.pdf.style.borderRadius = (10*(1-max)) + "px";
+  S.pdf.style.opacity = open * (1 - minimize);
+  S.pdf.style.transform = "translateY(" + (140*minimize) + "px) scale(" + ((0.94 + 0.06*open) * (1 - 0.1*minimize)) + ")";
+  const tb = seg(t,11.0,0.8);                       // titlebar gone in fullscreen
+  S.titlebar.style.opacity = 1 - tb;
+  S.doc.style.top = (36 - 36*tb) + "px";
+  // reading scroll in fullscreen 13.4 -> 15.3
+  S.doc.style.transform = "translateY(" + (-60*seg(t,13.4,1.9)) + "px)";
+  S.taskbar.style.opacity = 1 - fs;
+  S.run.style.opacity = t >= 5.0 ? 1 : 0;
+
+  // --- island ---
+  const m = morph(t), hide = hideAmt(t), show = showAmt(t);
+  const w = lerp(132,34,m), h = lerp(36,8,m);
+  let top = lerp(8,2,m) - 20*hide, op = 1 - hide;
+  if(t >= 15.5){ top = -90 + 98*show; op = show; }
+  // hover on the handle 9.8 -> 10.5 (clickable)
+  const hover = clamp01((t-9.8)/0.25) * (1 - clamp01((t-10.5)/0.25));
+  S.island.style.width = w + "px";
+  S.island.style.height = h + "px";
+  S.island.style.borderRadius = (h/2) + "px";
+  S.island.style.top = top + "px";
+  S.island.style.opacity = op;
+  S.island.style.gap = lerp(10,2,m) + "px";
+  // faint ring fades in with the morph so the handle reads on a dark titlebar
+  S.island.style.boxShadow = "0 0 0 1px rgba(255,255,255," + (0.16*m) + "), 0 " + lerp(6,2,m) + "px " + lerp(24,8,m) + "px rgba(0,0,0,.45)";
+  S.island.style.transform = "translateX(-50%) scale(" + (1 + 0.25*hover) + ")";
+  S.island.style.display = op <= 0.001 ? "none" : "flex";
+
+  // pill eyes: blink at 1.5s and 16.9s; shrink + fade out during morph
+  const blink = Math.max(blinkAmt(t,1.5), blinkAmt(t,16.9));
+  const eo = 1 - clamp01(m*2);
+  for(const e of S.eyes){
+    e.style.opacity = eo;
+    e.style.transform = "scale(" + (1 - 0.6*m) + ") scaleY(" + (1 - 0.75*blink) + ")";
+  }
+  // handle dot: soft 1s pulse so Halo reads as still running
+  const pulse = 0.5 + 0.5*Math.sin(2*Math.PI*(t-7.6));
+  const dotOn = clamp01((m-0.5)*2);
+  S.hdot.style.opacity = dotOn * (0.55 + 0.45*Math.max(pulse, hover));
+  S.hdot.style.boxShadow = "0 0 " + (3 + 5*pulse) + "px " + (1 + 1.5*pulse) + "px var(--glow)";
+
+  // --- cursor ---
+  let cx, cy;
+  if(t < 2.6){ cx = 1250 - 90*ease(clamp01(t/2.6)); cy = 560 + 30*Math.sin(t*1.4); }
+  else if(t < 4.4){ const k = seg(t,2.6,1.8); cx = lerp(1160,66,k); cy = lerp(560,1054,k); }  // to app icon
+  else if(t < 5.0){ cx = 66; cy = 1054; }                                                     // click 4.6
+  else if(t < 5.8){ const k = seg(t,5.0,0.8); cx = lerp(66,418,k); cy = lerp(1054,158,k); }   // to maximize
+  else if(t < 6.6){ const k = seg(t,6.0,0.6); cx = lerp(418,58,k); cy = lerp(158,18,k); }     // click 5.9, rides the button
+  else if(t < 7.8){ const k = seg(t,6.6,1.2); cx = lerp(58,880,k); cy = lerp(18,420,k); }
+  else if(t < 9.3){ cx = 880 + 160*ease(clamp01((t-7.8)/1.5)); cy = 420 + 40*Math.sin((t-7.8)*2); }
+  else if(t < 9.8){ const k = seg(t,9.3,0.5); cx = lerp(1040,962,k); cy = lerp(420,6,k); }   // to handle
+  else if(t < 10.5){ cx = 962; cy = 6; }
+  else if(t < 11.2){ const k = seg(t,10.5,0.7); cx = lerp(962,1100,k); cy = lerp(6,620,k); }
+  else if(t < 15.5){ cx = 1100; cy = 620; }                                                   // reading
+  else { const k = seg(t,15.8,1.2); cx = lerp(1100,1010,k); cy = lerp(620,200,k); }
+  S.cursor.style.left = cx + "px";
+  S.cursor.style.top = cy + "px";
+  const c1 = clickAmt(t,4.6), c2 = clickAmt(t,5.9), c = c1 >= 0 ? c1 : c2;
+  S.click.style.opacity = c < 0 ? 0 : 1 - c;
+  S.click.style.left = (c1 >= 0 ? 66 : 418) + "px";
+  S.click.style.top = (c1 >= 0 ? 1054 : 158) + "px";
+  S.click.style.transform = "scale(" + (0.5 + 0.8*Math.max(c,0)) + ")";
+
+  // --- caption: short dip at each scene cut ---
+  S.cap.textContent = caption(t);
+  let co = 1;
+  for(const b of CUTS) co = Math.min(co, clamp01(Math.abs(t-b)/0.15));
+  S.cap.style.opacity = co;
+}
+
+// live preview loop (skipped with ?capture)
+if(!location.search.includes("capture")){
+  const t0 = performance.now();
+  (function live(){
+    seek((performance.now()-t0)/1000);
+    requestAnimationFrame(live);
+  })();
+}else{
+  seek(0);
+}
+</script>
+</body>
+</html>

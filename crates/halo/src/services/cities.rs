@@ -1,0 +1,49 @@
+//! Prayer times' cities outside Indonesia, looked up online one small file
+//! at a time (`halo_core::prayer::world`: the two letters typed in the place
+//! picker, or a 5-degree square around a location). Shared by the Windows
+//! and Mac apps.
+//!
+//! Each file gets its own short-lived thread: it asks once, sends
+//! [`AppEvent::Cities`] and ends. Nothing runs while no file is wanted.
+
+use crate::events::{AppEvent, EventSink};
+use crate::services::http::{Client, MtaGuard};
+use halo_core::prayer::{world, World};
+use halo_core::net::Failure;
+use std::time::Duration;
+
+const USER_AGENT: &str = concat!("HaloStudio/", env!("CARGO_PKG_VERSION"), " (+https://github.com/kolijijani/halo-island)");
+
+/// The biggest file is under 100 KB; this is plenty on a slow line.
+const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Get `file` ("ed", "near/55_-5"); the answer comes as `AppEvent::Cities`.
+pub fn fetch(file: String, sink: EventSink) {
+    let spawned = std::thread::Builder::new().name("halo-cities".into()).spawn({
+        let file = file.clone();
+        let sink = sink.clone();
+        move || {
+            let got = get(&file);
+            if let Err(e) = &got {
+                crate::pwarn!("prayer: cities {file}: {e:?}");
+            }
+            sink.send(AppEvent::Cities { file, got });
+        }
+    });
+    if let Err(e) = spawned {
+        crate::pwarn!("prayer: cities {file}: no thread ({e})");
+        sink.send(AppEvent::Cities { file, got: Err(Failure::Unreachable) });
+    }
+}
+
+fn get(file: &str) -> Result<World, Failure> {
+    let _com = MtaGuard::new();
+    let client = Client::new(USER_AGENT).map_err(|_| Failure::Unreachable)?;
+    let resp = client.get(&world::url(file), TIMEOUT).map_err(|e| crate::services::net::failure(&e))?;
+    match resp.status {
+        200 => World::parse(resp.body).map_err(|_| Failure::Malformed),
+        // No file: no city has a name starting so, or none is in that square.
+        404 => Ok(World::empty()),
+        s => Err(Failure::Status(s)),
+    }
+}

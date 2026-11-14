@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Island share card</title>
+<!-- The website's link preview (og:image), drawn by tools/make_share_card.py.
+     Text removed and the Music screenshot replaced by Halo, per Encik Koliji. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600&display=block">
+<style>
+:root {
+  --ink: #171717;
+  --muted: #6e6e73;
+  --line: #e2e2e7;
+  --orange: #f0892e;
+}
+html, body { margin: 0; }
+body {
+  position: relative;
+  width: 1200px;
+  height: 630px;
+  overflow: hidden;
+  background: #fff;
+  color: var(--ink);
+  font-family: "Outfit", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.sky {
+  position: absolute;
+  inset: 0;
+  background: #f4d2b8 url("../site/assets/wall/morning.jpg") center 34% / cover no-repeat;
+}
+/* Halo, the grey plush cat peeking over the island, centred at the bottom. */
+.halo { position: absolute; left: 50%; bottom: 24px; translate: -50% 0; width: 760px; }
+</style>
+</head>
+<body>
+<div class="sky"></div>
+<img class="halo" src="../docs/brand/art/halo-peek.webp" alt="Halo, a grey plush cat, peeking over the island">
+</body>
+</html>

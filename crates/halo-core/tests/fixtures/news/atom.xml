@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom feed</title>
+  <entry>
+    <title type="html">Rates &amp;amp; markets: central bank holds</title>
+    <link rel="alternate" href="https://news.example.org/a/1"/>
+    <updated>2026-11-13T02:15:00Z</updated>
+    <summary>The bank kept its rate at 3%. It said inflation is easing. Markets rose.</summary>
+  </entry>
+  <entry>
+    <title>Second entry</title>
+    <link href="https://news.example.org/a/2"/>
+    <published>2026-11-12T20:00:00+08:00</published>
+  </entry>
+</feed>

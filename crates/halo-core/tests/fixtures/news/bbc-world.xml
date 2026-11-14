@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+    <channel>
+        <title><![CDATA[BBC News]]></title>
+        <description><![CDATA[BBC News - World]]></description>
+        <link>https://www.bbc.co.uk/news/world</link>
+        <image>
+            <url>https://news.bbcimg.co.uk/nol/shared/img/bbc_news_120x60.gif</url>
+            <title>BBC News</title>
+            <link>https://www.bbc.co.uk/news/world</link>
+        </image>
+        <generator>RSS for Node</generator>
+        <lastBuildDate>Fri, 13 Nov 2026 09:55:17 GMT</lastBuildDate>
+        <atom:link href="https://feeds.bbci.co.uk/news/world/rss.xml" rel="self" type="application/rss+xml"/>
+        <copyright><![CDATA[Copyright: (C) British Broadcasting Corporation, see https://www.bbc.co.uk/usingthebbc/terms-of-use/#15metadataandrssfeeds for terms and conditions of reuse.]]></copyright>
+        <language><![CDATA[en-gb]]></language>
+        <ttl>15</ttl>
+        <item>
+            <title><![CDATA[Ex-Nvidia CEO Jensen Huang summoned to testify before Congress about affair with alleged Chinese spy]]></title>
+            <description><![CDATA[Huang abruptly quit on Thursday as head of one of the world's most valuable companies after revelations of alleged extramarital affairs.]]></description>
+            <link>https://www.bbc.co.uk/news/articles/cmq5vd1wdgz6o?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/cmq5vd1wdgz6o#0</guid>
+            <pubDate>Fri, 13 Nov 2026 03:57:01 GMT</pubDate>
+            <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/f66c/live/4f0358a0-def1-11f1-bb80-c5cef03337ce.jpg"/>
+        </item>
+<item>
+            <title><![CDATA[Zelensky welcomes US bringing Europe into Russia-Ukraine peace talks]]></title>
+            <description><![CDATA[The Ukrainian president says it makes sense for European leaders to be involved as Ukraine hopes to eventually join the EU.]]></description>
+            <link>https://www.bbc.co.uk/news/articles/ckn80j9jv3jxo?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/ckn80j9jv3jxo#0</guid>
+            <pubDate>Fri, 13 Nov 2026 02:01:35 GMT</pubDate>
+            <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/9462/live/a60e9f80-df2b-11f1-a701-fddedf244c16.jpg"/>
+        </item>
+<item>
+            <title><![CDATA[North Korean hackers used fake video calls in $400m crypto hack, says FBI]]></title>
+            <description><![CDATA[More than 900 victims are thought to have fallen prey to the FaceStealer scheme in the last 18 months.]]></description>
+            <link>https://www.bbc.co.uk/news/articles/cqdj1ellpd70o?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/cqdj1ellpd70o#0</guid>
+            <pubDate>Fri, 13 Nov 2026 02:48:29 GMT</pubDate>
+            <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/c16a/live/65ee22f0-df02-11f1-b6e1-5b169363fed4.jpg"/>
+        </item>
+
+    </channel>
+</rss>

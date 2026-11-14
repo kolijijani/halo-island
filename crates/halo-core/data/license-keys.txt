@@ -1,0 +1,12 @@
+# The keys Halo Island trusts for license tokens from its license server
+# (server/license-server.mjs, docs/licenses.md). The app reads this file when
+# it is built; tokens signed with any other key are refused.
+#
+# One key per line: its id, then the public key as an uncompressed P-256 point
+# in hex (04, X, Y), exactly as `node server/license-server.mjs init-key`
+# prints it. The private half stays on the license server, in a file outside
+# this repository: never here, never in the app.
+#
+# Empty until the maintainer runs init-key on the license server and pastes
+# its line here: until then no token is accepted (fail closed), and the
+# built-in key in halo_core::license still unlocks Pro as before.
