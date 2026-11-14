@@ -5,7 +5,9 @@
 //! [`Updater`] and drive it from their own timers.
 //!
 //! Costs at rest: one read of a ~1 KB file a couple of minutes after each
-//! start, and nothing after that on its own. The look at start waits while
+//! start, retried every 30 minutes until one succeeds, and at most one
+//! successful automatic look a day (a start the same day after one doesn't
+//! look). A manual check never arms a retry. The automatic look waits while
 //! nobody is at the PC (locked, display off) or on battery saver, until
 //! someone is back; the app asks [`Updater::due_in`] again then. Check for
 //! updates… in the menu reads it at once ([`Updater::ask`]) and says on the
@@ -53,8 +55,8 @@ const ASK_OPEN_S: u64 = 120;
 pub struct Updater {
     path: PathBuf,
     memory: Memory,
-    /// When to read the file next (Unix seconds); None once the look at
-    /// start is done, or while a read runs.
+    /// When to read the file next (Unix seconds); None once an automatic
+    /// look succeeded, after a manual check, or while a read runs.
     due: Option<u64>,
     /// A read is on the add-on thread (its answer still to come).
     reading: bool,
@@ -103,7 +105,7 @@ impl Updater {
             memory.ran = VERSION.to_string();
             save(&path, &memory);
         }
-        let due = Some(memory.next_check(now));
+        let due = memory.next_check(now);
         let u = Updater {
             path,
             memory,
@@ -153,11 +155,11 @@ impl Updater {
         if let Ok(rel) = r {
             self.memory.read(rel, now);
         }
-        // The look at start is all there is this run: no hourly repeat, so
-        // the next read is the next start or Check for updates… (a failed
-        // look waits for one of those too, not a timer).
+        // A successful look is all there is today: the next read is the next
+        // start (another day) or Check for updates…. A failed automatic look
+        // tries again in RETRY_S; a failed manual one arms nothing.
         self.reading = false;
-        self.due = None;
+        self.due = if read || self.asked.is_some() { None } else { Some(now + halo_core::update::RETRY_S) };
         save(&self.path, &self.memory);
         self.show(st);
         if self.asked.is_some() { self.answer(st, read) } else { false }

@@ -17,6 +17,10 @@ const RELEASE_PAGE: &str = "https://github.com/kolijijani/halo-island/releases/t
 pub const SCHEMA: u64 = 1;
 /// The look at start waits this long, out of the way of the start.
 pub const FIRST_CHECK_S: u64 = 120;
+/// An automatic look that failed tries again this long after, until one
+/// succeeds: often enough to catch a connection that comes back, rare
+/// enough to cost nothing.
+pub const RETRY_S: u64 = 30 * 60;
 /// The headline is one line on the island.
 const HEADLINE_MAX: usize = 90;
 /// The file is about 1 KB: anything much bigger isn't it.
@@ -198,10 +202,14 @@ pub struct Memory {
 
 impl Memory {
     /// When to read the file next (Unix seconds): a couple of minutes after
-    /// this run began (`started`). Every start looks once; after that only
-    /// Check for updates… (the menu or Settings) reads again.
-    pub fn next_check(&self, started: u64) -> u64 {
-        started + FIRST_CHECK_S
+    /// this run began (`started`), or None when a read already succeeded
+    /// this UTC day (at most one successful automatic look a day). A failed
+    /// automatic look retries every [`RETRY_S`] until one succeeds.
+    pub fn next_check(&self, started: u64) -> Option<u64> {
+        if self.checked != 0 && self.checked / 86400 == started / 86400 {
+            return None;
+        }
+        Some(started + FIRST_CHECK_S)
     }
 
     /// The release to offer: a later one than `running`, with a download for
@@ -352,9 +360,11 @@ mod tests {
     fn every_start_looks_a_couple_of_minutes_in() {
         let start = 1_000_000;
         let m = Memory::default();
-        assert_eq!(m.next_check(start), start + FIRST_CHECK_S, "never looked: two minutes after start");
+        assert_eq!(m.next_check(start), Some(start + FIRST_CHECK_S), "never looked: two minutes after start");
         let m = Memory { checked: start - 600, ..Memory::default() };
-        assert_eq!(m.next_check(start), start + FIRST_CHECK_S, "every start looks, whatever the last check");
+        assert_eq!(m.next_check(start), None, "read today already: no automatic look");
+        let m = Memory { checked: start - 86400, ..Memory::default() };
+        assert_eq!(m.next_check(start), Some(start + FIRST_CHECK_S), "read yesterday: two minutes after start");
     }
 
     #[test]
