@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Island social preview</title>
+<!-- GitHub repo social preview, drawn by tools/make_social_preview.py.
+     Same pieces as the share card — the morning sky, the Music page open in
+     the notch, the Outfit headline and Halo — but with the island clipped to
+     a rounded notch instead of hanging full-bleed. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600&display=block">
+<style>
+:root {
+  --ink: #171717;
+  --muted: #6e6e73;
+  --line: #e2e2e7;
+  --orange: #f0892e;
+}
+html, body { margin: 0; }
+body {
+  position: relative;
+  width: 1200px;
+  height: 630px;
+  overflow: hidden;
+  background: #fff;
+  color: var(--ink);
+  font-family: "Outfit", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.sky {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 300px;
+  background: #f4d2b8 url("../site/assets/wall/morning.jpg") center 30% / cover no-repeat;
+  border-bottom: 1px solid var(--line);
+}
+/* The Music page, clipped to a rounded notch. The screenshot is 1320x454,
+   so 624px wide gives ~215px tall — the exact notch used on the site hero. */
+.notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 624px;
+  translate: -50% 0;
+  border-radius: 24px;
+  overflow: hidden;
+  display: block;
+  box-shadow: 0 10px 30px rgba(23, 23, 23, 0.25);
+}
+.copy { position: absolute; left: 64px; top: 334px; }
+.name { display: flex; align-items: center; gap: 14px; font-weight: 600; font-size: 28px; letter-spacing: -0.01em; }
+.name img { width: 46px; height: 46px; }
+.name small { font-weight: 500; font-size: 20px; letter-spacing: 0; color: var(--muted); margin-left: 4px; }
+h1 { margin: 22px 0 0; font-weight: 600; font-size: 62px; line-height: 1.02; letter-spacing: -0.025em; }
+h1 span { color: var(--orange); }
+.halo { position: absolute; right: 52px; bottom: 30px; width: 452px; }
+</style>
+</head>
+<body>
+<div class="sky">
+  <img class="notch" src="../site/assets/shots/classic/page-media.webp" alt="">
+</div>
+<div class="copy">
+  <div class="name"><img src="../docs/brand/halo-logo.svg" alt="">Halo Island<small>Free and open source · Windows and Mac</small></div>
+  <h1>A living notch<br><span>for Windows and Mac</span></h1>
+</div>
+<img class="halo" src="../docs/brand/art/halo-peek.webp" alt="">
+</body>
+</html>

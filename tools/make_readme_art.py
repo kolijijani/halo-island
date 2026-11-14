@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "tools" / "readme_art.html"
-OUT = ROOT / "docs" / "brand" / "readme"
+OUT = ROOT / "docs" / "brand" / "readme" / "halo"
 
 
 def main(names: list[str]) -> None:
