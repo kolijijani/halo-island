@@ -123,7 +123,9 @@ impl LyricsService {
     }
 
     /// The Apple Music token on disk was saved or removed: the worker reloads
-    /// it, checks it with Apple and reports `AppEvent::AppleMusic`.
+    /// it, checks it with Apple and reports `AppEvent::AppleMusic`. Only the
+    /// Mac menu sets the token now; Windows reads one saved before 0.2.51.
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn apple_token_changed(&self) {
         self.shared.lock().apple_changed = true;
         self.shared.cv.notify_all();

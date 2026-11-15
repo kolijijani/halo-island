@@ -114,15 +114,17 @@ pub fn halo_revoke_path() -> PathBuf {
 }
 
 /// The Halo Pro license token from the license server, sealed with DPAPI
-/// (`services::license`). Deactivate or uninstalling removes it.
+/// (`services::license`). With the settings, so uninstalling keeps it and a
+/// reinstall is Pro again; Deactivate removes it.
 pub fn license_path() -> PathBuf {
-    cache_dir().join("license.bin")
+    data_dir().join("license.bin")
 }
 
 /// This install's own random id for licenses, sealed with DPAPI: only its
-/// hash leaves the PC.
+/// hash leaves the PC. Kept across uninstalls, like the token, so this PC
+/// stays the same seat.
 pub fn license_device_path() -> PathBuf {
-    cache_dir().join("license-device.bin")
+    data_dir().join("license-device.bin")
 }
 
 /// A key typed into the AI tab for one service (`usage-<name>.bin`), sealed with DPAPI: never roams, and removing the

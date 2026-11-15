@@ -11,8 +11,8 @@
 
 use super::PageKind;
 use crate::state::AppState;
-use crate::ui::Ui;
-use halo_core::geom::Point;
+use crate::ui::{Ui, WidgetId};
+use halo_core::geom::{Color, Point, Rect};
 use halo_core::spring::bouncy_at;
 
 /// Every part has landed by then (seconds after the start).
@@ -55,6 +55,77 @@ pub fn start(page: PageKind, now: f64, still: bool) -> Option<(PageKind, f64)> {
 /// Whether some page's entrance still moves (the self-test waits it out).
 pub fn moving(st: &AppState) -> bool {
     st.ui.entrance.is_some_and(|e| st.now - e.1 < END)
+}
+
+/// How long after a page opens its ambient touches (a water surface, a
+/// weather sky, a live dot) keep moving: long enough to be seen, then the
+/// page rests and asks for no frames (AGENTS.md: motion must stop).
+pub const ALIVE_END: f64 = 10.0;
+/// The last seconds of [`ALIVE_END`], over which the motion eases to rest.
+const ALIVE_FADE: f32 = 2.0;
+/// How long a hover takes to fade in.
+const HOVER_S: f64 = 0.16;
+
+/// `page`'s ambient motion now: seconds since it opened and its strength
+/// (1, easing to 0 by [`ALIVE_END`]), or None at rest. No entrance (reduced
+/// motion, battery saver) means none at all. Asks for ambient frames (~30
+/// fps, paused while locked or the display is off) while it moves.
+pub fn alive(ui: &mut Ui, st: &AppState, page: PageKind) -> Option<(f32, f32)> {
+    // The self-test's pictures are taken once the entrance settles: no motion after it.
+    if st.in_selftest {
+        return None;
+    }
+    let t = st.ui.entrance.filter(|e| e.0 == page).map(|e| ui.now - e.1).filter(|t| (0.0..ALIVE_END).contains(t))? as f32;
+    ui.request_live();
+    let k = ((ALIVE_END as f32 - t) / ALIVE_FADE).clamp(0.0, 1.0);
+    Some((t, k * k * (3.0 - 2.0 * k)))
+}
+
+/// Whether motion is off (reduced motion or battery saver): hovers and taps
+/// show at once.
+pub fn still(st: &AppState) -> bool {
+    st.ui.hud.still || st.power.saver
+}
+
+/// How far the pointer's hover over `id` (`on`: it is over it now) has
+/// faded in, 0 to 1. One hover at a time (`PageUiState::hover`); asks for
+/// frames while it fades.
+pub fn hover(ui: &mut Ui, st: &mut AppState, id: WidgetId, on: bool) -> f32 {
+    let mine = st.ui.hover.filter(|h| h.0 == id);
+    if !on {
+        if mine.is_some() {
+            st.ui.hover = None;
+        }
+        return 0.0;
+    }
+    if still(st) {
+        return 1.0;
+    }
+    let t0 = mine.map_or(ui.now, |h| h.1);
+    st.ui.hover = Some((id, t0));
+    let k = ((ui.now - t0) / HOVER_S) as f32;
+    if k < 1.0 {
+        ui.request_anim();
+    }
+    super::ease_out_cubic(k)
+}
+
+/// A soft band of light crossing the card `r` (corner `radius`) once,
+/// `delay` s into the entrance, for 0.55 s. Clipped short of the round
+/// corners so it never shows outside the card.
+pub fn shine(ui: &mut Ui, e: Entrance, r: Rect, radius: f32, delay: f32) {
+    let k = e.draw(delay, 0.55);
+    if k <= 0.0 || k >= 1.0 {
+        return;
+    }
+    let x = r.x - 16.0 + (r.w + 32.0) * k;
+    let fade = (k * (1.0 - k) * 4.0).min(1.0);
+    let inset = 0.1 * radius + 0.5;
+    ui.c.clip(Rect::new(r.x + 0.6 * radius, r.y, (r.w - 1.2 * radius).max(0.0), r.h));
+    let band = |w: f32| Rect::new(x - w / 2.0, r.y + inset, w, r.h - 2.0 * inset);
+    ui.c.fill_rect(band(28.0), Color::white(0.035 * fade));
+    ui.c.fill_rect(band(10.0), Color::white(0.05 * fade));
+    ui.c.unclip();
 }
 
 /// Draw `f` faded and [`RISE`] low at `k` 0, in place at 1.

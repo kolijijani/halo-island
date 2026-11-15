@@ -1,10 +1,10 @@
 # Advanced settings: every item
 
-The Settings window (Advanced settings, the island's last Settings row) has a section, **Every setting**, that lists each item the window can draw: its name, the section it lives in, and how it stands on this computer (on, off, its value, needs Halo Pro, needs an add-on, shows with another setting, or not on this build). It reads the states already in `AppState`; nothing runs for it.
+Every item the Settings window (Advanced settings, the island's last Settings row) can draw: its name, the section it lives in, and when it shows. Until 0.2.51 the window had a section, **Every setting**, with this list; it is gone, and this page keeps it.
 
 This page is the same list. It comes from `settings_window::INVENTORY`, and the test `the_inventory_is_every_row_the_window_draws` checks it against the rows the window really draws, both ways: a row added to the window and not to the list, or listed and never drawn, fails it.
 
-Besides the rows below, sections hold parts that aren't rows: the version and Check now (General, About), the theme cards (Appearance), the Add-ons page itself (Add-ons), the Halo Pro key and license details (Halo Pro, see [licenses.md](licenses.md#settings--halo-pro)), and the inventory (Every setting).
+Besides the rows below, sections hold parts that aren't rows: the version and Check now (General, About), the theme cards (Appearance), the Add-ons page itself (Add-ons), and the Halo Pro key and license details (Halo Pro, see [licenses.md](licenses.md#settings--halo-pro)).
 
 
 ## General
@@ -38,7 +38,7 @@ Besides the rows below, sections hold parts that aren't rows: the version and Ch
 | Width when open | Always. |
 | Display | Windows only. |
 | In full-screen apps | Always. |
-| Only for a few seconds | Windows only, with Halo Pro. |
+| Only for a few seconds | Windows only. |
 | Mini handle | Always. |
 
 ## Music and lyrics

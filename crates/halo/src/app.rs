@@ -90,8 +90,6 @@ const WM_WTSSESSION_CHANGE_: u32 = 0x02B1;
 const WTS_SESSION_LOCK_: usize = 7;
 const WTS_SESSION_UNLOCK_: usize = 8;
 
-/// Steps for copying the Apple Music token (README).
-const APPLE_MUSIC_HELP_URL: &str = "";
 /// Phone drop closes itself after this long without a request from a phone.
 const PHONE_IDLE_S: f64 = 600.0;
 
@@ -178,6 +176,7 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     }
     // A license from the license server that still checks out here: Pro.
     let mut raw_settings = raw_settings;
+    services::license::carry_over();
     let license = services::license::status(false);
     raw_settings.licensed = license.is_ok();
     let settings = raw_settings.clone().sanitized();
@@ -527,6 +526,9 @@ pub struct App {
     /// Session locked / display off: pause ambient animation.
     locked: bool,
     display_off: bool,
+    /// When the license server is next asked whether this PC still holds
+    /// the license's seat (unix s; 0: at the first minute after start).
+    license_look: i64,
     tray_retries: u32,
     /// Content of the previous mode, fading out while the outline morphs:
     /// (mode, start time, its geometry, the opacity it fades from).
@@ -673,6 +675,7 @@ impl App {
         // The Downloader: not in the Microsoft Store build.
         st.downloader_offered = !crate::autostart::packaged();
         let selftest = selftest_dir.map(selftest::SelfTest::new);
+        st.in_selftest = selftest.is_some();
         let saved_settings = st.settings.clone();
         Ok(Self {
             hwnd,
@@ -759,6 +762,7 @@ impl App {
             reduce_motion: crate::settings_host::animations_off(),
             locked: false,
             display_off: false,
+            license_look: 0,
             tray_retries: 0,
             outgoing: None,
             page_anim: None,
@@ -1898,6 +1902,13 @@ impl App {
                     w.view.dirty = true;
                     self.request_frame();
                 }
+                // A license from the server: once a day, ask whether this PC still holds its seat.
+                let away = self.locked || self.display_off || self.st.power.saver || self.selftest.is_some();
+                if let Some(job) = services::license::look_due(&self.st, &mut self.license_look, away, &self.sink) {
+                    if let Some(s) = self.services.as_ref() {
+                        s.run_job(job);
+                    }
+                }
             }
             TIMER_TRAY => {
                 unsafe {
@@ -1927,42 +1938,6 @@ impl App {
             _ => {}
         }
         self.request_frame();
-    }
-
-    /// Save the Apple Music token copied from the browser (sealed with DPAPI)
-    /// and take it off the clipboard.
-    fn use_apple_music_token(&mut self) {
-        let text = services::clipboard::read_text(self.hwnd).unwrap_or_default();
-        let Some(token) = halo_core::applemusic::clean_user_token(&text) else {
-            self.st.notify(Icon::Lyrics, palette::ORANGE, "No Apple Music token copied", "Copy media-user-token first", 6.0, None);
-            return;
-        };
-        if let Err(e) = services::secret::save(&paths::apple_music_token_path(), &token) {
-            pwarn!("apple music: cannot save the token ({e})");
-            self.st.notify(Icon::Lyrics, palette::ORANGE, "Couldn't save the token", "Details in halo.log", 5.0, None);
-            return;
-        }
-        pinfo!("apple music: token saved");
-        services::clipboard::set_text(self.helper, "");
-        if let Some(s) = self.services.as_ref() {
-            s.apple_music_token_changed();
-        }
-        self.refetch_lyrics();
-        self.st.notify(Icon::Lyrics, palette::BLUE, "Checking the Apple Music token", "One moment", 4.0, None);
-    }
-
-    fn forget_apple_music_token(&mut self) {
-        if let Err(e) = services::secret::delete(&paths::apple_music_token_path()) {
-            pwarn!("apple music: cannot remove the token ({e})");
-            self.st.notify(Icon::Lyrics, palette::ORANGE, "Couldn't remove the token", "Details in halo.log", 5.0, None);
-            return;
-        }
-        pinfo!("apple music: token removed");
-        if let Some(s) = self.services.as_ref() {
-            s.apple_music_token_changed();
-        }
-        self.refetch_lyrics();
-        self.st.notify(Icon::Lyrics, palette::BLUE, "Apple Music lyrics off", "Lyrics from LRCLIB only", 4.0, None);
     }
 
     fn on_apple_music(&mut self, status: AppleMusicStatus) {
@@ -2217,18 +2192,6 @@ impl App {
         self.halo_notice(icon, palette::ORANGE, halo_account::bill_title(&b, today), shown, hidden);
     }
 
-    /// Look up the current track's lyrics again (the sources changed).
-    fn refetch_lyrics(&mut self) {
-        if !self.st.settings.lyrics {
-            return;
-        }
-        let Some(m) = self.st.media.clone().filter(|m| !m.title.is_empty()) else { return };
-        if let Some(svc) = self.services.as_ref() {
-            self.st.lyrics = LyricsState { track_key: m.track_key.clone(), status: LyricsStatus::Loading, ..Default::default() };
-            svc.request_lyrics(&m);
-        }
-    }
-
     /// Apply side effects of a settings change (from the menu, a reload or a page).
     fn settings_changed(&mut self, before: &Settings) {
         // Halo Pro's parts stop without Pro; water and the clipboard follow their switches.
@@ -2355,23 +2318,8 @@ impl App {
         let before = self.st.settings.clone();
         let s = &mut self.st.settings;
         match cmd {
-            ToggleIdleStyle(style) => s.idle_style = style,
-            // Glass, Pill and Diorama are Halo Pro's: without Pro the theme
-            // stays as it is and a notice says so.
-            SetTheme(theme) => {
-                if !theme.free() && !s.pro {
-                    self.st.notify(crate::icons::Icon::Lock, palette::YELLOW, "That theme is Halo Pro", "Activate Halo Pro in Settings to use Glass, Pill and Diorama", 5.0, None);
-                } else {
-                    s.theme = theme;
-                }
-            }
             ToggleSystemHistory => s.system_history = !s.system_history,
-            ToggleMascot => s.mascot = !s.mascot,
-            ToggleLyrics => s.lyrics = !s.lyrics,
             TogglePronunciation => s.lyrics_pronunciation = !s.lyrics_pronunciation,
-            SetHideFullscreen(hide) => s.hide_in_fullscreen = hide,
-            ToggleGameStats => s.game_stats = !s.game_stats,
-            ToggleGamePeek => s.game_peek = !s.game_peek,
             ToggleSounds => s.sounds = !s.sounds,
             TogglePinned => self.st.pinned = !self.st.pinned,
             CentreIsland => s.island_x = None,
@@ -2381,23 +2329,10 @@ impl App {
                 self.collapse();
                 self.open_settings_window(Some(Section::HaloPro), &mut Vec::new());
             }
-            ToggleAutostart => {
-                let on = crate::autostart::is_enabled();
-                if let Err(e) = crate::autostart::set_enabled(!on) {
-                    pwarn!("autostart toggle failed: {e}");
-                }
-                // The Settings page's switch follows.
-                crate::autostart::report(self.sink.clone(), None);
-            }
-            OpenDataFolder => shell::open(&paths::data_dir().to_string_lossy()),
             // The About sheet on the Settings page: what's new, or the
             // app itself — not a browser.
             WhatsNew => self.open_sheet(crate::pages::settings::Sheet::WhatsNew),
             About => self.open_sheet(crate::pages::settings::Sheet::About),
-            LyricsCredit => shell::open("https://lrclib.net"),
-            AppleMusicToken => self.use_apple_music_token(),
-            AppleMusicHelp => if !APPLE_MUSIC_HELP_URL.is_empty() { shell::open(APPLE_MUSIC_HELP_URL) },
-            AppleMusicForget => self.forget_apple_music_token(),
             // "Update to x…": the island opens on the Update sheet.
             Update => {
                 self.st.open_update();
@@ -2684,6 +2619,10 @@ impl App {
             ev @ (AppEvent::Weather(_) | AppEvent::WeatherPlace(_)) => self.on_weather(ev),
             AppEvent::News(got) => self.on_news(got),
             AppEvent::License(r) => self.on_license(r),
+            AppEvent::LicenseStanding { seat, standing } => {
+                services::license::on_standing(&mut self.st, seat, standing, &mut self.license_look);
+                self.request_frame();
+            }
             AppEvent::Stocks(ev) => self.st.stocks.apply(ev, self.st.unix),
             AppEvent::Notify(ev) => self.on_notify(ev),
             AppEvent::Usage(ev) => self.on_usage(ev),

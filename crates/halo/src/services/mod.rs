@@ -253,13 +253,6 @@ impl Services {
         self.pairdrop.as_ref().map(|p| p.pairs()).unwrap_or_default()
     }
 
-    /// The Apple Music token on disk was saved or removed.
-    pub fn apple_music_token_changed(&self) {
-        if let Some(l) = &self.lyrics {
-            l.apple_token_changed();
-        }
-    }
-
     /// Handle the AppBar callback message; `Some(true)` when a full-screen
     /// app covers the island's monitor.
     pub fn on_appbar_message(&self, wp: WPARAM, lp: LPARAM, monitor: isize) -> Option<bool> {

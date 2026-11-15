@@ -3,7 +3,7 @@
 ; Releases ship installer/halo.nsi (NSIS), which 0.1.x installs came from; CI builds this one too as a check.
 ;
 ; Build after `cargo build -p halo --release`:
-;   iscc installer\halo.iss                      -> dist\Halo-Island-Setup-0.2.50.exe
+;   iscc installer\halo.iss                      -> dist\Halo-Island-Setup-0.2.51.exe
 ;   iscc /DAppVersion=0.2.0 installer\halo.iss   (another version)
 ;
 ; Per-user install: no admin rights and no UAC prompt. The app goes to
@@ -11,7 +11,7 @@
 ; survive uninstalling (only the cache in %LOCALAPPDATA%\Halo is removed).
 
 #ifndef AppVersion
-  #define AppVersion "0.2.50"
+  #define AppVersion "0.2.51"
 #endif
 #ifndef ExeSource
   #define ExeSource "..\target\release\halo.exe"
@@ -90,6 +90,7 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden
 
 [UninstallDelete]
 ; Cache and log only (lyrics, halo.log); settings and data in %APPDATA%\Halo are kept.
+; So is the Halo Pro license there (license.bin, license-device.bin): a reinstall is Pro again.
 Type: filesandordirs; Name: "{localappdata}\{#AppDir}"
 
 [Code]

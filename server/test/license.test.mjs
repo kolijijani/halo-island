@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { tempDir } from './helpers.mjs';
 import {
-  createLicenseServer, isTailnetOrLoopback, newCode, normalizeCode, codeHash, makeKeys, redeem, status, revoke, stateOf, Store, Limiter, keyId, publicPoint, LIMITS,
+  createLicenseServer, isTailnetOrLoopback, newCode, normalizeCode, codeHash, codeKey, openCode, makeKeys, redeem, status, revoke, stateOf, Store, Limiter, keyId, publicPoint, LIMITS,
 } from '../license-server.mjs';
 
 const TOKEN = 'a'.repeat(40);
@@ -22,7 +22,7 @@ test('only the tailnet and loopback reach the portal', () => {
   }
 });
 
-test('codes are random, well formed and stored only as a hash', () => {
+test('codes are random, well formed and kept only hashed and sealed', () => {
   const seen = new Set();
   for (let i = 0; i < 2000; i++) {
     const c = newCode();
@@ -33,13 +33,17 @@ test('codes are random, well formed and stored only as a hash', () => {
   assert.equal(seen.size, 2000);
   assert.equal(normalizeCode(' halo-abcde-fghjk-mnpqr-stuvw\n'), 'HALO-ABCDE-FGHJK-MNPQR-STUVW');
   const store = new Store(tempDir());
-  const [made] = makeKeys(store, { kind: 'pro', days: '', count: 1, note: 'x', actor: 't' });
+  const pk = key();
+  const [made] = makeKeys(store, { kind: 'pro', days: '', count: 1, note: 'x', actor: 't', sealKey: codeKey(pk) });
   const disk = fs.readFileSync(store.file, 'utf8') + fs.readFileSync(store.auditFile, 'utf8');
   assert.ok(!disk.includes(made.code), 'the code itself never reaches the disk');
   assert.ok(disk.includes(codeHash(made.code)));
+  // Sealed: the signing key opens it, another key doesn't.
+  assert.equal(openCode(codeKey(pk), store.byId(made.id).code_sealed), made.code);
+  assert.equal(openCode(codeKey(key()), store.byId(made.id).code_sealed), null);
 });
 
-test('a code is redeemed once, for one install, and the token verifies', () => {
+test('a code is one seat: another install takes it, the first is kicked, the token verifies', () => {
   const store = new Store(tempDir());
   const pk = key();
   const kid = keyId(crypto.createPublicKey(pk));
@@ -50,20 +54,40 @@ test('a code is redeemed once, for one install, and the token verifies', () => {
   assert.equal(r.status, 200);
   const [, payload, sig] = r.body.token.split('.');
   const grant = JSON.parse(Buffer.from(payload, 'base64url'));
-  assert.deepEqual([grant.kind, grant.dev, grant.kid, grant.exp], ['trial', dev, kid, Math.floor((t0 + 1000) / 1000) + 14 * 86400]);
+  assert.deepEqual([grant.kind, grant.dev, grant.kid, grant.exp, grant.seat], ['trial', dev, kid, Math.floor((t0 + 1000) / 1000) + 14 * 86400, 1]);
   const ok = crypto.verify('sha256', Buffer.from('HL1.' + payload), { key: crypto.createPublicKey(pk), dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url'));
   assert.ok(ok);
-  // The same install again (a reinstall): the same license.
-  assert.equal(redeem(store, pk, kid, { code: trial.code, device: dev }, t0 + 5000).status, 200);
-  // Another install: refused.
-  assert.deepEqual(redeem(store, pk, kid, { code: trial.code, device: device() }, t0 + 6000), { status: 409, body: { error: 'already_used' } });
-  // After its days: expired, for its own install too.
+  const seatOf = (res) => JSON.parse(Buffer.from(res.body.token.split('.')[1], 'base64url')).seat;
+  // The same install again (a reinstall): the same seat, idempotent.
+  const again = redeem(store, pk, kid, { code: trial.code, device: dev }, t0 + 5000);
+  assert.equal(again.status, 200);
+  assert.equal(seatOf(again), 1);
+  assert.equal(store.byId(trial.id).seat, 1);
+  assert.equal(status(store, { lic: trial.id, device: dev, seat: 1 }, t0 + 5500).body.state, 'active');
+  // Another install: takes the seat; the days keep counting from the first redemption.
+  const dev2 = device();
+  const moved = redeem(store, pk, kid, { code: trial.code, device: dev2 }, t0 + 6000);
+  assert.equal(moved.status, 200);
+  assert.equal(seatOf(moved), 2);
+  assert.equal(JSON.parse(Buffer.from(moved.body.token.split('.')[1], 'base64url')).exp, grant.exp);
+  // The first install is kicked, with or without its seat number; the second stands.
+  assert.equal(status(store, { lic: trial.id, device: dev, seat: 1 }, t0 + 7000).body.state, 'revoked');
+  assert.equal(status(store, { lic: trial.id, device: dev }, t0 + 7000).body.state, 'revoked');
+  assert.equal(status(store, { lic: trial.id, device: dev2, seat: 2 }, t0 + 7000).body.state, 'active');
+  // The first takes it back (reinstall, same code): the second is kicked, and an old token's seat no longer stands.
+  const back = redeem(store, pk, kid, { code: trial.code, device: dev }, t0 + 8000);
+  assert.equal(seatOf(back), 3);
+  assert.equal(status(store, { lic: trial.id, device: dev2, seat: 2 }, t0 + 9000).body.state, 'revoked');
+  assert.equal(status(store, { lic: trial.id, device: dev, seat: 1 }, t0 + 9000).body.state, 'revoked', 'a token from an earlier seat');
+  assert.equal(status(store, { lic: trial.id, device: dev, seat: 3 }, t0 + 9000).body.state, 'active');
+  assert.equal(status(store, { lic: trial.id, device: dev, seat: -1 }, t0).status, 400);
+  // After its days: expired, for every install.
   assert.equal(redeem(store, pk, kid, { code: trial.code, device: dev }, t0 + 15 * 86_400_000).body.error, 'expired');
-  // Status: active until the end, then expired.
-  assert.equal(status(store, { lic: trial.id, device: dev }, t0 + 2000).body.state, 'active');
+  assert.equal(redeem(store, pk, kid, { code: trial.code, device: device() }, t0 + 15 * 86_400_000).body.error, 'expired');
   assert.equal(status(store, { lic: trial.id, device: dev }, t0 + 15 * 86_400_000).body.state, 'expired');
   // Another install asking about it learns nothing.
   assert.equal(status(store, { lic: trial.id, device: device() }, t0).body.state, 'revoked');
+  assert.match(fs.readFileSync(store.auditFile, 'utf8'), /"action":"seat_move"/);
 });
 
 test('revoked, lapsed, unknown and malformed all fail closed', () => {
@@ -142,12 +166,23 @@ test('the portal needs the token, rate-limits sign-in, checks CSRF and audits', 
       assert.equal(made.status, 200);
       const codes = [...made.text.matchAll(/<code>(HALO-[^<]+)<\/code>/g)].map((m) => m[1]);
       assert.equal(codes.length, 2);
-      // Shown once: the list afterwards has ids, never the codes.
+      // The list afterwards has ids, never the codes.
       const again = await call(s2, 'GET', '/', { headers: { cookie: sid } });
       assert.ok(codes.every((c) => !again.text.includes(c)));
+      // View key: shows the whole code again, needs the CSRF token, and is audited by license id.
+      const id = srv2.store.byHash(codeHash(codes[0])).id;
+      assert.match(again.text, /action="\/view"/);
+      assert.equal((await call(s2, 'POST', '/view', { body: `id=${id}`, headers: { ...form, cookie: sid } })).status, 403);
+      const viewed = await call(s2, 'POST', '/view', { body: `csrf=${csrf}&id=${id}`, headers: { ...form, cookie: sid } });
+      assert.equal(viewed.status, 200);
+      assert.ok(viewed.text.includes(codes[0]) && !viewed.text.includes(codes[1]));
+      assert.equal(viewed.headers.get('cache-control'), 'no-store');
+      assert.equal((await call(s2, 'POST', '/view', { body: `csrf=${csrf}&id=${'0'.repeat(32)}`, headers: { ...form, cookie: sid } })).status, 404);
       const audit = fs.readFileSync(srv2.store.auditFile, 'utf8');
       assert.match(audit, /"action":"login"/);
       assert.match(audit, /"action":"create"/);
+      assert.ok(audit.includes(`"action":"view_key","actor":"admin@127.0.0.1","id":"${id}"`));
+      assert.ok(!fs.readFileSync(srv2.store.file, 'utf8').includes(codes[0]), 'kept sealed, never plain');
       assert.ok(codes.every((c) => !audit.includes(c)) && !audit.includes(TOKEN), 'no code or token in the audit');
     } finally {
       s2.close();

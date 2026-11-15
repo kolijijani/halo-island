@@ -362,6 +362,9 @@ pub struct PageUiState {
     pub shelf_scroll: f32,
     /// How far the Today page's news is scrolled (DIPs).
     pub today_scroll: f32,
+    /// Where the Today list shows now as it glides to `today_scroll`, and
+    /// when it was drawn there.
+    pub today_scroll_shown: (f32, f64),
     /// Smoothly animated lyric scroll position (line index as float).
     pub lyric_pos: f32,
     pub lyric_track: String,
@@ -375,6 +378,12 @@ pub struct PageUiState {
     pub entrance: Option<(PageKind, f64)>,
     /// Header tab under the pointer and since when (for hover labels).
     pub tab_hover: Option<(usize, f64)>,
+    /// The row or tile under the pointer and since when, for its hover to
+    /// fade in (`pages::entrance::hover`).
+    pub hover: Option<(crate::ui::WidgetId, f64)>,
+    /// Widgets › Water: when − or + was last pressed and the share before,
+    /// so the water settles to the new level with a ripple.
+    pub water_tap: Option<(f64, f32)>,
     /// The module the System page shows under its strip.
     pub system_module: halo_core::sysmon::Module,
     /// The last System reading had a GPU (keeps its chip while the next one is on its way).
@@ -811,6 +820,9 @@ pub struct AppState {
     pub notify_can: bool,
     /// The AI tab's readings (its choices: `settings.usage`).
     pub usage: UsageState,
+    /// Running the self-test: pages skip their ambient motion
+    /// (`entrance::alive`) so the pictures are taken at rest.
+    pub in_selftest: bool,
     /// Side effects requested during the frame.
     pub cmds: Vec<Command>,
 }
@@ -891,6 +903,7 @@ impl AppState {
             notify_access: NotifyAccess::Unknown,
             notify_can: false,
             usage: UsageState::default(),
+            in_selftest: false,
             cmds: Vec::new(),
         };
         // A list from a hand-edited file keeps to codes, each once, ten at most.

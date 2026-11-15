@@ -12,11 +12,15 @@
 // - redeem (off unless --redeem-host is given): POST /api/redeem and
 //   /api/status for the app. Where it listens is a deployment decision.
 //
-// Keys: a code shown once (HALO-XXXXX-XXXXX-XXXXX-XXXXX, 100 random bits),
-// stored only as its SHA-256. Redeemed once, for one install, it gives a
-// license token signed with the server's P-256 key, which the app verifies
-// offline against the public keys built into it. The private key lives in a
-// file outside the repository (--key, mode 0600), never in git or the app.
+// Keys: a code (HALO-XXXXX-XXXXX-XXXXX-XXXXX, 100 random bits), found by its
+// SHA-256 and kept sealed with a key derived from the signing key, so the
+// portal can show it again and licenses.json alone gives nothing away. A
+// license is one seat: one install at a time. Redeeming it on another
+// install moves the seat there (the `seat` number goes up) and the install
+// it left reads `revoked` from /api/status. Each redemption gives a license
+// token signed with the server's P-256 key, which the app verifies offline
+// against the public keys built into it. The private key lives in a file
+// outside the repository (--key, mode 0600), never in git or the app.
 // The server never logs a code, a token, the admin token or a key.
 
 import http from 'node:http';
@@ -103,6 +107,31 @@ export function normalizeCode(s) {
 
 export const codeHash = (code) => sha256hex('halo-license/1 code\n' + normalizeCode(code));
 
+/** The key that seals codes at rest: derived from the signing key, so a copy of licenses.json alone opens nothing. */
+export function codeKey(privateKey) {
+  return crypto.createHash('sha256').update('halo-license/1 codes\n' + privateKey.export({ format: 'jwk' }).d).digest();
+}
+
+/** `code` sealed with AES-256-GCM: `v1.<iv|tag|ciphertext>` (base64url). */
+export function sealCode(key, code) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([c.update(code, 'utf8'), c.final()]);
+  return 'v1.' + b64u(Buffer.concat([iv, c.getAuthTag(), ct]));
+}
+
+/** A sealed code opened, or null (another signing key, or tampered with). */
+export function openCode(key, sealed) {
+  try {
+    const b = Buffer.from(String(sealed).slice(3), 'base64url');
+    const d = crypto.createDecipheriv('aes-256-gcm', key, b.subarray(0, 12));
+    d.setAuthTag(b.subarray(12, 28));
+    return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 /** The key's id: the first 16 hex digits of its public point's SHA-256 (as the update keys). */
 export function keyId(publicKey) {
   return sha256hex(publicPoint(publicKey)).slice(0, 16);
@@ -172,8 +201,8 @@ export function stateOf(l, now) {
   return 'active';
 }
 
-/** Make `count` keys. Returns the codes, shown once. */
-export function makeKeys(store, { kind, days, count, note, actor }, now = Date.now()) {
+/** Make `count` keys. Returns the codes; with `sealKey`, each is kept sealed so the portal can show it again. */
+export function makeKeys(store, { kind, days, count, note, actor, sealKey }, now = Date.now()) {
   if (!['pro', 'trial'].includes(kind)) throw new UserError('Pick Pro or trial Pro.');
   const d = days === '' || days == null ? null : Number(days);
   if (kind === 'trial' && d == null) throw new UserError('A trial needs a length in days.');
@@ -187,6 +216,7 @@ export function makeKeys(store, { kind, days, count, note, actor }, now = Date.n
     const l = {
       id: crypto.randomBytes(16).toString('hex'),
       code_sha256: codeHash(code),
+      code_sealed: sealKey ? sealCode(sealKey, code) : null,
       kind,
       days: d,
       note: cleanNote,
@@ -194,7 +224,8 @@ export function makeKeys(store, { kind, days, count, note, actor }, now = Date.n
       created_by: actor,
       redeem_by: now + LIMITS.redeemWindowDays * 86_400_000,
       redeemed_at: null,
-      device_sha256: null,
+      device_sha256: null, // the install holding the seat now
+      seat: 0, // goes up each time the seat moves to another install
       expires_at: null,
       revoked_at: null,
     };
@@ -218,8 +249,9 @@ export function revoke(store, id, actor, now = Date.now()) {
 
 /**
  * Redeem `code` for the install `device` (the SHA-256 of its own random id).
- * One code, one install: the same install asking again gets its license
- * again (a reinstall); another install is refused. Fails closed.
+ * One seat: the install holding it asking again gets its license again (a
+ * reinstall); another install takes the seat, and the one it left reads
+ * `revoked` at its next /api/status. Fails closed.
  */
 export function redeem(store, privateKey, kid, { code, device }, now = Date.now()) {
   const c = normalizeCode(code);
@@ -229,27 +261,34 @@ export function redeem(store, privateKey, kid, { code, device }, now = Date.now(
   const state = stateOf(l, now);
   if (state === 'revoked') return { status: 403, body: { error: 'revoked' } };
   if (state === 'lapsed') return { status: 410, body: { error: 'lapsed' } };
-  if (l.redeemed_at && l.device_sha256 !== device) return { status: 409, body: { error: 'already_used' } };
   if (state === 'expired') return { status: 410, body: { error: 'expired' } };
   if (!l.redeemed_at) {
     l.redeemed_at = now;
     l.device_sha256 = device;
+    l.seat = 1;
     l.expires_at = l.days == null ? null : now + l.days * 86_400_000;
     store.save();
     store.audit({ action: 'redeem', id: l.id, kind: l.kind });
+  } else if (l.device_sha256 !== device) {
+    // The seat moves; the days keep counting from the first redemption.
+    l.device_sha256 = device;
+    l.seat = (l.seat ?? 0) + 1;
+    store.save();
+    store.audit({ action: 'seat_move', id: l.id, kind: l.kind });
   } else {
     store.audit({ action: 'reissue', id: l.id });
   }
-  const grant = { v: 1, kid, lic: l.id, kind: l.kind, iat: Math.floor(now / 1000), exp: l.expires_at ? Math.floor(l.expires_at / 1000) : null, dev: device };
+  const grant = { v: 1, kid, lic: l.id, kind: l.kind, iat: Math.floor(now / 1000), exp: l.expires_at ? Math.floor(l.expires_at / 1000) : null, dev: device, seat: l.seat ?? 0 };
   return { status: 200, body: { token: signToken(privateKey, grant), kind: l.kind, exp: grant.exp } };
 }
 
-/** Whether a license still stands: the app asks now and then. */
-export function status(store, { lic, device }, now = Date.now()) {
+/** Whether a license still stands for this install: the app asks once a day. `seat`: its token's (optional). */
+export function status(store, { lic, device, seat }, now = Date.now()) {
   if (!LIC_RE.test(String(lic ?? '')) || !DEVICE_RE.test(String(device ?? ''))) return { status: 400, body: { error: 'malformed' } };
+  if (seat !== undefined && !(Number.isInteger(seat) && seat >= 0)) return { status: 400, body: { error: 'malformed' } };
   const l = store.byId(lic);
-  // Unknown or another install's: said as revoked, so nothing is learned.
-  if (!l || l.device_sha256 !== device) return { status: 200, body: { state: 'revoked' } };
+  // Unknown, another install's, or a seat since moved on: said as revoked, so nothing is learned.
+  if (!l || l.device_sha256 !== device || (seat !== undefined && seat !== (l.seat ?? 0))) return { status: 200, body: { state: 'revoked' } };
   return { status: 200, body: { state: stateOf(l, now) } };
 }
 
@@ -325,7 +364,7 @@ function cookies(req) {
 const CSS = `body{font:15px/1.45 system-ui,sans-serif;max-width:980px;margin:32px auto;padding:0 16px;color:#141821;background:#F3F5F9}
 h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:6px 8px;border-bottom:1px solid #D5DAE3;text-align:left}
 input,select,button{font:inherit;padding:6px 8px}code{font-size:15px;background:#fff;padding:2px 6px;border-radius:4px}
-.box{background:#fff;border:1px solid #D5DAE3;border-radius:12px;padding:16px;margin:16px 0}.warn{color:#9A3412}.muted{color:#5B6270}`;
+td form{display:inline;margin-right:4px}.box{background:#fff;border:1px solid #D5DAE3;border-radius:12px;padding:16px;margin:16px 0}.warn{color:#9A3412}.muted{color:#5B6270}`;
 
 function page(title, inner) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><link rel="stylesheet" href="/admin.css"></head><body>${inner}</body></html>`;
@@ -342,6 +381,7 @@ export function createLicenseServer(opts) {
   const store = new Store(dataDir);
   const publicKey = crypto.createPublicKey(privateKey);
   const kid = keyId(publicKey);
+  const sealKey = codeKey(privateKey);
   const tokenHash = crypto.createHash('sha256').update(adminToken).digest();
   const sessions = new Map(); // id -> { csrf, until }
   const loginFails = new Limiter(LIMITS.loginFailures, LIMITS.loginWindowMs);
@@ -398,12 +438,20 @@ export function createLicenseServer(opts) {
         if (url.pathname === '/keys') {
           let codes, error;
           try {
-            codes = makeKeys(store, { kind: f.kind, days: f.days, count: f.count, note: f.note, actor }, now());
+            codes = makeKeys(store, { kind: f.kind, days: f.days, count: f.count, note: f.note, actor, sealKey }, now());
           } catch (e) {
             if (!(e instanceof UserError)) throw e;
             error = e.message;
           }
           return send(res, error ? 400 : 200, page('Keys', home(s, store, codes, error)), { 'Content-Type': 'text/html; charset=utf-8' });
+        }
+        if (url.pathname === '/view') {
+          // A key shown again, to an admin only; the audit names the license, never the code.
+          const l = store.byId(String(f.id ?? ''));
+          const code = l?.code_sealed ? openCode(sealKey, l.code_sealed) : null;
+          if (!code) return send(res, 404, page('Keys', home(s, store, null, l ? 'This key was made before keys were kept, or with another signing key.' : 'No such license.')), { 'Content-Type': 'text/html; charset=utf-8' });
+          store.audit({ action: 'view_key', actor, id: l.id });
+          return send(res, 200, page('Keys', home(s, store, [{ id: l.id, code }], null, true)), { 'Content-Type': 'text/html; charset=utf-8' });
         }
         if (url.pathname === '/revoke') {
           try {
@@ -435,19 +483,22 @@ export function createLicenseServer(opts) {
     return t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : '';
   }
 
-  function home(s, st, codes, error) {
+  function home(s, st, codes, error, viewed = false) {
     const t = now();
     const rows = [...st.data.licenses]
       .sort((a, b) => b.created_at - a.created_at)
       .slice(0, 500)
       .map((l) => {
         const state = stateOf(l, t);
-        const revoke = state === 'revoked' ? '' : `<form method="post" action="/revoke"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="id" value="${esc(l.id)}"><button>Revoke</button></form>`;
-        return `<tr><td><code>${esc(l.id.slice(0, 8))}</code></td><td>${l.kind === 'pro' ? 'Pro' : 'Trial'}</td><td>${l.days ?? '∞'}</td><td>${esc(state)}</td><td>${homeTimes(l.created_at)}</td><td>${homeTimes(l.redeemed_at)}</td><td>${homeTimes(l.expires_at)}</td><td>${esc(l.note)}</td><td>${revoke}</td></tr>`;
+        const hidden = `<input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="id" value="${esc(l.id)}">`;
+        const view = l.code_sealed ? `<form method="post" action="/view">${hidden}<button>View key</button></form>` : '';
+        const revoke = state === 'revoked' ? '' : `<form method="post" action="/revoke">${hidden}<button>Revoke</button></form>`;
+        const seat = l.device_sha256 ? `${esc(l.device_sha256.slice(0, 12))} #${l.seat ?? 0}` : '';
+        return `<tr><td><code>${esc(l.id.slice(0, 8))}</code></td><td>${l.kind === 'pro' ? 'Pro' : 'Trial'}</td><td>${l.days ?? '∞'}</td><td>${esc(state)}</td><td>${homeTimes(l.created_at)}</td><td>${homeTimes(l.redeemed_at)}</td><td>${homeTimes(l.expires_at)}</td><td>${seat}</td><td>${esc(l.note)}</td><td>${view}${revoke}</td></tr>`;
       })
       .join('');
     const made = codes?.length
-      ? `<div class="box"><p class="warn"><b>Copy these now.</b> They are shown once; the server keeps only their hash.</p>${codes.map((c) => `<p><code>${esc(c.code)}</code> <span class="muted">${esc(c.id.slice(0, 8))}</span></p>`).join('')}</div>`
+      ? `<div class="box"><p class="warn">${viewed ? '<b>This key is a secret.</b> Viewing it is in the audit log.' : '<b>New keys.</b> View key shows them again later.'}</p>${codes.map((c) => `<p><code>${esc(c.code)}</code> <span class="muted">${esc(c.id.slice(0, 8))}</span></p>`).join('')}</div>`
       : '';
     return `<h1>Halo Pro keys</h1>
 <p class="muted">Internal. Reachable on the tailnet only. <a href="/audit">Audit log</a></p>
@@ -458,8 +509,8 @@ ${error ? `<p class="warn">${esc(error)}</p>` : ''}${made}
 <label>How many <input name="count" value="1" inputmode="numeric" size="4"></label>
 <label>Note <input name="note" maxlength="${LIMITS.noteMax}"></label>
 <button>Make keys</button></form>
-<p class="muted">Each key works once, on one install. Unredeemed keys lapse after ${LIMITS.redeemWindowDays} days.</p></div>
-<table><tr><th>Id</th><th>Kind</th><th>Days</th><th>State</th><th>Made</th><th>Redeemed</th><th>Ends</th><th>Note</th><th></th></tr>${rows}</table>
+<p class="muted">Each key is one seat: one PC at a time. Activating it on another PC moves the seat there and the first PC drops to Free at its next daily check. Unredeemed keys lapse after ${LIMITS.redeemWindowDays} days.</p></div>
+<table><tr><th>Id</th><th>Kind</th><th>Days</th><th>State</th><th>Made</th><th>Redeemed</th><th>Ends</th><th>Seat (PC #)</th><th>Note</th><th></th></tr>${rows}</table>
 <form method="post" action="/logout"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><button>Sign out</button></form>`;
   }
 

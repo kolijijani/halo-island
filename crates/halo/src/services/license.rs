@@ -6,18 +6,26 @@
 //!   secrets (`license-device.bin`); only its SHA-256 ever leaves the PC.
 //! - The token: sealed too (`license.bin`). It is checked offline at every
 //!   start against the keys built into the app (`halo_core::license`), so
-//!   Pro works without the server; what fails a check is Free.
+//!   Pro works without the server; what fails a check is Free. Both files
+//!   live with the settings, not the cache, so uninstalling keeps them.
+//! - One seat: a license is on one install at a time. Redeeming its code on
+//!   another moves the seat there; this one learns at its daily look at
+//!   `/api/status` ([`standing_job`]) and drops to Free.
 //! - Where the server is: `HALO_LICENSE_URL` (its redeem API's https
 //!   address). This build has none built in, a deployment decision: without
 //!   it, redeeming says so and nothing is sent.
 //!
 //! A redemption runs once, on the add-on thread's HTTP client (one job), and
-//! answers with [`AppEvent::License`]. Nothing runs at rest.
+//! answers with [`AppEvent::License`]. The daily look is one more job, only
+//! while a server license is on, nobody away, and the server set; it rides
+//! the island's minute timer, so nothing new runs at rest.
 
 use crate::events::{AppEvent, EventSink};
 use crate::services::addons::Job;
 use crate::services::http::{Client, Method};
-use halo_core::license::{self, Grant, Refusal};
+use crate::state::AppState;
+use halo_core::geom::palette;
+use halo_core::license::{self, Grant, Refusal, Standing};
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -75,6 +83,21 @@ fn random_hex() -> Option<String> {
     Some(b.iter().map(|x| format!("{x:02x}")).collect())
 }
 
+/// Before 0.2.51 Windows kept the token and the install id in the cache
+/// (`%LOCALAPPDATA%\Halo`), which uninstalling removes: move them to the
+/// settings folder once, at start.
+#[cfg(windows)]
+pub fn carry_over() {
+    for (old, new) in [("license.bin", crate::paths::license_path()), ("license-device.bin", crate::paths::license_device_path())] {
+        let old = crate::paths::cache_dir().join(old);
+        if old.exists() && !new.exists() {
+            if let Err(e) = std::fs::create_dir_all(crate::paths::data_dir()).and_then(|_| std::fs::rename(&old, &new)) {
+                crate::pwarn!("license: can't move {} to the settings folder ({e})", old.display());
+            }
+        }
+    }
+}
+
 /// The kept token, if it still checks out here (`revoked`: the server said
 /// so), else why not (`Err(None)`: no token kept), for Pro and Settings ›
 /// Halo Pro. A token that fails is deleted, so Pro doesn't hang on it.
@@ -108,6 +131,66 @@ pub fn keep(token: &str) -> bool {
 /// Forget the license on this install (Deactivate).
 pub fn forget() {
     let _ = crate::services::secret::delete(&crate::paths::license_path());
+}
+
+/// A job for the add-on thread: ask `/api/status` whether `grant` still
+/// holds this install's seat; the answer comes back as
+/// `AppEvent::LicenseStanding`. None without a server.
+pub fn standing_job(grant: &Grant, sink: EventSink) -> Option<Job> {
+    let base = server()?;
+    // `dev` checked out as this install's when the token was read.
+    let mut body = serde_json::json!({ "lic": grant.lic, "device": grant.dev });
+    if let Some(seat) = grant.seat {
+        body["seat"] = seat.into();
+    }
+    let body = body.to_string();
+    let seat = grant.seat;
+    Some(Box::new(move |client: Result<&Client, &str>| {
+        let s = match client.map(|c| c.send(Method::Post, &format!("{base}/api/status"), &[], Some(&body), TIMEOUT)) {
+            Ok(Ok(r)) => license::standing(r.status, &r.body),
+            _ => Standing::Unknown,
+        };
+        crate::pinfo!("license: status {s:?}");
+        sink.send(AppEvent::LicenseStanding { seat, standing: s });
+    }))
+}
+
+/// The daily look ended the license here (another PC took the seat, an admin
+/// revoked it, or its days are over): forget the token, Pro off unless the
+/// built-in key is in, and say so once.
+pub fn ended(st: &mut AppState, r: Refusal) {
+    forget();
+    st.ui.license = Some(Err(Some(r)));
+    st.settings.licensed = false;
+    st.settings.pro = license::valid(&st.settings.pro_key);
+    let why = if r == Refusal::Expired { "Its time is over" } else { "It was activated on another PC, or revoked" };
+    st.notify(crate::icons::Icon::Unlink, palette::ORANGE, "Halo Pro is off on this PC", why, 8.0, None);
+    st.cmd(crate::commands::Command::SaveSettings);
+}
+
+/// The minute timer's turn: when a server license is on and its daily look
+/// is due, the job to run, and `due` moves a day on. Nothing while nobody is
+/// there (`away`: locked, display off or battery saver); it runs on the
+/// next minute after they're back.
+pub fn look_due(st: &AppState, due: &mut i64, away: bool, sink: &EventSink) -> Option<Job> {
+    let grant = st.ui.license.as_ref()?.as_ref().ok()?;
+    let now = crate::clock::unix_now();
+    if away || now < *due {
+        return None;
+    }
+    *due = now + license::STATUS_EVERY_S;
+    standing_job(grant, sink.clone())
+}
+
+/// What the daily look found. `seat`: the seat it asked about; an answer
+/// about a license since deactivated or redeemed again changes nothing.
+pub fn on_standing(st: &mut AppState, seat: Option<u32>, s: Standing, due: &mut i64) {
+    let asked_about_this = st.ui.license.as_ref().and_then(|l| l.as_ref().ok()).is_some_and(|g| g.seat == seat);
+    match s {
+        Standing::Ends(r) if asked_about_this => ended(st, r),
+        Standing::Unknown => *due = (*due).min(crate::clock::unix_now() + license::STATUS_RETRY_S),
+        _ => {}
+    }
 }
 
 /// A job for the add-on thread: redeem `code`; the answer comes back as
@@ -158,7 +241,6 @@ pub fn read_answer(status: u16, body: &str, dev: &str, now: i64, verify: impl Fn
             }
         }
         404 => Redeemed::Refused("No license with that code."),
-        409 => Redeemed::Refused("That code was already used on another install."),
         403 => Redeemed::Refused("That code was revoked."),
         410 => Redeemed::Refused(if v["error"] == "lapsed" { "That code wasn't used in time." } else { "That license has ended." }),
         400 => Redeemed::Refused("That isn't a Halo Pro code."),
@@ -182,7 +264,6 @@ mod tests {
         let body = serde_json::json!({ "token": fx["token"] }).to_string();
         assert_eq!(read_answer(200, &body, &dev, 1_794_564_100, yes), Redeemed::Refused("This version can't check that license. Update Halo Island."));
         assert!(matches!(read_answer(200, "<html>", &dev, 0, yes), Redeemed::Trouble(_)));
-        assert_eq!(read_answer(409, r#"{"error":"already_used"}"#, &dev, 0, yes), Redeemed::Refused("That code was already used on another install."));
         assert_eq!(read_answer(410, r#"{"error":"lapsed"}"#, &dev, 0, yes), Redeemed::Refused("That code wasn't used in time."));
         assert_eq!(read_answer(410, r#"{"error":"expired"}"#, &dev, 0, yes), Redeemed::Refused("That license has ended."));
         assert_eq!(read_answer(404, "{}", &dev, 0, yes), Redeemed::Refused("No license with that code."));

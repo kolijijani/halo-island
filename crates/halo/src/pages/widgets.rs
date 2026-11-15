@@ -1,14 +1,17 @@
 //! Widgets: Halo Island's own page. Left, the widget slots (Settings ›
 //! General › Widgets tab: 2 free, all 5 with Halo Pro); right, today's
 //! glasses of water and, while Clipboard is on, what was copied (5 free;
-//! with Pro every item, and a search). Nothing here moves by itself, past
-//! the entrance as the tab opens (`pages::entrance`): the widget tiles rise
-//! in one after another, then the water card.
+//! with Pro every item, and a search). As the tab opens
+//! (`pages::entrance`) the widget tiles rise in one after another, a light
+//! crossing each, their drawings popping in (the clock's hands sweep round);
+//! then the water card, its ring and water filling, and the clipboard rows.
+//! For a few seconds after (`entrance::alive`) the weather drawing and the
+//! water's surface move, then the tab rests: nothing moves by itself after.
 //! A click on the Weather tile picks its city from the Prayer picker's
 //! places (places.json and the website's world list), or goes back to
 //! where the PC is.
 
-use super::entrance::{rise, scaled, Entrance};
+use super::entrance::{alive, hover, rise, scaled, shine, still, Entrance};
 use super::PageKind;
 use crate::commands::Command;
 use crate::icons::Icon;
@@ -19,6 +22,7 @@ use crate::state::AppState;
 use crate::ui::{wid, wid_n, PillStyle, Ui, PILL_GAP, PILL_SMALL};
 use halo_core::geom::{palette, Color, Point, Rect};
 use halo_core::halo::{self, Widget};
+use halo_core::spring::bouncy_at;
 
 const HEIGHT: f32 = 196.0;
 const TILE_H: f32 = 58.0;
@@ -53,36 +57,177 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
 
 fn draw_tiles(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let list = st.settings.widgets.clone();
+    let e = Entrance::of(ui, st, PageKind::Widgets);
     if list.is_empty() {
-        ui.c.text("Add widgets in Settings › General.", r, &TextStyle::footnote().color(palette::TEXT_DIM).center());
+        let ic = Point::new(r.center().x, r.center().y - 16.0);
+        scaled(ui, ic, e.pop(0.05), |ui| ui.c.icon(Icon::Addons, Rect::from_center(ic, 22.0, 22.0), Color::white(0.35)));
+        ui.c.text("Add widgets in Settings › General.", r.offset(0.0, 8.0), &TextStyle::footnote().color(palette::TEXT_DIM).center());
         return;
     }
+    let live = alive(ui, st, PageKind::Widgets);
     let cols = 2;
     let w = (r.w - TILE_GAP) / cols as f32;
-    let e = Entrance::of(ui, st, PageKind::Widgets);
     for (i, wdg) in list.iter().enumerate() {
         let (col, row) = (i % cols, i / cols);
         let t = Rect::new(r.x + col as f32 * (w + TILE_GAP), r.y + row as f32 * (TILE_H + TILE_GAP), w, TILE_H);
-        let open = *wdg == Widget::Weather && ui.button(wid("widgets.weather"), t).clicked;
-        rise(ui, e.pop(0.06 * i.min(5) as f32), |ui| ui.c.fill_rrect(t, 12.0, palette::SURFACE));
+        let n = i.min(5) as f32;
+        let (hover_k, pressed, open) = if *wdg == Widget::Weather {
+            let b = ui.button(wid("widgets.weather"), t);
+            (hover(ui, st, wid("widgets.weather"), b.hovered), b.pressed, b.clicked)
+        } else {
+            (0.0, false, false)
+        };
+        let tint = tile_tint(st, *wdg);
+        let dip = if pressed { 0.98 } else { 1.0 };
+        scaled(ui, t.center(), dip, |ui| {
+            rise(ui, e.pop(0.06 * n), |ui| tile_face(ui, t, tint, hover_k));
+        });
+        shine(ui, e, t, 12.0, 0.3 + 0.06 * n);
         let title_st = TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_DIM);
         ui.c.text(wdg.title(), Rect::new(t.x + 12.0, t.y + 8.0, t.w - 24.0, 15.0), &title_st);
         // Where the weather is for, after the title (an estimate says so).
         if let Some((_, _, place)) = st.weather_place().filter(|_| *wdg == Widget::Weather) {
             let x = t.x + 12.0 + ui.c.measure(wdg.title(), &title_st, t.w).0.ceil() + 6.0;
-            ui.c.text(&place, Rect::new(x, t.y + 8.0, (t.right() - 12.0 - x).max(0.0), 15.0), &TextStyle::caption().color(palette::TEXT_FAINT));
+            ui.c.text(&place, Rect::new(x, t.y + 8.0, (t.right() - 28.0 - x).max(0.0), 15.0), &TextStyle::caption().color(palette::TEXT_FAINT));
         }
         if open {
             st.ui.weather_pick = Some(String::new());
             st.ui.weather_found = None;
         }
         let (big, small) = tile_text(st, *wdg);
-        ui.c.text(&big, Rect::new(t.x + 12.0, t.y + 24.0, t.w - 24.0, 20.0), &TextStyle::headline().tabular());
-        ui.c.text(&small, Rect::new(t.x + 12.0, t.y + 42.0, t.w - 24.0, 14.0), &TextStyle::caption().color(palette::TEXT_DIM));
-        if *wdg == Widget::Moon {
-            let c = Point::new(t.right() - 24.0, t.center().y);
-            scaled(ui, c, e.pop(0.1 + 0.06 * i.min(5) as f32), |ui| moon(ui, c, 11.0, halo::moon_age(st.unix)));
+        let (big_st, small_st) = (TextStyle::headline().tabular(), TextStyle::caption().color(palette::TEXT_DIM));
+        ui.c.text(&big, Rect::new(t.x + 12.0, t.y + 24.0, t.w - 24.0, 20.0), &big_st);
+        ui.c.text(&small, Rect::new(t.x + 12.0, t.y + 42.0, t.w - 24.0, 14.0), &small_st);
+        // Its drawing on the right, where the words leave room for it.
+        let words = ui.c.measure(&big, &big_st, t.w).0.max(ui.c.measure(&small, &small_st, t.w).0);
+        let c = Point::new(t.right() - 22.0, t.center().y + 2.0);
+        let k = e.pop(0.12 + 0.06 * n);
+        match wdg {
+            _ if t.x + 12.0 + words > c.x - 18.0 => {}
+            Widget::Moon => scaled(ui, c, k, |ui| {
+                ui.c.fill_circle(c, 15.0, Color::white(0.05));
+                moon(ui, c, 11.0, halo::moon_age(st.unix));
+            }),
+            Widget::Weather => scaled(ui, c, k, |ui| weather_glyph(ui, st, c, live)),
+            Widget::WorldClock => clock_face(ui, st, c, e.draw(0.14 + 0.06 * n, 0.7), tint),
+            Widget::Calendar => scaled(ui, c, k, |ui| calendar_glyph(ui, c, tint)),
+            Widget::Countdown => scaled(ui, c, k, |ui| ui.c.icon(Icon::Timer, Rect::from_center(c, 18.0, 18.0), tint)),
         }
+        // The Weather tile opens a picker: a pin shows it, nudging in under the pointer.
+        if hover_k > 0.0 {
+            let p = Rect::new(t.right() - 20.0, t.y + 7.0 + 2.0 * (1.0 - hover_k), 12.0, 12.0);
+            ui.c.icon(Icon::Pin, p, tint.with_alpha(hover_k));
+        }
+    }
+}
+
+/// A tile's colour: the sky's for the weather, a calendar's red, and so on.
+fn tile_tint(st: &AppState, w: Widget) -> Color {
+    match w {
+        Widget::Weather => match st.weather.last.as_ref().map(|(w, _)| w.code) {
+            Some(0) => palette::YELLOW,
+            Some(95..=99) => palette::PURPLE,
+            Some(_) => palette::CYAN,
+            None => palette::TEXT_FAINT,
+        },
+        Widget::Calendar => palette::RED,
+        Widget::WorldClock => palette::BLUE,
+        Widget::Moon => Color::white(0.85),
+        Widget::Countdown => palette::ORANGE,
+    }
+}
+
+/// A tile's face: the surface, a glow of its colour from the top right, a
+/// highlight along the top edge (light from above), and under the pointer
+/// a brighter face and an outline in its colour.
+fn tile_face(ui: &mut Ui, t: Rect, tint: Color, hover: f32) {
+    ui.c.fill_rrect(t, 12.0, Color::lerp(palette::SURFACE, palette::SURFACE_HOVER, hover * 0.6));
+    // ponytail: the glow is two flat discs placed clear of the rounded corner, not a radial gradient; add a gradient brush if it looks banded.
+    let g = Point::new(t.right() - 24.0, t.y + 24.0);
+    ui.c.fill_circle(g, 14.0, tint.with_alpha(0.05 + 0.04 * hover));
+    ui.c.fill_circle(g, 9.0, tint.with_alpha(0.05 + 0.04 * hover));
+    ui.c.fill_rect(Rect::new(t.x + 12.0, t.y + 0.5, t.w - 24.0, 1.0), Color::white(0.07));
+    if hover > 0.0 {
+        ui.c.stroke_rrect(t, 12.0, tint.with_alpha(0.35 * hover), 1.0);
+    }
+}
+
+/// The weather as a drawing: a sun whose rays turn, a cloud that drifts or
+/// rain that falls, for a few seconds as the tab opens (`entrance::alive`).
+fn weather_glyph(ui: &mut Ui, st: &AppState, c: Point, live: Option<(f32, f32)>) {
+    let (t, k) = live.unwrap_or((0.0, 0.0));
+    let code = st.weather.last.as_ref().map(|(w, _)| w.code);
+    let cloud = |ui: &mut Ui, c: Point, a: f32| {
+        ui.c.fill_circle(Point::new(c.x - 5.0, c.y + 1.0), 6.0, Color::white(a));
+        ui.c.fill_circle(Point::new(c.x + 2.0, c.y - 2.0), 7.5, Color::white(a));
+        ui.c.fill_rrect(Rect::new(c.x - 11.0, c.y + 1.0, 21.0, 7.0), 3.5, Color::white(a));
+    };
+    match code {
+        None => ui.c.icon(Icon::Pin, Rect::from_center(c, 16.0, 16.0), palette::TEXT_FAINT),
+        Some(0) => {
+            ui.c.fill_circle(c, 9.0, palette::YELLOW.with_alpha(0.22 + 0.06 * (t * 2.0).sin() * k));
+            ui.c.fill_circle(c, 6.0, palette::YELLOW);
+            let turn = t * 0.5 * k;
+            for i in 0..8 {
+                let a = turn + i as f32 * std::f32::consts::TAU / 8.0;
+                let (s, co) = a.sin_cos();
+                ui.c.line(Point::new(c.x + co * 9.0, c.y + s * 9.0), Point::new(c.x + co * 12.0, c.y + s * 12.0), palette::YELLOW.with_alpha(0.85), 1.6);
+            }
+        }
+        Some(code) => {
+            let wet = matches!(code, 51..=67 | 80..=82 | 95..=99);
+            let snow = matches!(code, 71..=77 | 85 | 86);
+            let dx = (t * 0.9).sin() * 1.5 * k;
+            if wet || snow {
+                for i in 0..3 {
+                    let x = c.x - 5.0 + i as f32 * 5.0;
+                    let fall = ((t * 1.6 + i as f32 * 0.33).fract() * k) * 5.0;
+                    let y = c.y + 8.0 + fall;
+                    let ink = palette::CYAN.with_alpha(0.9 - 0.5 * fall / 5.0);
+                    if snow {
+                        ui.c.fill_circle(Point::new(x, y + 1.0), 1.3, Color::white(0.85));
+                    } else {
+                        ui.c.line(Point::new(x, y), Point::new(x - 1.0, y + 3.0), ink, 1.4);
+                    }
+                }
+            } else if code <= 3 {
+                // Partly cloudy: the sun behind.
+                ui.c.fill_circle(Point::new(c.x + 5.0, c.y - 5.0), 5.5, palette::YELLOW.with_alpha(0.9));
+            }
+            cloud(ui, Point::new(c.x + dx, c.y - 2.0), if code == 45 || code == 48 { 0.5 } else { 0.85 });
+        }
+    }
+}
+
+/// A small clock face at the PC's time, its hands sweeping round from
+/// twelve as the tab opens (`k`).
+fn clock_face(ui: &mut Ui, st: &AppState, c: Point, k: f32, tint: Color) {
+    if k <= 0.0 {
+        return;
+    }
+    let l = &st.local;
+    ui.c.with_alpha(k.min(1.0), |cv| {
+        cv.fill_circle(c, 13.0, Color::white(0.06));
+        cv.stroke_circle(c, 13.0, tint.with_alpha(0.6), 1.2);
+    });
+    let hand = |ui: &mut Ui, turns: f32, len: f32, w: f32, col: Color| {
+        let a = turns * k * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+        ui.c.line(c, Point::new(c.x + a.cos() * len, c.y + a.sin() * len), col, w);
+    };
+    let (h, m) = (l.hour as f32 % 12.0, l.minute as f32);
+    hand(ui, (h + m / 60.0) / 12.0, 6.5, 2.0, palette::TEXT);
+    hand(ui, m / 60.0, 9.5, 1.4, tint);
+    ui.c.fill_circle(c, 1.8, tint);
+}
+
+/// A calendar leaf: a red top on a light page.
+fn calendar_glyph(ui: &mut Ui, c: Point, tint: Color) {
+    let page = Rect::from_center(c, 22.0, 22.0);
+    ui.c.fill_rrect(page, 5.0, Color::white(0.12));
+    ui.c.fill_rrect(Rect::new(page.x, page.y, page.w, 7.0), 3.0, tint);
+    for i in 0..3 {
+        ui.c.fill_rect(Rect::new(page.x + 5.0 + i as f32 * 5.0, page.y + 11.0, 3.0, 3.0), Color::white(0.4));
+        ui.c.fill_rect(Rect::new(page.x + 5.0 + i as f32 * 5.0, page.y + 16.0, 3.0, 3.0), Color::white(0.25));
     }
 }
 
@@ -229,19 +374,55 @@ fn moon(ui: &mut Ui, c: Point, r: f32, age: f64) {
 /// over the glasses drunk large and the goal beside them, then − and +.
 /// As the tab opens the card rises in, the ring draws to today's share and
 /// the buttons pop (`pages::entrance`); the words and numbers stay put.
+/// Inside the ring the water stands at today's share, its surface swaying
+/// for a few seconds (`entrance::alive`); a press on − or + settles it to
+/// the new level on the spring and sends a ripple out of the ring. The card
+/// has a faint cyan wash rising from its bottom to the same share.
 fn draw_water(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let day = st.local.day_key();
     let goal = st.settings.water_goal;
     let n = st.store.halo_water.today(&day);
     let share = n as f32 / goal.max(1) as f32;
     let e = Entrance::of(ui, st, PageKind::Widgets);
+    let live = alive(ui, st, PageKind::Widgets);
     let (ring, minus_k, plus_k) = (e.draw(0.08, 0.6), e.pop(0.14), e.pop(0.20));
-    rise(ui, e.pop(0.0), |ui| ui.c.fill_rrect(r, 12.0, palette::SURFACE));
-    ui.c.ring(Point::new(r.x + 25.0, r.center().y), 14.0, 4.0, share.min(1.0) * ring, Color::white(0.12), palette::CYAN);
+    // Since the last press: the level going from where it was on the
+    // spring, and a ripple.
+    let tap = st.ui.water_tap.map(|(at, from)| ((ui.now - at) as f32, from)).filter(|(t, _)| *t < 0.8);
+    if tap.is_some() {
+        ui.request_anim();
+    } else {
+        st.ui.water_tap = None;
+    }
+    let level = match tap {
+        Some((t, from)) => from + (share.min(1.0) - from) * bouncy_at(t),
+        None => share.min(1.0) * ring,
+    };
+    let done = n >= goal;
+    let c = Point::new(r.x + 25.0, r.center().y);
+    rise(ui, e.pop(0.0), |ui| {
+        ui.c.fill_rrect(r, 12.0, palette::SURFACE);
+        // The wash: from the card's bottom to today's share of it, inside its rounded corners.
+        let wash = (r.h - 12.0) * level;
+        if wash > 0.5 {
+            ui.c.fill_rect(Rect::new(r.x + 12.0, r.bottom() - 6.0 - wash, r.w - 24.0, wash), palette::CYAN.with_alpha(0.05));
+        }
+        ui.c.fill_rect(Rect::new(r.x + 12.0, r.y + 0.5, r.w - 24.0, 1.0), Color::white(0.07));
+        if done {
+            ui.c.stroke_rrect(r, 12.0, palette::CYAN.with_alpha(0.3 * ring), 1.0);
+        }
+    });
+    shine(ui, e, r, 12.0, 0.5);
+    water_in_ring(ui, c, 10.5, level, live, tap.map(|t| t.0));
+    ui.c.ring(c, 14.0, 4.0, level, Color::white(0.12), palette::CYAN);
+    if let Some((t, _)) = tap {
+        let p = t / 0.8;
+        ui.c.stroke_circle(c, 14.0 + 10.0 * p, palette::CYAN.with_alpha(0.5 * (1.0 - p)), 1.5);
+    }
 
     let x = r.x + 50.0;
-    let head = if n >= goal { "Goal reached".to_string() } else { format!("Water \u{b7} {:.0}%", share * 100.0) };
-    let head_c = if n >= goal { palette::CYAN } else { palette::TEXT_DIM };
+    let head = if done { "Goal reached".to_string() } else { format!("Water \u{b7} {:.0}%", share * 100.0) };
+    let head_c = if done { palette::CYAN } else { palette::TEXT_DIM };
     ui.c.text(&head, Rect::new(x, r.y + 7.0, 100.0, 15.0), &TextStyle::caption().weight(Weight::Semibold).color(head_c));
     let big = TextStyle::value().tabular();
     let count = n.to_string();
@@ -256,6 +437,10 @@ fn draw_water(ui: &mut Ui, st: &mut AppState, r: Rect) {
     if scaled(ui, minus.center(), minus_k, |ui| ui.pill(wid("widgets.water.minus"), minus, "", Some(Icon::Minus), PillStyle::Utility)).clicked {
         delta = -1;
     }
+    // A glow behind + while there's water to drink.
+    if !done {
+        scaled(ui, plus.center(), plus_k, |ui| ui.c.fill_circle(plus.center(), PILL_SMALL / 2.0 + 3.0, palette::CYAN.with_alpha(0.14)));
+    }
     if scaled(ui, plus.center(), plus_k, |ui| ui.pill(wid("widgets.water.plus"), plus, "", Some(Icon::Plus), PillStyle::Primary(palette::CYAN))).clicked {
         delta = 1;
     }
@@ -263,6 +448,32 @@ fn draw_water(ui: &mut Ui, st: &mut AppState, r: Rect) {
         st.store.halo_water.add(&day, delta);
         st.cmd(Command::SaveStore);
         ui.request_repaint();
+        if !still(st) {
+            st.ui.water_tap = Some((ui.now, level));
+        }
+    }
+}
+
+/// The water inside the ring (radius `r`), filled to `level` 0..1: a disc
+/// clipped below a surface that sways for a while after the tab opens
+/// (`live`) or a press (`tap`: seconds since).
+fn water_in_ring(ui: &mut Ui, c: Point, r: f32, level: f32, live: Option<(f32, f32)>, tap: Option<f32>) {
+    if level <= 0.01 {
+        return;
+    }
+    let (t, k) = live.unwrap_or((0.0, 0.0));
+    let slosh = tap.map_or(0.0, |t| (1.0 - t / 0.8).max(0.0));
+    let amp = 1.2 * k + 2.0 * slosh;
+    let top = c.y + r - 2.0 * r * level.min(1.0);
+    // The surface: a few columns, each a little higher or lower on the wave.
+    const COLS: usize = 6;
+    let w = 2.0 * r / COLS as f32;
+    for i in 0..COLS {
+        let x = c.x - r + i as f32 * w;
+        let y = top + amp * (t * 3.0 + i as f32 * 0.9 + tap.unwrap_or(0.0) * 12.0).sin();
+        ui.c.clip(Rect::new(x, y, w + 0.5, c.y + r - y));
+        ui.c.fill_circle(c, r, palette::CYAN.with_alpha(0.32));
+        ui.c.unclip();
     }
 }
 
@@ -289,15 +500,28 @@ fn draw_clips(ui: &mut Ui, st: &mut AppState, r: Rect) {
         ui.c.text("Nothing copied yet.", Rect::new(r.x, y, r.w, 18.0), &TextStyle::footnote().color(palette::TEXT_FAINT));
         return;
     }
+    let e = Entrance::of(ui, st, PageKind::Widgets);
     let fits = ((r.bottom() - y) / CLIP_H).floor().max(0.0) as usize;
     for (i, t) in found.iter().take(fits).enumerate() {
         let row = Rect::new(r.x, y + i as f32 * CLIP_H, r.w, CLIP_H - 2.0);
-        let resp = ui.button(wid_n("widgets.clip", i as u64), row);
-        if resp.hovered {
-            ui.c.fill_rrect(row, 6.0, palette::SURFACE);
+        let id = wid_n("widgets.clip", i as u64);
+        let resp = ui.button(id, row);
+        let h = hover(ui, st, id, resp.hovered);
+        // Each row rises in after the water card, one after another; under
+        // the pointer it lights and shows it goes back on the clipboard.
+        let k = e.pop(0.24 + 0.05 * i.min(6) as f32);
+        rise(ui, k, |ui| {
+            ui.c.fill_rrect(row, 6.0, Color::lerp(Color::white(0.03), palette::SURFACE_HOVER, h));
+            let dot = Point::new(row.x + 9.0, row.center().y);
+            ui.c.fill_circle(dot, 2.0 + 0.5 * h, Color::lerp(Color::white(0.3), st.accent, h));
+        });
+        if h > 0.0 {
+            let ic = Rect::new(row.right() - 18.0 + 3.0 * (1.0 - h), row.center().y - 6.0, 12.0, 12.0);
+            ui.c.icon(Icon::Clipboard, ic, st.accent.with_alpha(h));
         }
         let line: String = t.lines().next().unwrap_or("").chars().take(60).collect();
-        ui.c.text(&line, row.inset(6.0, 0.0), &TextStyle::footnote());
+        let text_r = Rect::new(row.x + 18.0, row.y, (row.w - 24.0 - 16.0 * h).max(0.0), row.h);
+        ui.c.text(&line, text_r, &TextStyle::footnote());
         // Click: it goes back on the clipboard.
         if resp.clicked {
             st.cmd(Command::ClipBack(t.clone()));

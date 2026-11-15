@@ -184,7 +184,7 @@ Yes, on Windows 10 and 11. Glass needs Windows 10 version 2004 or later to bend 
 <summary><b>Can it hide during games and videos?</b></summary>
 <br>
 
-Yes: right-click the island › **In full-screen apps** › **Hide**. Pick **Stay on top** instead to keep it over borderless games and videos, or turn on [Show over games](#show-over-games) for a frame rate readout.
+Yes: right-click the island › **Advanced settings…** › Island › **In full-screen apps** › **Hide**. Pick **Stay on top** instead to keep it over borderless games and videos, or turn on [Show over games](#show-over-games) for a frame rate readout.
 
 </details>
 
@@ -220,7 +220,7 @@ The gear at the top right of the open island opens **Settings**: your Halo accou
 
 ### The Halo theme
 
-The island stays black by default. Switch on the Halo theme (the gear › **Theme › Halo**, or right-click › **Theme › Halo**) and the whole island becomes Halo's: warm cream with dark brown text, his orange on the play button, the bars and the switches, and Outfit, the Halo Island typeface. Halo, the Halo cat, moves in too: he peeks over the island's edge while it rests, watches your pointer when it comes near, sits beside the clock, peeks up beside the pin when the island is open and bobs along while music plays. He sleeps from midnight to five. He is drawn from the Halo logo, not a picture, so he stays sharp at any scaling, and he only moves for a moment now and then, so he costs no CPU at rest.
+The island stays black by default. Switch on the Halo theme (the gear › **Theme › Halo**) and the whole island becomes Halo's: warm cream with dark brown text, his orange on the play button, the bars and the switches, and Outfit, the Halo Island typeface. Halo, the Halo cat, moves in too: he peeks over the island's edge while it rests, watches your pointer when it comes near, sits beside the clock, peeks up beside the pin when the island is open and bobs along while music plays. He sleeps from midnight to five. He is drawn from the Halo logo, not a picture, so he stays sharp at any scaling, and he only moves for a moment now and then, so he costs no CPU at rest.
 
 ![The Music page in Classic, in the Halo theme, in Glass and in Pill](docs/brand/readme/halo/themes.webp)
 
@@ -232,7 +232,7 @@ To bend what's under it, Glass copies the part of the screen behind its window (
 
 ### The Pill theme
 
-Pill changes the island's shape and layouts, not only its colours. Pick it with right-click › **Theme › Pill**, or the gear › **Theme › Pill**.
+Pill changes the island's shape and layouts, not only its colours. Pick it with the gear › **Theme › Pill**.
 
 - **It floats.** The island sits a little below the top edge: a capsule while it rests, and a card with all four corners rounded when it opens. A soft shadow and a fine rim keep it apart from the wallpaper, light or dark.
 - **At rest** it shows the time and, on a laptop, the battery's percentage and the battery on the right, with a bolt while it's plugged in. A desktop shows the time alone. Pick **Idle look › Status bar** and it widens into a status bar: the volume, the date and time in an inner pill, and the battery. Status bar is Pill's own; the other themes keep the clock.
@@ -244,7 +244,7 @@ The pages and features are the same as in Classic.
 
 ### The Diorama theme
 
-Diorama is Pill with a picture in its resting capsule: a long, small window onto a pixel-art place that keeps the hours of your day. Pick it with right-click › **Theme › Diorama**, or the gear › **Theme › Diorama**.
+Diorama is Pill with a picture in its resting capsule: a long, small window onto a pixel-art place that keeps the hours of your day. Pick it with the gear › **Theme › Diorama**.
 
 - **The place.** Behind a raised frame, cream by day and indigo at night, stand a house at one end and a tree at the other, with a letter box, a garden fence and a lamp post between them and hills behind. The lamp is lit from dusk through the night.
 - **It follows your clock.** Dawn is pink, the day is blue with the sun crossing the sky and clouds drifting by, the light turns golden from about an hour before sunset, and after dusk the stars come out one by one under the moon in tonight's phase. The window is lit until midnight and again from five, with smoke from the chimney while breakfast and supper cook.
@@ -260,7 +260,7 @@ Everything else works as in Pill: music, timers, pop-ups, notices and the open c
 
 ### Show over games
 
-Switch on **Show over games** (System › Games, or right-click › In full-screen apps) and, while a game fills the screen in borderless full-screen, the island becomes a small readout: frames per second, the GPU's load and temperature and the CPU's load. It stays for as long as the game is in front; **Alt+Shift+F** hides it until the next game, and pressing it again brings it back. Any window over a borderless game, the island included, makes Windows combine the two before they reach the screen, which costs the game about a frame of delay. If you'd rather not pay it, pick **Readout › Peeks** in System › Games (or right-click › In full-screen apps › Only for a few seconds): the readout then shows for a few seconds when the game comes to the front, when the frame rate drops sharply and whenever you press Alt+Shift+F, then hides, and in between the game's frames go straight to the screen. Turning it on also lets the island show over full-screen apps; picking Hide there turns it off again. Alt+Shift+F belongs to Halo Island only while a game is in front.
+Switch on **Show over games** (System › Games, or Advanced settings › Island) and, while a game fills the screen in borderless full-screen, the island becomes a small readout: frames per second, the GPU's load and temperature and the CPU's load. It stays for as long as the game is in front; **Alt+Shift+F** hides it until the next game, and pressing it again brings it back. Any window over a borderless game, the island included, makes Windows combine the two before they reach the screen, which costs the game about a frame of delay. If you'd rather not pay it, pick **Readout › Peeks** in System › Games (or Advanced settings › Island › Only for a few seconds): the readout then shows for a few seconds when the game comes to the front, when the frame rate drops sharply and whenever you press Alt+Shift+F, then hides, and in between the game's frames go straight to the screen. Turning it on also lets the island show over full-screen apps; picking Hide there turns it off again. Alt+Shift+F belongs to Halo Island only while a game is in front.
 
 The frame rate is counted the way Intel's PresentMon and Xbox Game Bar count it: Windows logs every frame a game hands to the screen, and Halo Island reads that log for the game in front. Nothing is loaded into the game, so there is nothing for anti-cheat to see. DirectX 9 to 12 games are counted from their own Present calls; Vulkan and OpenGL games from the graphics kernel's log of their frames. The GPU and CPU numbers come from the same readers as the System page. Nothing runs while no game is in front or while the readout is off.
 

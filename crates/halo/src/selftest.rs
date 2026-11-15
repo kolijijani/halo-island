@@ -2592,7 +2592,7 @@ impl SelfTest {
                         // Halo Pro as a trial license shows it: its badge and countdown.
                         let license_was = app.st.ui.license.take();
                         if section == crate::settings_window::Section::HaloPro {
-                            let g = halo_core::license::Grant { v: 1, kid: "selftest".into(), lic: "3f9a0c2e71b4d8a5".into(), kind: "trial".into(), iat: app.st.unix - 7 * 86_400, exp: Some(app.st.unix + 23 * 86_400 + 4 * 3600 + 120), dev: String::new() };
+                            let g = halo_core::license::Grant { v: 1, kid: "selftest".into(), lic: "3f9a0c2e71b4d8a5".into(), kind: "trial".into(), iat: app.st.unix - 7 * 86_400, exp: Some(app.st.unix + 23 * 86_400 + 4 * 3600 + 120), dev: String::new(), seat: Some(1) };
                             app.st.ui.license = Some(Ok(g));
                         }
                         let pro_was = app.st.settings.pro;

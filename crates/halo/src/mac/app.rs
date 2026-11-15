@@ -469,6 +469,9 @@ pub struct App {
     sysmon_on: bool,
     /// Nobody can see the screen: (the displays sleep, the Mac is locked).
     away: (bool, bool),
+    /// When the license server is next asked whether this Mac still holds
+    /// the license's seat (unix s; 0: at the first minute after start).
+    license_look: i64,
     /// The app in front is full screen on the island's screen (`services::fullscreen`).
     front_full_screen: bool,
     /// A full-screen app is in front and Hide is picked: the island is closed
@@ -637,6 +640,7 @@ impl App {
             sysmon: None,
             sysmon_on: false,
             away: (false, false),
+            license_look: 0,
             front_full_screen: false,
             fullscreen_hidden: false,
             halo_account: None,
@@ -855,6 +859,14 @@ impl App {
                 // Settings › Halo Pro counts a trial down, a line a minute.
                 if let Some(s) = self.settings_ui.as_mut().filter(|s| s.view.section == Section::HaloPro) {
                     s.view.dirty = true;
+                }
+                // A license from the server: once a day, ask whether this Mac still holds its seat.
+                let away = self.away.0 || self.away.1 || self.st.power.saver;
+                if let Some(job) = services::license::look_due(&self.st, &mut self.license_look, away, &self.sink) {
+                    self.start_addon_thread();
+                    if let Some(a) = self.addons.as_ref() {
+                        a.run(job);
+                    }
                 }
                 // A prayer's time comes on a whole minute, frames or not
                 // (the displays may sleep).
@@ -1737,6 +1749,10 @@ impl App {
                     Redeemed::Trouble(t) => self.st.ui.pro_trouble = Some(t),
                     Redeemed::NoServer => self.st.ui.pro_trouble = Some("This version has no license server set up.".into()),
                 }
+                self.request_frame();
+            }
+            AppEvent::LicenseStanding { seat, standing } => {
+                services::license::on_standing(&mut self.st, seat, standing, &mut self.license_look);
                 self.request_frame();
             }
             AppEvent::News(got) => {

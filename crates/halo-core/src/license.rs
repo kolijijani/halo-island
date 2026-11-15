@@ -55,6 +55,11 @@ pub struct Grant {
     pub exp: Option<i64>,
     /// The install it was redeemed for: SHA-256 of its own random id, hex.
     pub dev: String,
+    /// Which seat this is: the server counts up each time the license moves
+    /// to another install, so an older token reads `revoked` at
+    /// `/api/status`. None in tokens from before seats.
+    #[serde(default)]
+    pub seat: Option<u32>,
 }
 
 /// A token split up for checking: the signed text, its signature (r || s)
@@ -129,6 +134,38 @@ fn check_with(keys: &str, token: &str, device: &str, now: i64, revoked: bool, ve
     Ok(t.grant)
 }
 
+/// How often the app asks `/api/status` while a license is on: once a day,
+/// so a seat taken by another PC (or revoked) drops here within a day.
+pub const STATUS_EVERY_S: i64 = 86_400;
+/// After a look that couldn't be made (offline, server down): an hour.
+pub const STATUS_RETRY_S: i64 = 3600;
+
+/// What `/api/status` said about this install's license.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// Still this install's: Pro stays on.
+    Stands,
+    /// Gone: another PC took the seat or an admin revoked it (`Revoked`), or
+    /// its days are over (`Expired`). Pro goes off here.
+    Ends(Refusal),
+    /// No answer worth acting on (offline, busy, an error): Pro stays on
+    /// (the token still checks offline) and the app asks again later.
+    Unknown,
+}
+
+/// The server's answer to `/api/status` (HTTP status and body). Only a
+/// clear 200 changes anything; a seat moved on, `unused` or `lapsed` (not
+/// this install's) all end it.
+pub fn standing(http: u16, body: &str) -> Standing {
+    let v: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+    match (http, v["state"].as_str()) {
+        (200, Some("active")) => Standing::Stands,
+        (200, Some("expired")) => Standing::Ends(Refusal::Expired),
+        (200, Some("revoked" | "unused" | "lapsed")) => Standing::Ends(Refusal::Revoked),
+        _ => Standing::Unknown,
+    }
+}
+
 /// The words for a refusal, on the Halo Pro page.
 pub fn refusal_words(r: Refusal) -> &'static str {
     match r {
@@ -137,7 +174,7 @@ pub fn refusal_words(r: Refusal) -> &'static str {
         Refusal::BadSignature => "That license didn't check out.",
         Refusal::OtherInstall => "That license belongs to another install.",
         Refusal::Expired => "That license has ended.",
-        Refusal::Revoked => "That license was revoked.",
+        Refusal::Revoked => "That license was revoked or moved to another PC.",
     }
 }
 
@@ -195,10 +232,10 @@ impl State {
         match self {
             State::Free => "Free is whole. Pro adds the power parts.",
             State::Key => "Halo Pro with the built-in key: no end, on this PC.",
-            State::Licensed => "Halo Pro from a license code, bound to this PC.",
-            State::Trial => "Trial Pro from a license code, bound to this PC.",
+            State::Licensed => "Halo Pro from a license code, on this PC (one PC at a time).",
+            State::Trial => "Trial Pro from a license code, on this PC (one PC at a time).",
             State::Expired => "This license has ended. Pro parts are off until a new code.",
-            State::Revoked => "This license was revoked. Pro parts are off.",
+            State::Revoked => "This license moved to another PC or was revoked. Activate its code to bring it back.",
             State::NoServer => "This version has no license server: only the built-in key unlocks Pro.",
         }
     }
@@ -273,7 +310,9 @@ mod tests {
         let grant = |exp: &str, dev: &str, kid: &str| format!(r#"{{"v":1,"kid":"{kid}","lic":"{}","kind":"trial","iat":100,"exp":{exp},"dev":"{dev}"}}"#, "a".repeat(32));
         let ok = token(&grant("1000", &dev, "abcd1234abcd1234"), good_sig);
         let g = check_with(&keys, &ok, &dev, 500, false, verify).unwrap();
-        assert_eq!((g.kind.as_str(), g.exp), ("trial", Some(1000)));
+        assert_eq!((g.kind.as_str(), g.exp, g.seat), ("trial", Some(1000), None), "a token from before seats still checks");
+        let seated = token(&grant("1000", &dev, "abcd1234abcd1234").replace(r#""iat""#, r#""seat":3,"iat""#), good_sig);
+        assert_eq!(check_with(&keys, &seated, &dev, 500, false, verify).unwrap().seat, Some(3));
         assert_eq!(check_with(&keys, &ok, &dev, 1000, false, verify), Err(Refusal::Expired));
         assert_eq!(check_with(&keys, &ok, &"e".repeat(64), 500, false, verify), Err(Refusal::OtherInstall));
         assert_eq!(check_with(&keys, &ok, &dev, 500, true, verify), Err(Refusal::Revoked));
@@ -288,9 +327,22 @@ mod tests {
         assert_eq!(check(&ok, &dev, 500, false, |_, _, _| true), Err(Refusal::UnknownKey));
     }
 
+    /// `/api/status` as the daily look reads it: only a clear answer acts.
+    #[test]
+    fn the_servers_status_reads_fail_safe() {
+        assert_eq!(standing(200, r#"{"state":"active"}"#), Standing::Stands);
+        assert_eq!(standing(200, r#"{"state":"revoked"}"#), Standing::Ends(Refusal::Revoked), "another PC took the seat");
+        assert_eq!(standing(200, r#"{"state":"expired"}"#), Standing::Ends(Refusal::Expired));
+        assert_eq!(standing(200, r#"{"state":"unused"}"#), Standing::Ends(Refusal::Revoked));
+        assert_eq!(standing(200, r#"{"state":"lapsed"}"#), Standing::Ends(Refusal::Revoked));
+        for (http, body) in [(200, "<html>"), (200, r#"{"state":"odd"}"#), (200, "{}"), (429, r#"{"error":"busy"}"#), (500, r#"{"state":"revoked"}"#), (400, r#"{"error":"malformed"}"#)] {
+            assert_eq!(standing(http, body), Standing::Unknown, "{http} {body}");
+        }
+    }
+
     #[test]
     fn the_page_says_where_pro_stands() {
-        let g = |kind: &str| Grant { v: 1, kid: "k".into(), lic: "l".into(), kind: kind.into(), iat: 0, exp: None, dev: "d".into() };
+        let g = |kind: &str| Grant { v: 1, kid: "k".into(), lic: "l".into(), kind: kind.into(), iat: 0, exp: None, dev: "d".into(), seat: None };
         assert_eq!(State::of(Some(&g("trial")), None, false, true), State::Trial);
         assert_eq!(State::of(Some(&g("pro")), None, true, true), State::Licensed, "a license wins over the key");
         assert_eq!(State::of(None, None, true, false), State::Key);

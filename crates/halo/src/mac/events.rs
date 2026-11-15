@@ -126,6 +126,9 @@ pub enum AppEvent {
     Cities { file: String, got: Result<halo_core::prayer::World, halo_core::net::Failure> },
     /// A Halo Pro code redeemed, or why not (`services::license`).
     License(crate::services::license::Redeemed),
+    /// The daily `/api/status` look: whether the license on `seat` still
+    /// holds this install's seat (`services::license::standing_job`).
+    LicenseStanding { seat: Option<u32>, standing: halo_core::license::Standing },
     /// The Today page's news (`services::news`).
     News(Result<halo_core::news::News, halo_core::net::Failure>),
     /// The Stocks page's prices, names and years (`services::stocks`).

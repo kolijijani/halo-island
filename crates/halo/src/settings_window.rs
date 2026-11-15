@@ -159,13 +159,11 @@ pub enum Section {
     Ai,
     /// Halo Pro: the key, and the Pro parts once it's on.
     HaloPro,
-    /// Every item the window has, its section and how it stands here.
-    Every,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 14] = [
+    pub const ALL: [Section; 13] = [
         Section::General,
         Section::Appearance,
         Section::Island,
@@ -178,7 +176,6 @@ impl Section {
         Section::Caffeine,
         Section::Ai,
         Section::HaloPro,
-        Section::Every,
         Section::About,
     ];
 
@@ -196,7 +193,6 @@ impl Section {
             Section::Caffeine => "Caffeine",
             Section::Ai => "AI usage",
             Section::HaloPro => "Halo Pro",
-            Section::Every => "Every setting",
             Section::About => "About",
         }
     }
@@ -216,7 +212,6 @@ impl Section {
             Section::Caffeine => "caffeine",
             Section::Ai => "ai",
             Section::HaloPro => "halo-pro",
-            Section::Every => "every-setting",
             Section::About => "about",
         }
     }
@@ -235,7 +230,6 @@ impl Section {
             Section::Caffeine => Icon::Coffee,
             Section::Ai => Icon::Ai,
             Section::HaloPro => Icon::Lock,
-            Section::Every => Icon::ListChecks,
             Section::About => Icon::Gear,
         }
     }
@@ -255,7 +249,6 @@ impl Section {
             Section::Caffeine => Color::hex(0xA2845E),
             Section::Ai => palette::PURPLE,
             Section::HaloPro => palette::YELLOW,
-            Section::Every => Color::hex(0x64748B),
             Section::About => Color::hex(0x8E8E93),
         }
     }
@@ -389,8 +382,6 @@ pub enum Block {
     Note(&'static str),
     /// Halo Pro's key: the field, Activate, and what it said.
     ProKey,
-    /// Every item of the window and how it stands ([`INVENTORY`]).
-    Inventory,
 }
 
 /// What a click on a row's control did.
@@ -568,11 +559,12 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 shows.push(item(Key::Display, "Display", Some("All: it follows the active window"), Ctl::Choice(names(&DISPLAYS), chosen(&DISPLAYS, s.monitor))));
             }
             shows.push(item(Key::Fullscreen, "In full-screen apps", Some("Games and videos that fill the screen"), Ctl::Choice(names(&FULLSCREEN), chosen(&FULLSCREEN, s.hide_in_fullscreen))));
+            // The tray's old "In full-screen apps" submenu, as it showed them:
+            // without Pro the readout says so, and `pro_gate` keeps it off.
             if cfg!(windows) {
-                if s.pro {
-                    shows.push(switch(Key::GameStats, "Show FPS, GPU and CPU over games", Some("Keeps the island on top of full-screen apps"), s.game_stats));
-                    shows.push(switch(Key::GamePeek, "Only for a few seconds", Some("Then the island hides and adds no delay to the game"), s.game_peek));
-                }
+                let stats = if s.pro { "Show FPS, GPU and CPU over games" } else { "Show FPS, GPU and CPU over games (Halo Pro)" };
+                shows.push(switch(Key::GameStats, stats, Some("Keeps the island on top of full-screen apps"), s.game_stats));
+                shows.push(switch(Key::GamePeek, "Only for a few seconds", Some("Then the island hides and adds no delay to the game"), s.game_peek));
             }
             vec![
                 Block::Group(
@@ -724,7 +716,6 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
             }
             blocks
         }
-        Section::Every => vec![Block::Note("Every item this window has, where it lives, and how it stands on this computer."), Block::Inventory],
         Section::About => vec![
             Block::Version,
             Block::Note(crate::version::TAGLINE),
@@ -746,40 +737,13 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
     }
 }
 
-// ---------------------------------------------------------------- every setting
-
-/// Where one item of the window stands on this machine.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Stands {
-    /// Shown, with what it is set to now ("On", "Hourly", "620").
-    Shown(String),
-    /// Hidden until Halo Pro is on.
-    NeedsPro,
-    /// Hidden until its add-on is switched on (the add-on's title).
-    NeedsAddon(&'static str),
-    /// Hidden until another setting says so (when, in words).
-    NeedsSetting(&'static str),
-    /// This build or this machine doesn't have it.
-    NotHere(&'static str),
-}
-
-impl Stands {
-    pub fn words(&self) -> String {
-        match self {
-            Stands::Shown(v) => v.clone(),
-            Stands::NeedsPro => "Needs Halo Pro".into(),
-            Stands::NeedsAddon(a) => format!("Needs the {a} add-on"),
-            Stands::NeedsSetting(when) => (*when).into(),
-            Stands::NotHere(why) => (*why).into(),
-        }
-    }
-}
-
 /// Every item the window can draw, by the section it lives in: its label
 /// and its key. The rows are listed in `blocks`' order; one whose row the
-/// window draws only sometimes is still here, and [`stands`] says when.
-/// A test checks this against `blocks` both ways.
-pub const INVENTORY: &[(Section, &str, Key)] = &[
+/// window draws only sometimes is still here.
+/// A test checks this against `blocks` both ways, and `docs/advanced-settings.md`
+/// is the same list.
+#[cfg(test)]
+const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::General, AUTOSTART.0, Key::Autostart),
     (Section::General, "Sounds", Key::Sounds),
     (Section::General, "24-hour clock", Key::Clock24),
@@ -846,106 +810,11 @@ pub const INVENTORY: &[(Section, &str, Key)] = &[
 ];
 
 /// The same key with a widget slot's number dropped: the slots are one item.
+#[cfg(test)]
 fn item_key(k: Key) -> Key {
     match k {
         Key::Widget(_) => Key::Widget(0),
         k => k,
-    }
-}
-
-/// What a row's control says now, as text.
-fn ctl_words(it: &Item) -> String {
-    match &it.ctl {
-        Ctl::Switch(Some(true)) => "On".into(),
-        Ctl::Switch(Some(false)) => "Off".into(),
-        Ctl::Switch(None) => "Being read".into(),
-        Ctl::Choice(names, Some(i)) => names.get(*i).copied().unwrap_or("—").to_string(),
-        Ctl::Choice(_, None) => "Set by hand".into(),
-        Ctl::Stepper(v) => v.clone(),
-        Ctl::Button(b) => (*b).into(),
-    }
-}
-
-/// Where the item `key` of `section` stands on this machine: what it says
-/// when the window draws it, else why it doesn't.
-pub fn stands(section: Section, key: Key, st: &AppState) -> Stands {
-    let s = &st.settings;
-    let drawn: Vec<Item> = if section.shown(st) {
-        blocks(section, st).into_iter().flat_map(|b| if let Block::Group(_, items) = b { items } else { Vec::new() }).collect()
-    } else {
-        Vec::new()
-    };
-    let here: Vec<&Item> = drawn.iter().filter(|it| item_key(it.key) == key).collect();
-    if key == Key::Widget(0) && !here.is_empty() {
-        return Stands::Shown(here.iter().map(|it| ctl_words(it)).collect::<Vec<_>>().join(", "));
-    }
-    if let Some(it) = here.first() {
-        return Stands::Shown(ctl_words(it));
-    }
-    let windows = cfg!(windows);
-    match (section, key) {
-        (Section::Prayer, _) => Stands::NeedsAddon(halo_core::addons::PRAYER_TIMES.title),
-        (Section::Caffeine, _) => Stands::NeedsAddon(halo_core::addons::CAFFEINE.title),
-        (Section::Ai, _) if !st.pro_on() => Stands::NeedsPro,
-        (Section::Ai, _) => Stands::NeedsAddon(halo_core::addons::AI_USAGE.title),
-        (_, Key::Display | Key::Mascot) if !windows => Stands::NotHere("Windows only"),
-        (_, Key::GameStats | Key::GamePeek) if !windows => Stands::NotHere("Windows only"),
-        (_, Key::GameStats | Key::GamePeek | Key::CustomLook | Key::CloudSync) if !s.pro => Stands::NeedsPro,
-        (_, Key::SystemHistory) if !s.pro => Stands::NeedsPro,
-        (_, Key::SystemHistory) => Stands::NeedsAddon(halo_core::addons::SYSTEM.title),
-        (_, Key::LookColours | Key::LookRadius | Key::LookGlass) if !s.pro => Stands::NeedsPro,
-        (_, Key::LookColours | Key::LookRadius | Key::LookGlass) => Stands::NeedsSetting("Shows with Theme builder on"),
-        (_, Key::AiNear) => Stands::NeedsSetting("Shows with Heads-up notices on"),
-        (_, Key::StartPage) => Stands::NeedsSetting("Shows with Open where you left off off"),
-        (_, Key::AddWidget) => Stands::Shown("Every slot is filled".into()),
-        (_, Key::Widget(_)) => Stands::Shown("No widgets".into()),
-        (_, Key::Tab(PageKind::Notifications)) => Stands::NotHere("This copy can't read notifications"),
-        _ => Stands::NotHere("Not in this build"),
-    }
-}
-
-/// One line of the inventory, and a section's caption over its lines.
-const INV_ROW_H: f32 = 24.0;
-
-fn inventory_h() -> f32 {
-    let sections = Section::ALL.iter().filter(|s| INVENTORY.iter().any(|i| i.0 == **s)).count();
-    sections as f32 * (GROUP_TITLE_H + GROUP_GAP) + INVENTORY.len() as f32 * INV_ROW_H
-}
-
-/// The inventory as text: a caption per section, then a line per item, its
-/// name on the left and how it stands on the right (dim when it's hidden).
-/// Drawn only where it shows in the scrolled view.
-fn draw_inventory(ui: &mut Ui, st: &mut AppState, r: Rect, view: Rect, sf: &Surfaces) {
-    let px = 1.0 / ui.c.scale().max(0.5);
-    let mut y = r.y;
-    for section in Section::ALL {
-        let items: Vec<&(Section, &str, Key)> = INVENTORY.iter().filter(|i| i.0 == section).collect();
-        if items.is_empty() {
-            continue;
-        }
-        ui.c.text(section.title(), Rect::new(r.x + 2.0, y, r.w, GROUP_TITLE_H - 6.0), &TextStyle::footnote().weight(Weight::Semibold).color(palette::TEXT_DIM));
-        y += GROUP_TITLE_H;
-        let card = Rect::new(r.x, y, r.w, items.len() as f32 * INV_ROW_H);
-        if visible(card, view).is_some() {
-            fill_group(ui, card, sf.group);
-            for (i, (_, label, key)) in items.iter().enumerate() {
-                let row = Rect::new(card.x + ROW_PAD, y + i as f32 * INV_ROW_H, card.w - 2.0 * ROW_PAD, INV_ROW_H);
-                if visible(row, view).is_none() {
-                    continue;
-                }
-                if i > 0 {
-                    ui.c.fill_rect(Rect::new(row.x, row.y, row.w + ROW_PAD, px), RULE);
-                }
-                let stands = stands(section, *key, st);
-                let words = stands.words();
-                let shown = matches!(stands, Stands::Shown(_));
-                let vs = TextStyle::footnote().right().color(if shown { palette::TEXT } else { palette::TEXT_FAINT });
-                let vw = ui.c.measure(&words, &vs, row.w * 0.6).0.ceil().min(row.w * 0.6);
-                ui.c.text(&words, row, &vs);
-                ui.c.text(label, Rect::new(row.x, row.y, (row.w - vw - 12.0).max(0.0), row.h), &TextStyle::footnote());
-            }
-        }
-        y += card.h + GROUP_GAP;
     }
 }
 
@@ -1695,7 +1564,6 @@ fn block_h(st: &AppState, b: &Block) -> f32 {
         Block::Addons => crate::pages::addons::height(st),
         Block::Note(_) => 18.0,
         Block::ProKey => pro_key_h(st),
-        Block::Inventory => inventory_h(),
     }
 }
 
@@ -1741,7 +1609,6 @@ fn draw_block(ui: &mut Ui, st: &mut AppState, b: &Block, bi: usize, at: Rect, vi
         Block::Themes => draw_themes(ui, st, r, view, sf, m),
         Block::Addons => crate::pages::addons::draw(ui, st, r),
         Block::Note(t) => ui.c.text(t, Rect::new(r.x + 2.0, r.y, r.w, r.h), &TextStyle::footnote().color(palette::TEXT_FAINT)),
-        Block::Inventory => draw_inventory(ui, st, r, view, sf),
         Block::ProKey => {
             fill_group(ui, r, sf.group);
             if visible(r, view).is_some_and(|v| v.h >= r.h - 0.5) {
@@ -1805,8 +1672,8 @@ fn draw_pro_key(ui: &mut Ui, st: &mut AppState, r: Rect) {
         _ => {}
     }
     let device = st.ui.license_device.as_deref().map(license::short_device).unwrap_or_else(|| "not made yet".into());
-    rows.push(("This PC", format!("{device} \u{b7} {}", if grant.is_some() { "this license works here only" } else { "a code is bound to it when redeemed" })));
-    rows.push(("Seats", if grant.is_some() { "1 PC: this one".into() } else { "1 PC per code".into() }));
+    rows.push(("This PC", format!("{device} \u{b7} {}", if grant.is_some() { "this license's seat is here" } else { "a code takes this PC's seat when activated" })));
+    rows.push(("Seats", if grant.is_some() { "1 PC at a time: this one".into() } else { "1 PC at a time per code".into() }));
     let label_st = TextStyle::footnote().color(palette::TEXT_DIM);
     let value_st = TextStyle::footnote().weight(Weight::Semibold).tabular();
     let mut y = r.y + 46.0;
@@ -1833,7 +1700,7 @@ fn draw_pro_key(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let field = Rect::new(r.x, y, (r.w - bw - PILL_GAP).max(0.0), PILL_SMALL + 4.0);
     let mut buf = std::mem::take(&mut st.ui.pro_key_input);
     let resp = if pro {
-        let what = if grant.is_some() { "Deactivate removes the license from this PC. Its code stays used." } else { "Deactivate removes the key from this PC; type it again to come back." };
+        let what = if grant.is_some() { "Deactivate removes the license from this PC. Its code activates it again, here or on another PC." } else { "Deactivate removes the key from this PC; type it again to come back." };
         ui.c.text(what, field.inset(2.0, 0.0), &TextStyle::footnote().color(palette::TEXT_DIM));
         Default::default()
     } else {
@@ -2445,16 +2312,6 @@ mod tests {
                 None => {}
             }
         }
-        // Each item says how it stands, here and in a fresh copy.
-        let fresh = state();
-        assert_eq!(stands(Section::Island, Key::Width, &fresh), Stands::Shown("620".into()));
-        assert_eq!(stands(Section::Popups, Key::HudCaps, &fresh).words(), "On");
-        assert_eq!(stands(Section::Prayer, Key::PrayerSound, &fresh), Stands::NeedsAddon("Prayer times"));
-        assert_eq!(stands(Section::HaloPro, Key::CloudSync, &fresh), Stands::NeedsPro);
-        assert_eq!(stands(Section::Ai, Key::AiNotices, &fresh), Stands::NeedsPro);
-        assert_eq!(stands(Section::HaloPro, Key::CloudSync, &states[0]).words(), "Off");
-        assert_eq!(stands(Section::HaloPro, Key::LookColours, &states[0]), Stands::Shown("1".into()));
-        assert_eq!(blocks(Section::Every, &fresh).last(), Some(&Block::Inventory));
     }
 
     #[test]

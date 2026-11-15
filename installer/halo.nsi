@@ -12,7 +12,7 @@ Target amd64-unicode
 SetCompressor /SOLID lzma
 
 !define APPNAME "Halo Island"
-!define VERSION "0.2.50"
+!define VERSION "0.2.51"
 !define PUBLISHER "kolijijani"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Halo"
 !define RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
@@ -31,7 +31,7 @@ InstallDir "$LOCALAPPDATA\Programs\Halo"
 InstallDirRegKey HKCU "Software\Halo" "InstallDir"
 BrandingText "${APPNAME} ${VERSION}"
 
-VIProductVersion "0.2.50.0"
+VIProductVersion "0.2.51.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "FileDescription" "Halo Island installer"
@@ -155,5 +155,6 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Halo"
   ; Cache and log (lyrics lookups name the songs you played) go too.
   RMDir /r "$LOCALAPPDATA\Halo"
-  ; Your settings and data (tasks, shelf, focus history) in %APPDATA%\Halo are kept.
+  ; Your settings and data (tasks, shelf, focus history) in %APPDATA%\Halo are kept, and so is the
+  ; Halo Pro license (license.bin, license-device.bin): a reinstall is Pro again on the same seat.
 SectionEnd

@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "halo"
-version = "0.2.50"
+version = "0.2.51"
 dependencies = [
  "block2",
  "dispatch2",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "halo-core"
-version = "0.2.50"
+version = "0.2.51"
 dependencies = [
  "hmac",
  "qrcodegen",
@@ -1567,11 +1567,11 @@ dependencies = [
 
 [[package]]
 name = "studio-diorama"
-version = "0.2.50"
+version = "0.2.51"
 
 [[package]]
 name = "studio-usage"
-version = "0.2.50"
+version = "0.2.51"
 dependencies = [
  "aes",
  "halo-core",
