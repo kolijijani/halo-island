@@ -15,8 +15,6 @@ use crate::ui::Ui;
 use halo_core::geom::Point;
 use halo_core::spring::bouncy_at;
 
-/// The pages with an entrance.
-pub const PAGES: [PageKind; 2] = [PageKind::Widgets, PageKind::Prayer];
 /// Every part has landed by then (seconds after the start).
 pub const END: f64 = 1.1;
 /// How far a part rises in from (DIPs).
@@ -47,10 +45,11 @@ impl Entrance {
     }
 }
 
-/// The entrance for the page opening (`page`) at `now`: none for a page
-/// without one, or while motion is off (`still`).
+/// The entrance for the page opening (`page`) at `now`: none while motion
+/// is off (`still`). Every page has one; a page without moving parts just
+/// never asks for its frames.
 pub fn start(page: PageKind, now: f64, still: bool) -> Option<(PageKind, f64)> {
-    (!still && PAGES.contains(&page)).then_some((page, now))
+    (!still).then_some((page, now))
 }
 
 /// Whether some page's entrance still moves (the self-test waits it out).

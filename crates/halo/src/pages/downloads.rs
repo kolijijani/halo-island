@@ -8,8 +8,10 @@
 //! remove; a finished file also drags out of its row, as from the Shelf.
 //! yt-dlp does the work (`services::downloader`); nothing runs at
 //! rest, and the page moves by itself only while its list glides to where
-//! the wheel sent it.
+//! the wheel sent it, and as it opens (`pages::entrance`), its badges popping.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::{Command, DownloadCmd};
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -113,7 +115,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let s = &mut st.ui.downloads;
         s.scroll = 0.0;
         s.shown_scroll = 0.0;
-        super::empty_state(ui, list_r, Icon::Download, "Paste a link to save its video or sound.", "yt-dlp does the work; files go to your Downloads folder.");
+        let e = super::entrance::Entrance::of(ui, st, super::PageKind::Downloads);
+        super::empty_state(ui, list_r, Icon::Download, "Paste a link to save its video or sound.", "yt-dlp does the work; files go to your Downloads folder.", e);
     } else {
         list(ui, st, list_r);
     }
@@ -163,6 +166,7 @@ fn link_row(ui: &mut Ui, st: &mut AppState, r: Rect) {
 /// faded where more go on), and Clear finished under them once any has
 /// finished, failed or stopped.
 fn list(ui: &mut Ui, st: &mut AppState, r: Rect) {
+    let e = Entrance::of(ui, st, PageKind::Downloads);
     let accent = st.accent;
     let downloads = &st.downloads;
     let jobs = &downloads.list;
@@ -194,7 +198,7 @@ fn list(ui: &mut Ui, st: &mut AppState, r: Rect) {
     for (i, job) in jobs.iter().enumerate() {
         let row = Rect::new(view.x, view.y + i as f32 * ROW_H - scroll, view.w, ROW_H);
         if row.bottom() > view.y && row.y < view.bottom() {
-            let v = RowView { job, bar: downloads.progress(job.id), accent };
+            let v = RowView { job, bar: downloads.progress(job.id), accent, k: e.pop(0.05 * i.min(6) as f32) };
             draw_row(ui, v, row, view, &mut s.dragging, &mut cmds);
         }
     }
@@ -259,6 +263,8 @@ struct RowView<'a> {
     /// How far it has come, all its parts together (`Jobs::progress`).
     bar: Option<f32>,
     accent: Color,
+    /// The page's entrance for the row: its badge pops in (1 at rest).
+    k: f32,
 }
 
 /// One download: its site's letter on a badge, its title over its line
@@ -266,13 +272,13 @@ struct RowView<'a> {
 /// they're joined, and its buttons on the right. Buttons the list's edges
 /// (`view`) cut into don't show: none takes a click outside the list.
 fn draw_row(ui: &mut Ui, v: RowView, r: Rect, view: Rect, dragging: &mut bool, cmds: &mut Vec<Command>) {
-    let RowView { job, bar, accent } = v;
+    let RowView { job, bar, accent, k } = v;
     let cy = r.center().y;
     let c = Point::new(r.x + BADGE / 2.0, cy);
-    ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18));
+    scaled(ui, c, k, |ui| ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18)));
     match badge_letter(job) {
         Some(l) => ui.c.text(&l, Rect::from_center(c, BADGE, BADGE), &TextStyle::headline().color(accent).center()),
-        None => ui.c.icon(Icon::Download, Rect::from_center(c, 18.0, 18.0), accent),
+        None => scaled(ui, c, k, |ui| ui.c.icon(Icon::Download, Rect::from_center(c, 18.0, 18.0), accent)),
     }
 
     // A finished file drags out of its row, as from the Shelf (the buttons,

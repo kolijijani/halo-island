@@ -38,6 +38,23 @@ Susun atur (kad 230×52 sama, supaya Clipboard tak hilang satu baris):
 | Matahari / bulan | sama | pop, 0.45 s |
 | Nama, waktu, Hijri, info, footer | sama | tiada (teks) |
 
-## 5. Fasa seterusnya
+## 5. Fasa 2: semua paparan lain (15 Nov 2026)
 
-Bila pemilik setuju rasa ini, guna `pages/entrance.rs` yang sama untuk paparan lain (Today, Focus, Stocks…). Tiada perubahan pada notch luar dalam fasa ini.
+`entrance::PAGES` dibuang: setiap paparan kini dapat trigger. Paparan tanpa bahagian bergerak tidak panggil `Entrance::of`, jadi tiada frame diminta. Peraturan sama: bentuk sahaja, teks dan angka tepat dari frame pertama, tiada entrance bila reduced motion / battery saver.
+
+| Paparan | Entrance | Reka bentuk |
+|---|---|---|
+| Today (berita + kalendar) | bulatan hari ini pop 0.12 s; garis accent bawah tajuk berita draw 0.05 s / 0.6 s | garis accent nipis bawah "TOP STORIES" |
+| Media | art pop 0 s; bar progres draw ke posisi lagu 0.12 s / 0.6 s; butang play pop 0.2 s | sama |
+| Focus | ring draw ke fasa 0.05 s / 0.7 s; titik kitaran pop, stagger 0.25 + 0.05·i s | sama |
+| Tasks | jalur tugasan selesai rise + checkbox pop, stagger 0.06 + 0.05·i s; ring footer draw | tugasan selesai atas jalur hijau pudar |
+| Shelf | tile rise, stagger 0.04·i s; zon kosong rise, ikon tray pop | sama |
+| Stocks | garis carta draw kiri→kanan (clip) 0.1 s / 0.7 s | sama |
+| Caffeine | medan titik draw kiri→kanan 0.05 s / 0.7 s; titik minuman pop, stagger | sama |
+| Widgets (tile) | tile rise stagger 0.06·i s; bulan pop | sama |
+| System | ring, gauge, cas bateri draw 0.08 s / 0.7 s | sama |
+| AI usage | kad rise stagger; bar had draw 0.12 s / 0.6 s | sama |
+| Add-ons, Downloads, Notifications, Settings, Record | lencana/ikon pop, stagger per baris; trek Record rise; titik merah rakaman pop | sama |
+| Keadaan kosong (`pages::empty_state`, 5 paparan) | ikon pop 0.05 s | sama |
+
+Notch luar (frame, header, tab, expand/collapse) tidak disentuh.

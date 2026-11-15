@@ -2,7 +2,8 @@
 //! General › Widgets tab: 2 free, all 5 with Halo Pro); right, today's
 //! glasses of water and, while Clipboard is on, what was copied (5 free;
 //! with Pro every item, and a search). Nothing here moves by itself, past
-//! the water card's entrance as the tab opens (`pages::entrance`).
+//! the entrance as the tab opens (`pages::entrance`): the widget tiles rise
+//! in one after another, then the water card.
 //! A click on the Weather tile picks its city from the Prayer picker's
 //! places (places.json and the website's world list), or goes back to
 //! where the PC is.
@@ -58,11 +59,12 @@ fn draw_tiles(ui: &mut Ui, st: &mut AppState, r: Rect) {
     }
     let cols = 2;
     let w = (r.w - TILE_GAP) / cols as f32;
+    let e = Entrance::of(ui, st, PageKind::Widgets);
     for (i, wdg) in list.iter().enumerate() {
         let (col, row) = (i % cols, i / cols);
         let t = Rect::new(r.x + col as f32 * (w + TILE_GAP), r.y + row as f32 * (TILE_H + TILE_GAP), w, TILE_H);
         let open = *wdg == Widget::Weather && ui.button(wid("widgets.weather"), t).clicked;
-        ui.c.fill_rrect(t, 12.0, palette::SURFACE);
+        rise(ui, e.pop(0.06 * i.min(5) as f32), |ui| ui.c.fill_rrect(t, 12.0, palette::SURFACE));
         let title_st = TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_DIM);
         ui.c.text(wdg.title(), Rect::new(t.x + 12.0, t.y + 8.0, t.w - 24.0, 15.0), &title_st);
         // Where the weather is for, after the title (an estimate says so).
@@ -78,7 +80,8 @@ fn draw_tiles(ui: &mut Ui, st: &mut AppState, r: Rect) {
         ui.c.text(&big, Rect::new(t.x + 12.0, t.y + 24.0, t.w - 24.0, 20.0), &TextStyle::headline().tabular());
         ui.c.text(&small, Rect::new(t.x + 12.0, t.y + 42.0, t.w - 24.0, 14.0), &TextStyle::caption().color(palette::TEXT_DIM));
         if *wdg == Widget::Moon {
-            moon(ui, Point::new(t.right() - 24.0, t.center().y), 11.0, halo::moon_age(st.unix));
+            let c = Point::new(t.right() - 24.0, t.center().y);
+            scaled(ui, c, e.pop(0.1 + 0.06 * i.min(5) as f32), |ui| moon(ui, c, 11.0, halo::moon_age(st.unix)));
         }
     }
 }

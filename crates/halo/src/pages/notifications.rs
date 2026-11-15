@@ -11,6 +11,8 @@
 //! (`Command::SaveSettings`). The page keeps no notifications: they come and
 //! go on the closed island.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::{Command, NotifyCmd};
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -83,8 +85,12 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let head = Rect::new(area.x, area.y, area.w, HEAD_H);
     let cy = head.center().y;
     let c = Point::new(head.x + DISC / 2.0, cy);
-    ui.c.fill_circle(c, DISC / 2.0, accent.with_alpha(0.22));
-    ui.c.icon(Icon::Bell, Rect::from_center(c, 20.0, 20.0), accent);
+    // The bell pops in as the page opens (`pages::entrance`).
+    let k = Entrance::of(ui, st, PageKind::Notifications).pop(0.0);
+    scaled(ui, c, k, |ui| {
+        ui.c.fill_circle(c, DISC / 2.0, accent.with_alpha(0.22));
+        ui.c.icon(Icon::Bell, Rect::from_center(c, 20.0, 20.0), accent);
+    });
     let (line, buttons) = access_look(st.notify_access);
     let mut right = head.right();
     for (i, (label, cmd, primary)) in buttons.into_iter().enumerate() {

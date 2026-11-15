@@ -140,7 +140,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         return;
     }
     let Some(site) = st.prayer_site() else {
-        super::empty_state(ui, area, Icon::Moon, "No place yet", "Pick your city to see its times");
+        let e = super::entrance::Entrance::of(ui, st, super::PageKind::Prayer);
+        super::empty_state(ui, area, Icon::Moon, "No place yet", "Pick your city to see its times", e);
         let w = ui.pill_width("Pick a place", false, true);
         let r = Rect::new(area.center().x - w / 2.0, area.bottom() - PILL_SMALL, w, PILL_SMALL);
         if ui.pill(wid("prayer.pick"), r, "Pick a place", None, PillStyle::Utility).clicked {

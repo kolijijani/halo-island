@@ -11,6 +11,8 @@
 //! Nothing here runs by itself: while it records, the time repaints once a
 //! second through the app's wake timer, and not at all while paused.
 
+use super::entrance::{rise, scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{ts, TextStyle, Weight};
 use crate::icons::Icon;
@@ -121,7 +123,9 @@ fn draw_targets(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) -> f32 {
         })
         .collect();
     let track = Rect::new(x0, y, x + SEG_INSET - x0, ROW_H);
-    ui.c.fill_rrect(track, ROW_H / 2.0, palette::SURFACE);
+    // As the page opens the track rises in (`pages::entrance`).
+    let k = Entrance::of(ui, st, PageKind::Record).pop(0.0);
+    rise(ui, k, |ui| ui.c.fill_rrect(track, ROW_H / 2.0, palette::SURFACE));
     let picked = st.settings.record.target;
     let mut choice = None;
     for (i, (t, r)) in cells.iter().enumerate() {
@@ -211,8 +215,10 @@ fn draw_recording(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let time_h = 40.0;
     let cy = y + time_h / 2.0;
     let dot = Point::new(area.x + DOT_R + 1.0, cy);
+    // The red dot pops in as the page opens (`pages::entrance`).
+    let k = Entrance::of(ui, st, PageKind::Record).pop(0.0);
     match phase {
-        Phase::Recording => ui.c.fill_circle(dot, DOT_R, palette::RED),
+        Phase::Recording => scaled(ui, dot, k, |ui| ui.c.fill_circle(dot, DOT_R, palette::RED)),
         Phase::Paused => ui.c.icon(Icon::Pause, Rect::from_center(dot, 14.0, 14.0), palette::TEXT_DIM),
         _ => ui.c.stroke_circle(dot, DOT_R - 0.8, palette::TEXT_DIM, 1.6),
     }

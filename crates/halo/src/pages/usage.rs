@@ -23,8 +23,11 @@
 //! service is shown or hidden, a key is typed (masked) for the services
 //! that take one. All of it goes out as `Command`s: the page never calls the
 //! worker. The page is as tall as the System page and scrolls inside, so
-//! the window never grows for it, and nothing on it moves by itself.
+//! the window never grows for it, and nothing on it moves by itself past
+//! its entrance as it opens (`pages::entrance`): the cards rise in, one
+//! after another, and each limit's bar draws to what is used.
 
+use super::entrance::{rise, Entrance};
 use crate::commands::{Command, UsageCmd};
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -528,7 +531,8 @@ fn cards(ui: &mut Ui, st: &mut AppState, view: Rect, dt: f32, moving: &mut bool)
 }
 
 fn draw_card(ui: &mut Ui, st: &AppState, c: &Card, r: Rect, view: Rect, pill_card: Option<(Rect, f32)>, acts: &mut Vec<(ProviderId, Does)>) {
-    super::card::fill_box(ui, pill_card, r, CARD_R, palette::SURFACE);
+    let k = Entrance::of(ui, st, PageKind::Ai).pop(0.05 * (ProviderId::ALL.iter().position(|p| *p == c.id).unwrap_or(0).min(6)) as f32);
+    rise(ui, k, |ui| super::card::fill_box(ui, pill_card, r, CARD_R, palette::SURFACE));
     let snap = st.usage.readings.get(&c.id).and_then(numbers);
     let x = r.x + PAD_X;
     let w = r.w - 2.0 * PAD_X;
@@ -704,7 +708,7 @@ fn limit(ui: &mut Ui, st: &AppState, r: Rect, label: &str, when: Option<(String,
     }
     let bar = Rect::new(r.x, r.y + BAR_Y, r.w, BAR_H);
     ui.c.fill_rrect(bar, BAR_H / 2.0, palette::TRACK);
-    let k = used.clamp(0.0, 1.0);
+    let k = used.clamp(0.0, 1.0) * Entrance::of(ui, st, PageKind::Ai).draw(0.12, 0.6);
     if k > 0.0 {
         ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * k).max(BAR_H), BAR_H), BAR_H / 2.0, fill);
     }

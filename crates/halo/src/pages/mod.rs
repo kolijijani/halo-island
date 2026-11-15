@@ -685,9 +685,10 @@ fn draw_tip(ui: &mut Ui, header: Rect, tip: &Tip) {
 }
 
 /// Shared helper: a centred, dim placeholder message with an icon.
-pub fn empty_state(ui: &mut Ui, area: Rect, icon: Icon, title: &str, hint: &str) {
+pub fn empty_state(ui: &mut Ui, area: Rect, icon: Icon, title: &str, hint: &str, e: entrance::Entrance) {
     let c = area.center();
-    ui.c.icon(icon, Rect::from_center(Point::new(c.x, c.y - 22.0), 26.0, 26.0), Color::white(0.35));
+    let ic = Point::new(c.x, c.y - 22.0);
+    entrance::scaled(ui, ic, e.pop(0.05), |ui| ui.c.icon(icon, Rect::from_center(ic, 26.0, 26.0), Color::white(0.35)));
     ui.c.text(title, Rect::new(area.x, c.y - 4.0, area.w, 20.0), &TextStyle::headline().center());
     ui.c.text(hint, Rect::new(area.x, c.y + 16.0, area.w, 18.0), &TextStyle::footnote().color(palette::TEXT_DIM).center());
 }

@@ -14,7 +14,12 @@
 //! times out, errs or sends something that isn't a feed, it says which, and
 //! keeps the last stories with their age. Nothing is made up: a feed with no
 //! current story says so.
+//!
+//! As the page opens (`pages::entrance`) today's disc pops and the accent
+//! rule under the news heading draws across; the words stay put.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{TextStyle, Weight};
 use crate::state::AppState;
@@ -71,16 +76,18 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let compact = area.w < COMPACT_BELOW;
     let x = if compact { area.x } else { area.x + GRID_W + COL_GAP };
     let right = Rect::new(x, area.y, (area.right() - x).max(0.0), area.h);
+    let e = Entrance::of(ui, st, PageKind::Today);
     if !compact {
-        draw_weeks_grid(ui, st, Rect::new(area.x, area.y, GRID_W, area.h));
+        draw_weeks_grid(ui, st, Rect::new(area.x, area.y, GRID_W, area.h), e);
     }
-    draw_news(ui, st, right);
+    draw_news(ui, st, right, e);
 }
 
 // ------------------------------------------------------------------ the weeks
 
-/// The weekday, the date and this month's weeks, today filled.
-fn draw_weeks_grid(ui: &mut Ui, st: &AppState, r: Rect) {
+/// The weekday, the date and this month's weeks, today filled (its disc
+/// pops in as the page opens).
+fn draw_weeks_grid(ui: &mut Ui, st: &AppState, r: Rect, e: Entrance) {
     let t = st.local;
     if !valid_date(&t) {
         return;
@@ -105,7 +112,7 @@ fn draw_weeks_grid(ui: &mut Ui, st: &AppState, r: Rect) {
         let cell = Rect::new(r.x + col as f32 * CELL_W, top + row * CELL_H, CELL_W, 20.0);
         let label = d.to_string();
         if d == t.day as i64 {
-            ui.c.fill_circle(cell.center(), 9.5, st.accent);
+            scaled(ui, cell.center(), e.pop(0.12), |ui| ui.c.fill_circle(cell.center(), 9.5, st.accent));
             ui.c.text(&label, cell, &num_st.weight(Weight::Bold).color(ink_on(st.accent)));
         } else {
             let ink = if d < t.day as i64 {
@@ -155,7 +162,7 @@ fn story_h(s: &Story) -> f32 {
     TITLE_H + META_H + if s.point.is_some() { POINT_H } else { 0.0 } + STORY_GAP
 }
 
-fn draw_news(ui: &mut Ui, st: &mut AppState, r: Rect) {
+fn draw_news(ui: &mut Ui, st: &mut AppState, r: Rect, e: Entrance) {
     if r.w < 120.0 {
         return;
     }
@@ -165,6 +172,11 @@ fn draw_news(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let (said, warn) = status(st);
     if !said.is_empty() {
         ui.c.text(&said, head, &TextStyle::caption().color(if warn { palette::ORANGE } else { palette::TEXT_FAINT }).right());
+    }
+    // A hairline in the accent under the heading, drawn across as the page opens.
+    let rule = e.draw(0.05, 0.6);
+    if rule > 0.0 {
+        ui.c.fill_rect(Rect::new(head.x, r.y + HEAD_H - 2.0, head.w * rule, 1.0), st.accent.with_alpha(0.35));
     }
     let list = Rect::new(r.x, r.y + HEAD_H, r.w, r.h - HEAD_H);
     if let Some(line) = empty_line(st) {

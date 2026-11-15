@@ -17,7 +17,13 @@
 //!
 //! Animation state that has no home in `PageUiState` (velocities, the last
 //! frame time, a text-measurement cache) lives in a UI-thread `thread_local`.
+//!
+//! As the page opens (`pages::entrance`) the art pops in, the progress bar
+//! draws to where the song is and the play button pops; the title, artist
+//! and times show at once.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::{Command, MediaCmd};
 use crate::gfx::{ts, TextStyle, Weight};
 use crate::icons::Icon;
@@ -325,7 +331,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         draw_session(ui, st, area, &mut a, &fr);
     } else {
         let r = Rect::new(area.x, area.y, area.w, H_EMPTY);
-        super::empty_state(ui, r, Icon::Music, "Nothing playing", "Play music in Spotify, a browser or any media app");
+        let e = super::entrance::Entrance::of(ui, st, super::PageKind::Media);
+        super::empty_state(ui, r, Icon::Music, "Nothing playing", "Play music in Spotify, a browser or any media app", e);
     }
     put_anim(a);
 }
@@ -359,6 +366,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     let has_dur = tl.has_duration();
     let mut acts: Vec<MediaCmd> = Vec::new();
     let mut anim = false;
+    let e = Entrance::of(ui, st, PageKind::Media);
 
     // Album art (gently shrinks while paused).
     let art_target = if playing { 1.0 } else { ART_PAUSED_SCALE };
@@ -371,7 +379,9 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     let art_settled = settle(&mut a.art_scale, &mut a.art_vel, art_target, 0.0005, 0.005);
     anim |= !art_settled;
     let art_px = if art_settled { Some(scale) } else { None };
-    draw_art(ui, m, Rect::new(x0, y0 + ART_TOP, ART, ART), a.art_scale, art_px);
+    let art_r = Rect::new(x0, y0 + ART_TOP, ART, ART);
+    let art_k = e.pop(0.0);
+    scaled(ui, art_r.center(), art_k, |ui| draw_art(ui, m, art_r, a.art_scale, art_px.filter(|_| art_k == 1.0)));
 
     // Title, artist, player.
     let title = match m.title.trim() {
@@ -403,7 +413,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     if has_dur {
         let seekable = m.can_seek;
         let hover = seekable && ui.hovered(Rect::new(bar.x, bar.y - 6.0, bar.w, bar.h + 12.0));
-        let scrub = ui.progress_bar(wid("media_seek"), bar, tl.progress_at(now), accent, seekable);
+        let scrub = ui.progress_bar(wid("media_seek"), bar, tl.progress_at(now) * e.draw(0.12, 0.6), accent, seekable);
         if scrub.began {
             // A drag starts: the player can get ready for the seek meanwhile.
             acts.push(MediaCmd::Prepare);
@@ -438,7 +448,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     if side_button(ui, wid("media_prev"), Point::new(cx - spacing, cy), Icon::Prev, m.can_prev) {
         acts.push(MediaCmd::Prev);
     }
-    if play_button(ui, Point::new(cx, cy), playing, m.can_play_pause) {
+    if scaled(ui, Point::new(cx, cy), e.pop(0.2), |ui| play_button(ui, Point::new(cx, cy), playing, m.can_play_pause)) {
         acts.push(MediaCmd::PlayPause);
     }
     if side_button(ui, wid("media_next"), Point::new(cx + spacing, cy), Icon::Next, m.can_next) {

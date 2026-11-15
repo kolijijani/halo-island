@@ -21,7 +21,12 @@
 //! The last module, Games (Windows only), holds Show over games: its switch,
 //! whether the readout stays or peeks, whether Windows lets Halo read frames
 //! (with the one-time OK), the frame rate's last minute and what's in front.
+//!
+//! As the page opens (`pages::entrance`) the rings, gauges and the
+//! battery's charge draw to their readings; the numbers show at once.
 
+use super::entrance::Entrance;
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
 use crate::icons::Icon;
@@ -37,6 +42,16 @@ use halo_core::sysmon::{
 };
 
 const HEIGHT: f32 = 256.0;
+
+thread_local! {
+    /// How far the page's arcs and bars are drawn this frame: under 1 only
+    /// while the page's entrance plays ([`draw`] sets it).
+    static SWEEP: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+}
+
+fn sweep() -> f32 {
+    SWEEP.with(std::cell::Cell::get)
+}
 /// The module strip, and the gap under it.
 const STRIP_H: f32 = 40.0;
 const CHIP_GAP: f32 = 6.0;
@@ -128,6 +143,8 @@ fn modules(st: &AppState) -> Vec<Module> {
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // Fixed layout height: the island's spring may still be opening.
     let area = Rect::new(area.x, area.y, area.w, HEIGHT);
+    let k = Entrance::of(ui, st, PageKind::System).draw(0.08, 0.7);
+    SWEEP.with(|s| s.set(k));
     if let Some(r) = &st.system.latest {
         st.ui.system_gpu = r.gpu.is_some();
         // Only the page's own (full) readings, the ones with app lists, say
@@ -693,7 +710,7 @@ fn battery_glyph(ui: &mut Ui, center: Point, percent: u8, color: Color, plugged:
     ui.c.stroke_rrect(body, 9.0, Color::white(0.45), 2.0);
     ui.c.fill_rrect(Rect::new(body.right() + 3.0, center.y - 6.0, 4.0, 12.0), 2.0, Color::white(0.45));
     let inner = body.inset(4.0, 4.0);
-    let w = inner.w * f32::from(percent) / 100.0;
+    let w = inner.w * f32::from(percent) / 100.0 * sweep();
     if w > 0.5 {
         ui.c.fill_rrect(Rect::new(inner.x, inner.y, w.max(8.0), inner.h), 6.0, color);
     }
@@ -1023,8 +1040,9 @@ fn draw_ring(ui: &mut Ui, c: Point, d: f32, ring: &Ring) {
     let radius = d / 2.0 - RING_W / 2.0;
     ui.c.stroke_circle(c, radius, palette::TRACK, RING_W);
     let mut start = 0.0f32;
+    let k = sweep();
     for &(f, color) in &ring.parts {
-        let f = f.clamp(0.0, (1.0 - start).max(0.0));
+        let f = (f * k).clamp(0.0, (1.0 - start).max(0.0));
         if f > 0.002 {
             ui.c.arc(c, radius, start, f, color, RING_W);
         }
@@ -1041,7 +1059,7 @@ fn draw_gauge(ui: &mut Ui, c: Point, d: f32, g: &Gauge) {
     let radius = d / 2.0 - GAUGE_W / 2.0;
     ui.c.stroke_circle(c, radius, palette::TRACK, GAUGE_W);
     if let Some(f) = g.frac.filter(|f| f.is_finite()) {
-        ui.c.arc(c, radius, 0.0, f.clamp(0.0, 1.0), g.color, GAUGE_W);
+        ui.c.arc(c, radius, 0.0, f.clamp(0.0, 1.0) * sweep(), g.color, GAUGE_W);
     }
     let inner = d - 2.0 * GAUGE_W - 2.0;
     let mut size = if g.value.chars().count() > 4 { 10.0 } else { 11.0 };

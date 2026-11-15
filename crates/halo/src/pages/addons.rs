@@ -21,6 +21,8 @@
 //! gives way to a +, and a click opens what it does ([`locked`], [`draw_about`]).
 //! The Downloader's tools come only with Pro ([`needs_pro`]).
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -151,8 +153,11 @@ fn about(a: &Addon) -> &'static str {
 fn draw_about(ui: &mut Ui, st: &mut AppState, area: Rect, a: &Addon) {
     let accent = st.accent;
     let c = Point::new(area.x + BADGE / 2.0, area.y + 4.0 + BADGE / 2.0);
-    ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18));
-    ui.c.icon(icon(a), Rect::from_center(c, 18.0, 18.0), accent);
+    let k = Entrance::of(ui, st, PageKind::Addons).pop(0.0);
+    scaled(ui, c, k, |ui| {
+        ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18));
+        ui.c.icon(icon(a), Rect::from_center(c, 18.0, 18.0), accent);
+    });
     let x = area.x + TEXT_X;
     let w = (area.w - TEXT_X).clamp(0.0, 460.0);
     let title_w = ui.c.measure(a.title, &TextStyle::headline(), w.max(1.0)).0.ceil();
@@ -233,9 +238,14 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     } else {
         (BADGE, 0.0)
     };
-    ui.c.fill_circle(Point::new(r.x + BADGE / 2.0, cy), badge / 2.0, accent.with_alpha(0.18));
+    // As the page opens the badges pop, row by row (`pages::entrance`).
+    let bc = Point::new(r.x + BADGE / 2.0, cy);
     let glyph = if one_line { 14.0f32.min(r.h - 8.0) } else { 18.0 };
-    ui.c.icon(icon(a), Rect::from_center(Point::new(r.x + BADGE / 2.0, cy), glyph, glyph), accent);
+    let k = Entrance::of(ui, st, PageKind::Addons).pop(0.04 * i.min(10) as f32);
+    scaled(ui, bc, k, |ui| {
+        ui.c.fill_circle(bc, badge / 2.0, accent.with_alpha(0.18));
+        ui.c.icon(icon(a), Rect::from_center(bc, glyph, glyph), accent);
+    });
 
     // A switch, or the + of a Pro add-on that opens what it does.
     let edge = if locked(st, a) {

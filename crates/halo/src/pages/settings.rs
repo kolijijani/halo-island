@@ -17,6 +17,8 @@
 //! place (as the island's notice and the menu's "Update to" line do) until
 //! the island closes or Settings does.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::activities::{text_with_dim, text_with_dim_width};
 use crate::commands::Command;
 use crate::gfx::{TextStyle, Weight};
@@ -174,7 +176,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         }
         None => {}
     }
-    draw_head(ui, Rect::new(area.x, area.y, area.w, ACCOUNT_H));
+    let k = Entrance::of(ui, st, PageKind::Settings).pop(0.0);
+    draw_head(ui, Rect::new(area.x, area.y, area.w, ACCOUNT_H), k);
     let px = 1.0 / ui.c.scale().max(0.5);
     ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w, px), Color::white(0.10));
 
@@ -603,9 +606,11 @@ fn flip(st: &mut AppState, sw: Switch, on: Option<bool>) {
 // ---------------------------------------------------------------- head
 
 /// The app's icon, then its name over its tagline.
-fn draw_head(ui: &mut Ui, r: Rect) {
+/// The mascot pops in as the page opens (`k`, `pages::entrance`).
+fn draw_head(ui: &mut Ui, r: Rect, k: f32) {
     let cy = r.center().y;
-    crate::settings_window::halo_mascot(ui.c, Point::new(r.x + ICON / 2.0, cy), ICON);
+    let c = Point::new(r.x + ICON / 2.0, cy);
+    scaled(ui, c, k, |ui| crate::settings_window::halo_mascot(ui.c, c, ICON));
     let x = r.x + TEXT_X;
     let w = (r.right() - x).max(0.0);
     ui.c.text(crate::version::APP_NAME, Rect::new(x, cy - 19.0, w, 20.0), &TextStyle::headline());

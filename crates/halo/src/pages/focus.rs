@@ -8,8 +8,11 @@
 //!
 //! The countdown repaints once per second through the app's wake timer; the
 //! only continuous animations here are a short ring "rewind" when the phase is
-//! reset, skipped or switched, and the segmented control's selection gliding.
+//! reset, skipped or switched, the segmented control's selection gliding,
+//! and the page's entrance as it opens (`pages::entrance`).
 
+use super::entrance::Entrance;
+use super::PageKind;
 use crate::gfx::{ts, TextStyle, Weight};
 use crate::icons::Icon;
 use crate::state::{AppState, InlineAction, NoticeAction};
@@ -166,6 +169,9 @@ pub fn height(_st: &AppState) -> f32 {
 
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let now = st.now;
+    // As the page opens the ring draws to where the phase is and the cycle
+    // dots pop (`pages::entrance`); the countdown shows as it is at once.
+    let e = Entrance::of(ui, st, PageKind::Focus);
     let phase = st.pomodoro.phase;
     let color = phase_color(phase);
     let running = st.pomodoro.is_running();
@@ -179,7 +185,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         ui.request_anim();
     }
     let arc_color = if paused { ring_color.mul_alpha(0.55) } else { ring_color };
-    ui.c.ring(rc, RING_R, RING_W, progress, RING_TRACK, arc_color);
+    ui.c.ring(rc, RING_R, RING_W, progress * e.draw(0.05, 0.7), RING_TRACK, arc_color);
 
     let remaining = st.pomodoro.remaining(now);
     let countdown = fmt_countdown(remaining);
@@ -252,7 +258,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let _ = st.pomodoro.skip(now);
     }
 
-    draw_stats(ui, st, Rect::new(x0, stats_y, col_w, STATS_H));
+    draw_stats(ui, st, Rect::new(x0, stats_y, col_w, STATS_H), e);
 }
 
 /// Wall-clock time when the running phase ends ("13:20" / "1:20 PM"). The
@@ -344,7 +350,7 @@ fn draw_segments(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) {
 }
 
 /// Cycle dots and "N focus sessions today".
-fn draw_stats(ui: &mut Ui, st: &AppState, r: Rect) {
+fn draw_stats(ui: &mut Ui, st: &AppState, r: Rect, e: Entrance) {
     let cy = r.center().y;
     let mut x = r.x + 1.0;
     let every = st.pomodoro.cfg.long_every;
@@ -359,7 +365,10 @@ fn draw_stats(ui: &mut Ui, st: &AppState, r: Rect) {
             } else {
                 palette::TRACK
             };
-            ui.c.fill_circle(Point::new(x + 3.5, cy), 3.5, c);
+            let k = e.pop(0.25 + 0.05 * i as f32);
+            if k > 0.0 {
+                ui.c.fill_circle(Point::new(x + 3.5, cy), 3.5 * k, c);
+            }
             x += 12.0;
         }
         x += 6.0;

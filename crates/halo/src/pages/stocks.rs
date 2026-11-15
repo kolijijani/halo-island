@@ -13,8 +13,11 @@
 //! to their places as they come, go and move. The list lives in data.json
 //! (`store.stocks`); the prices come from Yahoo Finance through
 //! `services::stocks`, asked only while this page is on screen ([`watch`]),
-//! and say how old they are on the exchange's own clock.
+//! and say how old they are on the exchange's own clock. As the page
+//! opens (`pages::entrance`) the chart's line runs out from the left.
 
+use super::entrance::Entrance;
+use super::PageKind;
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
 use crate::services::stocks::{Trouble, Watch};
@@ -732,6 +735,7 @@ fn close_search(ui: &mut Ui, s: &mut StocksUi) {
 // ---------------------------------------------------------------- the stock
 
 fn detail(ui: &mut Ui, st: &mut AppState, r: Rect) {
+    let entrance = Entrance::of(ui, st, PageKind::Stocks);
     let pick = st.store.stocks.pick.clone();
     let range = st.store.stocks.range;
     let index = pick == INDEX;
@@ -801,7 +805,11 @@ fn detail(ui: &mut Ui, st: &mut AppState, r: Rect) {
     }
     let px: Vec<(f32, f32)> = shown.iter().map(|p| to_px(*p)).collect();
     if line.pts.len() >= 2 {
+        // As the page opens the line runs out from the left (`pages::entrance`).
+        let k = entrance.draw(0.1, 0.7);
+        ui.c.clip(Rect::new(chart.x - 4.0, chart.y - 4.0, (chart.w + 8.0) * k, chart.h + 12.0));
         draw_line(ui, &px, color, chart.y, chart.bottom() + 6.0, 2.0, Some(0.34));
+        ui.c.unclip();
     } else {
         let msg = match range {
             // Before the bell, or (the day the feed starts keeping lines) a first point.

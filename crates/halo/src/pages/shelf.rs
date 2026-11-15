@@ -10,7 +10,12 @@
 //! shelf) opens a panel under the shelf with a QR code. A phone that scans it
 //! sends files to the Shelf after a yes on the island, and can save Shelf
 //! files (`services::phonedrop`, `halo_core::phonedrop`).
+//!
+//! As the page opens (`pages::entrance`) the tiles rise in one after
+//! another, or the empty drop zone rises and its tray pops; names stay put.
 
+use super::entrance::{rise, scaled, Entrance};
+use super::PageKind;
 use crate::commands::{Command, PairCmd, PhoneCmd};
 use crate::dragdrop;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
@@ -163,10 +168,11 @@ fn draw_page(ui: &mut Ui, st: &mut AppState, area: Rect, l: &mut Local) {
         Some(_) => (Rect::new(area.x, area.y, area.w, PAGE_H), Some(Rect::new(area.x, area.y + PAGE_H + PHONE_GAP, area.w, PHONE_H))),
         None => (area, None),
     };
+    let e = Entrance::of(ui, st, PageKind::Shelf);
     if items.is_empty() {
-        draw_empty(ui, st, l, main, card, &mut actions);
+        draw_empty(ui, st, l, main, card, e, &mut actions);
     } else {
-        draw_items(ui, st, l, main, &items, dt, shown, card, &mut actions);
+        draw_items(ui, st, l, main, &items, dt, shown, card, e, &mut actions);
     }
     if let (Some(r), Some(pd)) = (phone_r, st.phone.clone()) {
         draw_phone(ui, st, l, &pd, r, card, &mut actions);
@@ -305,6 +311,7 @@ fn draw_items(
     dt: f32,
     shown: bool,
     card: Option<(Rect, f32)>,
+    e: Entrance,
     actions: &mut Vec<Action>,
 ) {
     let now = st.now;
@@ -348,6 +355,8 @@ fn draw_items(
         if appear < 1.0 {
             ui.request_anim();
         }
+        // The page's entrance: each tile a little after the one before.
+        let appear = appear.min(e.pop(0.04 * i.min(8) as f32).clamp(0.0, 1.0));
         let tile = Rect::new(x, row.y + (1.0 - appear) * 8.0, TILE_W, tile_h);
         let kind = imaging::path_kind(&it.path);
         let missing = kind == Some(PathKind::Missing);
@@ -559,7 +568,7 @@ fn draw_drop_overlay(ui: &mut Ui, st: &AppState, zone: Rect, glow: f32, card: Op
 
 // ---------------------------------------------------------------- empty state
 
-fn draw_empty(ui: &mut Ui, st: &AppState, l: &Local, area: Rect, card: Option<(Rect, f32)>, actions: &mut Vec<Action>) {
+fn draw_empty(ui: &mut Ui, st: &AppState, l: &Local, area: Rect, card: Option<(Rect, f32)>, e: Entrance, actions: &mut Vec<Action>) {
     let g = l.glow;
     let accent = st.accent;
     // Same bottom edge as the drop overlay over a filled shelf.
@@ -576,7 +585,7 @@ fn draw_empty(ui: &mut Ui, st: &AppState, l: &Local, area: Rect, card: Option<(R
     };
     let fill = Color::lerp(Color::white(0.03), accent.with_alpha(0.10), g);
     let stroke = Color::lerp(Color::white(0.12), accent.with_alpha(0.9), g);
-    drop_zone(ui, card, zone, 18.0, fill, stroke);
+    rise(ui, e.pop(0.0), |ui| drop_zone(ui, card, zone, 18.0, fill, stroke));
 
     let undo_live = g < 0.5 && l.undo.as_ref().is_some_and(|(_, t)| st.now - t < UNDO_SECS);
     let (icon, title, hint) = if g >= 0.5 {
@@ -589,7 +598,8 @@ fn draw_empty(ui: &mut Ui, st: &AppState, l: &Local, area: Rect, card: Option<(R
     // Icon, title and hint (or the Undo pill) stacked around the zone centre.
     let c = zone.center();
     let icon_col = Color::lerp(Color::white(0.38), accent, g);
-    ui.c.icon(icon, Rect::from_center(Point::new(c.x, c.y - 22.0), 26.0, 26.0), icon_col);
+    let ic = Point::new(c.x, c.y - 22.0);
+    scaled(ui, ic, e.pop(0.12), |ui| ui.c.icon(icon, Rect::from_center(ic, 26.0, 26.0), icon_col));
     ui.c.text(title, Rect::new(zone.x, c.y - 4.0, zone.w, 20.0), &TextStyle::headline().center());
     if undo_live {
         let w = ui.pill_width("Undo", true, true);

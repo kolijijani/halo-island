@@ -20,12 +20,14 @@
 //! web chart" below): the dots' sizes and shades, the rings, the y scale
 //! and where the labels go, in the island's look.
 //!
-//! Nothing here moves by itself, and the page draws only when the app
-//! does. The field's dots (72 columns by 22 rows) are painted into one
+//! Nothing here moves by itself past the page's entrance as it opens
+//! (`pages::entrance`), and the page draws only when the app does. The field's dots (72 columns by 22 rows) are painted into one
 //! picture when what they show changes (a drink added, moved, removed or
 //! picked, the settings, the day, the theme or the display's scale), so a
 //! frame draws them as one image.
 
+use super::entrance::Entrance;
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
 use crate::icons::Icon;
@@ -672,8 +674,14 @@ fn draw_chart(ui: &mut Ui, st: &mut AppState, lay: &Layout, field: Rect, c: &Cha
     let scale = ui.c.scale().max(0.5);
     // A one-pixel line's centre, on the pixel grid.
     let px = |v: f32| (v * scale).floor() / scale + 0.5 / scale;
+    // As the page opens (`pages::entrance`) the day's dots run out from
+    // the left and the drinks' dots pop; the labels and times stay put.
+    let e = Entrance::of(ui, st, PageKind::Caffeine);
     if let Some(image) = image {
+        let k = e.draw(0.05, 0.7);
+        ui.c.clip(Rect::new(field.x, field.y, field.w * k, field.h));
         ui.c.image_exact(image, field, 0.0);
+        ui.c.unclip();
     }
 
     // The 50 mg line, dashed, with its "50".
@@ -762,7 +770,8 @@ fn draw_chart(ui: &mut Ui, st: &mut AppState, lay: &Layout, field: Rect, c: &Cha
         } else {
             Color::white(0.75)
         };
-        ui.c.fill_circle(centre, if picked { CUP_PICKED_R } else { CUP_R }, color);
+        let k = e.pop(0.3 + 0.04 * i.min(8) as f32).max(0.0);
+        ui.c.fill_circle(centre, if picked { CUP_PICKED_R } else { CUP_R } * k, color);
     }
     // The drag ends with the press; a drink that moved is saved then.
     let mut save = false;

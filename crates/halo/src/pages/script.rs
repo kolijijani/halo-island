@@ -187,7 +187,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
 
 fn draw_empty(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let top = Rect::new(area.x, area.y, area.w, area.h - 52.0);
-    super::empty_state(ui, top, Icon::Script, "Paste a script to read", "Copy it anywhere, then press Paste. Or drop a .txt file here.");
+    let e = super::entrance::Entrance::of(ui, st, super::PageKind::Script);
+    super::empty_state(ui, top, Icon::Script, "Paste a script to read", "Copy it anywhere, then press Paste. Or drop a .txt file here.", e);
     let label = "Paste";
     let w = ui.pill_width(label, true, false);
     let r = Rect::new(area.center().x - w / 2.0, top.bottom() - 6.0, w, PILL_REGULAR);

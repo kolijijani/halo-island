@@ -10,8 +10,12 @@
 //! below the open ones), but only once the pointer leaves the list (or after
 //! a moment), so the next row never slides under the cursor. New rows fade
 //! in and the checkbox pops. All of it is event-driven: nothing animates
-//! while idle.
+//! while idle. Done tasks sit on a faint green band. As the
+//! page opens (`pages::entrance`) the bands rise in and the checkboxes pop,
+//! row by row, and the footer's ring draws; the words stay put.
 
+use super::entrance::{rise, Entrance};
+use super::PageKind;
 use crate::gfx::TextStyle;
 use crate::icons::Icon;
 use crate::state::AppState;
@@ -124,6 +128,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     }
     let dt = if stale { 0.0 } else { (now - anim.last_draw).clamp(0.0, 0.05) as f32 };
     let mut moving = false;
+    let e = Entrance::of(ui, st, PageKind::Tasks);
     let day_start = st.day_start_unix();
     if st.store.tasks.tasks.len() >= MAX_TASKS {
         make_room(st, day_start);
@@ -154,7 +159,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
 
     if items.is_empty() {
         let hint_area = Rect::new(area.x, view.y, area.w, HEIGHT - LIST_TOP);
-        super::empty_state(ui, hint_area, Icon::ListChecks, "Nothing on your list", "Done tasks clear at the end of the day");
+        super::empty_state(ui, hint_area, Icon::ListChecks, "Nothing on your list", "Done tasks clear at the end of the day", e);
         st.ui.task_scroll = 0.0;
         anim.scroll = 0.0;
         anim.rows.clear();
@@ -205,7 +210,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             ui.c.set_alpha(prev_alpha * appear);
             // A row on the move glides between pixels; at rest it sits on whole pixels.
             let snap_was = ui.c.set_text_snap(!(scrolling || m || appear < 1.0));
-            let action = draw_row(ui, row, hit, view, *id, *done, text, pop);
+            let k = e.pop(0.06 + 0.05 * i.min(6) as f32);
+            let action = draw_row(ui, row, hit, view, *id, *done, text, pop, k);
             ui.c.set_text_snap(snap_was);
             ui.c.set_alpha(prev_alpha);
             match action {
@@ -242,7 +248,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             }
         }
 
-        draw_footer(ui, st, footer_r, day_start, full, &mut anim, undo_id);
+        draw_footer(ui, st, footer_r, day_start, full, &mut anim, undo_id, e);
     }
 
     anim.appeared.retain(|_, t0| now - *t0 < APPEAR_S);
@@ -339,13 +345,18 @@ enum RowAction {
 
 /// One task row. `hit` is the part of `row` inside the list viewport `view`.
 #[allow(clippy::too_many_arguments)]
-fn draw_row(ui: &mut Ui, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, text: &str, pop: Option<f32>) -> RowAction {
+/// `k` is the page's entrance for this row: its band rises in and its
+/// checkbox pops (1 at rest).
+fn draw_row(ui: &mut Ui, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, text: &str, pop: Option<f32>, k: f32) -> RowAction {
     let mut action = RowAction::None;
     let resp = ui.button(wid_n("tasks.row", id), hit);
+    let band = row.inset(2.0, 2.0);
     if resp.pressed {
-        ui.c.fill_rrect(row, 9.0, palette::SURFACE_HOVER);
+        ui.c.fill_rrect(band, 9.0, palette::SURFACE_HOVER);
     } else if resp.hovered {
-        ui.c.fill_rrect(row, 9.0, palette::SURFACE);
+        ui.c.fill_rrect(band, 9.0, palette::SURFACE);
+    } else if done {
+        rise(ui, k, |ui| ui.c.fill_rrect(band, 9.0, palette::GREEN.with_alpha(0.10)));
     }
     if resp.clicked {
         action = RowAction::Toggle;
@@ -355,7 +366,7 @@ fn draw_row(ui: &mut Ui, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, 
     // Checkbox (pops when toggled).
     let scale = pop.map(|t| 1.0 + 0.22 * (t * std::f32::consts::PI).sin()).unwrap_or(1.0);
     let c = Point::new(row.x + MARK_X, cy);
-    let size = 18.0 * scale;
+    let size = 18.0 * scale * k.max(0.01);
     let icon_r = Rect::from_center(c, size, size);
     if done {
         ui.c.fill_circle(c, size * 9.0 / 24.0, palette::GREEN.with_alpha(0.16));
@@ -420,10 +431,11 @@ fn undo_pill(ui: &mut Ui, st: &mut AppState, anim: &mut ListAnim, id: WidgetId, 
 
 /// "1/3 done today" with a small ring, then "Clear done" when anything is
 /// done, or "Undo" for a few seconds after a removal.
-fn draw_footer(ui: &mut Ui, st: &mut AppState, r: Rect, day_start: i64, full: bool, anim: &mut ListAnim, undo_id: WidgetId) {
+#[allow(clippy::too_many_arguments)]
+fn draw_footer(ui: &mut Ui, st: &mut AppState, r: Rect, day_start: i64, full: bool, anim: &mut ListAnim, undo_id: WidgetId, e: Entrance) {
     let (done, total) = st.store.tasks.today_progress(day_start);
     let cy = r.center().y;
-    let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+    let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 } * e.draw(0.15, 0.6);
     ui.c.ring(Point::new(r.x + MARK_X, cy), 6.0, 2.2, frac, RING_TRACK, palette::GREEN);
 
     let show_clear = done > 0;
