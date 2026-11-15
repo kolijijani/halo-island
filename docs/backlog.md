@@ -53,3 +53,32 @@ code (`codeHash`), and shows the code *once* when keys are made — "the server
 never logs a code". To view keys later, the server must store the code (or an
 owner-decryptable form), which is a security trade-off the maintainer must
 approve first.
+
+---
+
+## 0.3.00 — Animation work (new version)
+
+Owner's requests, collected as he sends them (list is open — more comments
+incoming). Version target `0.3.00` (a new version, "if possible"). CC CLI is
+to use the `grill-me` skill (adversarial plan interview) before implementing.
+
+### R2 — Match the animations in the reference video
+
+- Reference video (owner): a clip he shared
+- Question to CC CLI: *can we make animations like this video?*
+- Context (pending confirmation against the video):
+  mascot eyes that doze off then wave hello when you return, synced lyrics
+  that light up line by line, a breathing Live Activity for the Pomodoro, a
+  status ring (battery / water) around the clock, Glass / floating-pill styles.
+
+### R3 — Animation suggestions for other parts
+
+- Question to CC CLI: *suggest animations for other parts of Halo Island*
+  (not just the one in the video).
+
+### Method (owner's instruction)
+
+- CC CLI must run the `grill-me` skill: stress-test the 0.3.00 animation plan
+  through structured adversarial rounds before any code, and only implement
+  after the owner confirms alignment.
+
