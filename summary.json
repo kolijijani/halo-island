@@ -1,29 +1,41 @@
 {
   "repo": "kolijijani/halo-island",
-  "checked_at": "2026-11-15T03:09:15Z",
+  "checked_at": "2026-11-15T18:00:14Z",
   "since": "2026-11-14",
-  "downloads": 3,
-  "github_count": 3,
+  "downloads": 6,
+  "github_count": 6,
   "ci_count": 0,
-  "last_7_days": 3,
+  "last_7_days": 6,
   "latest": {
-    "release": "v0.2.40",
-    "downloads": 3
+    "release": "v0.2.50",
+    "downloads": 1
   },
   "stars": 0,
   "forks": 0,
   "watchers": 0,
   "releases": [
     {
-      "release": "v0.2.40",
-      "published": "2026-11-14T02:10:56Z",
-      "downloads": 3,
-      "github_count": 3,
+      "release": "v0.2.50",
+      "published": "2026-11-15T16:04:20Z",
+      "downloads": 1,
+      "github_count": 1,
       "ci_count": 0,
       "files": {
-        "Halo-Island-0.2.40-portable.zip": 0,
+        "Halo-Island-0.2.50-portable.zip": 0,
+        "Halo-Island-Setup-0.2.50.exe": 1,
+        "Halo-Island-Setup.exe": 0
+      }
+    },
+    {
+      "release": "v0.2.40",
+      "published": "2026-11-14T02:10:56Z",
+      "downloads": 5,
+      "github_count": 5,
+      "ci_count": 0,
+      "files": {
+        "Halo-Island-0.2.40-portable.zip": 1,
         "Halo-Island-Setup-0.2.40.exe": 0,
-        "Halo-Island-Setup.exe": 2,
+        "Halo-Island-Setup.exe": 3,
         "halo.exe": 1
       }
     }
@@ -35,7 +47,7 @@
     },
     {
       "date": "2026-11-15",
-      "downloads": 1
+      "downloads": 4
     }
   ]
 }
