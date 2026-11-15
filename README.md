@@ -1,23 +1,24 @@
 <p align="center"><img src="art/halo-peek.webp" width="260" alt="Halo peeking over a playing island"></p>
 
-<h1 align="center">2 downloads</h1>
+<h1 align="center">3 downloads</h1>
 
-<p align="center">of Halo Island for Windows, from GitHub since 14 Nov 2026<br>Latest release, 0.2.40: <b>2</b> · Last 7 days: <b>2</b> · <b>0</b> stars on GitHub</p>
+<p align="center">of Halo Island for Windows, from GitHub since 14 Nov 2026<br>Latest release, 0.2.40: <b>3</b> · Last 7 days: <b>3</b> · <b>0</b> stars on GitHub</p>
 
-<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.40 2"></p>
+<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.40 3"></p>
 
 ## Per release
 
 | Release | Published | Download button | Versioned installer | Portable zip | Total |
 | --- | --- | --: | --: | --: | --: |
-| [0.2.40](https://github.com/kolijijani/halo-island/releases/tag/v0.2.40) | 14 Nov 2026 | 1 | 1 | 0 | 2 |
-| **All releases** | | **1** | **1** | **0** | **2** |
+| [0.2.40](https://github.com/kolijijani/halo-island/releases/tag/v0.2.40) | 14 Nov 2026 | 2 | 1 | 0 | 3 |
+| **All releases** | | **2** | **1** | **0** | **3** |
 
 ## Per day
 
 | Day | Downloads |
 | --- | --: |
-| Today | 2 |
+| Today | 1 |
+| 14 Nov 2026 | 2 |
 
 ## On GitHub
 
@@ -35,4 +36,4 @@
 
 </details>
 
-<sub>Updated 14 Nov 2026, 07:05 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
+<sub>Updated 15 Nov 2026, 03:09 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
