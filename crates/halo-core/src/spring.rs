@@ -77,6 +77,28 @@ impl Spring {
     }
 }
 
+/// How long [`bouncy_at`] takes to land (within 0.02% of 1).
+pub const BOUNCY_LAND: f32 = 0.6;
+
+/// [`Spring::bouncy`] going from 0 to 1, `t` seconds in, worked out from
+/// time alone (no state to step), so a page's entrance can place each part
+/// from when it began. Overshoots about 3.4%, like
+/// `cubic-bezier(0.34, 1.32, 0.5, 1)`. 0 before it starts, exactly 1
+/// once it has landed.
+pub fn bouncy_at(t: f32) -> f32 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= BOUNCY_LAND {
+        return 1.0;
+    }
+    let s = Spring::bouncy(0.0);
+    let w0 = s.stiffness.sqrt();
+    let zeta = s.damping / (2.0 * w0);
+    let wd = w0 * (1.0 - zeta * zeta).sqrt();
+    1.0 - (-zeta * w0 * t).exp() * ((wd * t).cos() + zeta * w0 / wd * (wd * t).sin())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +137,25 @@ mod tests {
             s.step(1.0 / 60.0);
             assert!(s.value <= 1.0 + 1e-3);
         }
+    }
+
+    #[test]
+    fn bouncy_at_follows_the_stepped_spring_and_lands() {
+        // Out to 100, so its 0.05 settle margin doesn't stop it early.
+        let mut s = Spring::bouncy(0.0);
+        s.set_target(100.0);
+        let mut max: f32 = 0.0;
+        for i in 1..=36 {
+            s.step(1.0 / 60.0);
+            let k = bouncy_at(i as f32 / 60.0);
+            // The stepped one runs up to 3% ahead (semi-implicit Euler).
+            assert!((k - s.value / 100.0).abs() < 0.04, "{i}: {k} vs {}", s.value / 100.0);
+            max = max.max(k);
+        }
+        assert!(max > 1.02 && max < 1.05, "overshoot {max}");
+        assert_eq!(bouncy_at(-1.0), 0.0);
+        assert_eq!(bouncy_at(BOUNCY_LAND), 1.0);
+        assert!((bouncy_at(BOUNCY_LAND - 1e-4) - 1.0).abs() < 1e-3, "no jump as it lands");
     }
 
     #[test]

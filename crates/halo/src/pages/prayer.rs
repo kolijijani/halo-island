@@ -10,12 +10,18 @@
 //! at a time), or go back to following the location. Where the times don't
 //! follow JAKIM the place's name carries the method they follow.
 //!
+//! As the page opens its shapes come in (`pages::entrance`): the bar
+//! draws, the dotted line runs out along the arc, the prayers' dots and
+//! the sun or moon pop. The words and times show at once.
+//!
 //! The countdown ticks once a second while the page is open ([`next_wake`])
 //! and someone is at the PC; nothing runs for it otherwise.
 //!
 //! Times come from `halo_core::prayer`; the place from `settings.prayer`,
 //! found by Windows' or macOS's location (the app) or picked here.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -40,12 +46,16 @@ const LEFT_MIN: f32 = 190.0;
 const SLOT_MIN: f32 = 50.0;
 const COL_GAP: f32 = 12.0;
 /// The left column's rows: the prayer's name, the countdown (its time and
-/// day beside it, [`AT_GAP`] after it), the place.
+/// day beside it, [`AT_GAP`] after it), the bar of the time gone since the
+/// last prayer, the place.
 const NAME_H: f32 = 22.0;
 const COUNT_Y: f32 = 22.0;
 const COUNT_H: f32 = 38.0;
 const AT_GAP: f32 = 14.0;
-const PLACE_Y: f32 = 70.0;
+const BAR_Y: f32 = 63.0;
+const BAR_H: f32 = 3.0;
+const BAR_END: f32 = 24.0;
+const PLACE_Y: f32 = 74.0;
 /// The arc, from the area's top: Imsak, Terbit and the qibla in the first
 /// row, the arc's ends and its top under them, then each prayer's name and
 /// time under the dots.
@@ -74,9 +84,8 @@ const SUN_R: f32 = 5.0;
 const SUN_HALO: f32 = 8.0;
 const MOON_R: f32 = 8.0;
 const MOON_ICON: f32 = 12.0;
-/// The day gone and the day to come along the line; the prayers' dots,
-/// past and later; the words of past prayers.
-const GONE: Color = Color::white(0.42);
+/// The day to come along the line (the day gone is in the accent); the
+/// prayers' dots, past and later; the words of past prayers.
 const TO_COME: Color = Color::white(0.16);
 const PAST_DOT: Color = Color::white(0.30);
 const LATER_DOT: Color = Color::white(0.62);
@@ -145,6 +154,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let next = prayer::next_prayer(&site, now);
     let accent = st.accent;
     let left_w = left_width(area.w);
+    let e = Entrance::of(ui, st, PageKind::Prayer);
 
     // ---- Left: the next prayer, the time to it, its time and day.
     let x = area.x;
@@ -159,6 +169,15 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let when = if n.day > day { "tomorrow" } else { "today" };
         ui.c.text(&site.hhmm(n.at), Rect::new(ax, area.y + COUNT_Y + 2.0, aw, 19.0), &TextStyle::headline().tabular());
         ui.c.text(when, Rect::new(ax, area.y + COUNT_Y + 21.0, aw, 15.0), &TextStyle::caption().color(palette::TEXT_DIM));
+        // From the last prayer to this one: how much of the wait is gone.
+        if let Some(last) = prayer::current_prayer(&site, now) {
+            let bar = Rect::new(x, area.y + BAR_Y, left_w - BAR_END, BAR_H);
+            let gone = waited(last.at, n.at, now) * e.draw(0.10, 0.55);
+            ui.c.fill_rrect(bar, BAR_H / 2.0, Color::white(0.12));
+            if gone > 0.0 {
+                ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * gone).max(BAR_H), BAR_H), BAR_H / 2.0, accent);
+            }
+        }
     }
     let place = st.prayer.place.as_ref().map_or("", |p| p.label.as_str());
     let name_style = TextStyle::footnote().weight(Weight::Semibold);
@@ -195,7 +214,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     if show_hijri {
         ui.c.text(&hijri, Rect::new(gx, area.y, arc.w, INFO_H), &info_style.clone().color(palette::TEXT));
     }
-    draw_day(ui, arc, &site, &times, day, now, next, accent);
+    draw_day(ui, arc, &site, &times, day, now, next, accent, e);
 
     // ---- Footer. Left: Change place, Read Quran. Right, under the arc:
     // what plays at prayer time, and the countdown before it.
@@ -249,11 +268,13 @@ fn left_width(w: f32) -> f32 {
     (w - COL_GAP - 5.0 * SLOT_MIN).clamp(LEFT_MIN, LEFT_W)
 }
 
-/// Today along an arc in `r`: the line dotted (the day gone brighter), the
-/// five prayers on it, the sun or the moon where `now` is, and each
-/// prayer's name and time under its dot.
+/// Today along an arc in `r`: the line dotted (the day gone in the
+/// accent), the five prayers on it, the sun or the moon where `now` is, and
+/// each prayer's name and time under its dot. As the page opens (`e`) the
+/// line runs out from the left, then the dots, the sun or moon and the next
+/// prayer's ring pop, one after another.
 #[allow(clippy::too_many_arguments)]
-fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: i64, next: Option<PrayerMoment>, accent: Color) {
+fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: i64, next: Option<PrayerMoment>, accent: Color, e: Entrance) {
     let midnight = site.midnight(day);
     let at = Prayer::ALL.map(|p| times.prayer(p));
     let here = day_pos(now, midnight, at);
@@ -264,9 +285,13 @@ fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: 
     // and a filled shape draws the same everywhere (Wine's Direct2D leaves
     // out the round ends of a hair-long line).
     let n = ((r.w / LINE_STEP).round() as usize).max(2);
+    let drawn = e.draw(0.05, 0.6);
     let (mut gone, mut to_come) = (Vec::new(), Vec::new());
     for i in 0..=n {
         let pos = i as f32 / n as f32;
+        if pos > drawn {
+            break;
+        }
         let near = |p: f32, d: f32| ((p - pos) * r.w).abs() < d;
         if SLOTS.iter().any(|&s| near(s, DOT_CLEAR)) || near(here, MARK_CLEAR) {
             continue;
@@ -280,7 +305,7 @@ fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: 
         }
         segs.push(Seg::Close);
     }
-    for (segs, c) in [(gone, GONE), (to_come, TO_COME)] {
+    for (segs, c) in [(gone, accent.with_alpha(0.85)), (to_come, TO_COME)] {
         if !segs.is_empty() {
             ui.c.path(&segs, Some(c), None);
         }
@@ -297,8 +322,9 @@ fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: 
             _ => at[i],
         };
         let past = !is_next && t <= now;
-        if !is_next {
-            ui.c.fill_circle(c, DOT_R, if past { PAST_DOT } else { LATER_DOT });
+        let k = e.pop(0.15 + 0.06 * i as f32);
+        if !is_next && k > 0.0 {
+            ui.c.fill_circle(c, DOT_R * k, if past { PAST_DOT } else { LATER_DOT });
         }
         let (name_c, time_c) = match (is_next, past) {
             (true, _) => (accent, palette::TEXT),
@@ -313,20 +339,24 @@ fn draw_day(ui: &mut Ui, r: Rect, site: &Site, times: &DayTimes, day: i64, now: 
 
     // Where the day stands: the sun from Terbit to Maghrib, else the moon.
     let m = point(here);
-    if (times.terbit..times.maghrib).contains(&now) {
-        ui.c.fill_circle(m, SUN_HALO, SUN.with_alpha(0.22));
-        ui.c.fill_circle(m, SUN_R, SUN);
-    } else {
-        ui.c.fill_circle(m, MOON_R, MOON.with_alpha(0.22));
-        ui.c.icon(Icon::Moon, Rect::from_center(m, MOON_ICON, MOON_ICON), MOON);
-    }
+    scaled(ui, m, e.pop(0.45), |ui| {
+        if (times.terbit..times.maghrib).contains(&now) {
+            ui.c.fill_circle(m, SUN_HALO, SUN.with_alpha(0.22));
+            ui.c.fill_circle(m, SUN_R, SUN);
+        } else {
+            ui.c.fill_circle(m, MOON_R, MOON.with_alpha(0.22));
+            ui.c.icon(Icon::Moon, Rect::from_center(m, MOON_ICON, MOON_ICON), MOON);
+        }
+    });
     // The next prayer's ring goes over the sun, which arrives in it.
     if let Some(i) = next_i {
         let c = point(SLOTS[i]);
-        ui.c.stroke_circle(c, NEXT_RING, accent, 1.5);
-        if (c.x - m.x).abs() > NEXT_RING {
-            ui.c.fill_circle(c, NEXT_DOT, accent);
-        }
+        scaled(ui, c, e.pop(0.15 + 0.06 * i as f32), |ui| {
+            ui.c.stroke_circle(c, NEXT_RING, accent, 1.5);
+            if (c.x - m.x).abs() > NEXT_RING {
+                ui.c.fill_circle(c, NEXT_DOT, accent);
+            }
+        });
     }
 }
 
@@ -348,6 +378,12 @@ fn day_pos(now: i64, midnight: i64, at: [i64; 5]) -> f32 {
         }
     }
     1.0
+}
+
+/// How much of the wait from the last prayer (`from`) to the next (`to`)
+/// is gone at `now`, 0 to 1.
+fn waited(from: i64, to: i64, now: i64) -> f32 {
+    ((now - from) as f32 / (to - from).max(1) as f32).clamp(0.0, 1.0)
 }
 
 /// "01:24:59": hours, minutes and seconds to go.
@@ -684,6 +720,14 @@ mod tests {
         let left = left_width(w);
         assert!(left < LEFT_W && left >= LEFT_MIN);
         assert!((w - left - COL_GAP) / 5.0 >= SLOT_MIN - 2.0, "{left}");
+    }
+
+    #[test]
+    fn the_bar_fills_from_the_last_prayer_to_the_next() {
+        assert_eq!(waited(1000, 2000, 1000), 0.0);
+        assert_eq!(waited(1000, 2000, 1500), 0.5);
+        assert_eq!(waited(1000, 2000, 2600), 1.0);
+        assert_eq!(waited(1000, 1000, 1000), 0.0, "no wait: nothing gone, no division by zero");
     }
 
     #[test]

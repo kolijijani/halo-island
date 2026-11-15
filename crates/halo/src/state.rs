@@ -369,6 +369,10 @@ pub struct PageUiState {
     pub hud_level: f32,
     /// Collapsed media pill shows the track title until this mono time.
     pub peek_until: f64,
+    /// The page whose entrance plays and when it began (mono seconds;
+    /// `pages::entrance`). Set as the page opens, never under reduced
+    /// motion or battery saver.
+    pub entrance: Option<(PageKind, f64)>,
     /// Header tab under the pointer and since when (for hover labels).
     pub tab_hover: Option<(usize, f64)>,
     /// The module the System page shows under its strip.

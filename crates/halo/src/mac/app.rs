@@ -3516,6 +3516,9 @@ impl App {
             self.island.set_target(g, now, new_content);
             self.mode = target_mode;
             retarget = true;
+            if let Mode::Expanded(p) = target_mode {
+                self.st.ui.entrance = pages::entrance::start(p, now, settings_host::reduce_motion() || self.st.power.saver);
+            }
             if target_mode == Mode::Expanded(PageKind::Downloads) {
                 self.downloads_page_shown();
             }

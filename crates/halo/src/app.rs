@@ -3705,6 +3705,9 @@ impl App {
             }
             self.mode = target;
             retarget = true;
+            if let Mode::Expanded(p) = target {
+                self.st.ui.entrance = pages::entrance::start(p, now, self.reduce_motion || self.st.power.saver);
+            }
             if target == Mode::Expanded(PageKind::Downloads) {
                 self.downloads_page_shown();
             }
@@ -5190,7 +5193,12 @@ impl App {
     }
 
     pub fn selftest_settled(&self) -> bool {
-        self.island.settled() && self.target_mode() == self.mode && self.page_anim.is_none() && self.outgoing.is_none() && !self.glass_moving
+        self.island.settled()
+            && self.target_mode() == self.mode
+            && self.page_anim.is_none()
+            && self.outgoing.is_none()
+            && !self.glass_moving
+            && !pages::entrance::moving(&self.st)
     }
 
     /// Self-test: the frame just drawn left the frame clock running, so

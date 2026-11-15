@@ -1,11 +1,14 @@
 //! Widgets: Halo Island's own page. Left, the widget slots (Settings ›
 //! General › Widgets tab: 2 free, all 5 with Halo Pro); right, today's
 //! glasses of water and, while Clipboard is on, what was copied (5 free;
-//! with Pro every item, and a search). Nothing here moves by itself.
+//! with Pro every item, and a search). Nothing here moves by itself, past
+//! the water card's entrance as the tab opens (`pages::entrance`).
 //! A click on the Weather tile picks its city from the Prayer picker's
 //! places (places.json and the website's world list), or goes back to
 //! where the PC is.
 
+use super::entrance::{rise, scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::icons::Icon;
 use crate::state::CityFile;
@@ -219,21 +222,38 @@ fn moon(ui: &mut Ui, c: Point, r: f32, age: f64) {
 
 // ------------------------------------------------------------ water
 
+/// Today's water: the ring, "Water · 63%" (or "Goal reached")
+/// over the glasses drunk large and the goal beside them, then − and +.
+/// As the tab opens the card rises in, the ring draws to today's share and
+/// the buttons pop (`pages::entrance`); the words and numbers stay put.
 fn draw_water(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let day = st.local.day_key();
     let goal = st.settings.water_goal;
     let n = st.store.halo_water.today(&day);
-    ui.c.fill_rrect(r, 12.0, palette::SURFACE);
-    ui.c.ring(Point::new(r.x + 24.0, r.center().y), 12.0, 4.0, (n as f32 / goal.max(1) as f32).min(1.0), Color::white(0.12), palette::CYAN);
-    ui.c.text("Water", Rect::new(r.x + 46.0, r.y + 8.0, 100.0, 16.0), &TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_DIM));
-    ui.c.text(&halo::fmt_glasses(n, goal), Rect::new(r.x + 46.0, r.y + 24.0, 120.0, 20.0), &TextStyle::body().weight(Weight::Semibold).tabular());
+    let share = n as f32 / goal.max(1) as f32;
+    let e = Entrance::of(ui, st, PageKind::Widgets);
+    let (ring, minus_k, plus_k) = (e.draw(0.08, 0.6), e.pop(0.14), e.pop(0.20));
+    rise(ui, e.pop(0.0), |ui| ui.c.fill_rrect(r, 12.0, palette::SURFACE));
+    ui.c.ring(Point::new(r.x + 25.0, r.center().y), 14.0, 4.0, share.min(1.0) * ring, Color::white(0.12), palette::CYAN);
+
+    let x = r.x + 50.0;
+    let head = if n >= goal { "Goal reached".to_string() } else { format!("Water \u{b7} {:.0}%", share * 100.0) };
+    let head_c = if n >= goal { palette::CYAN } else { palette::TEXT_DIM };
+    ui.c.text(&head, Rect::new(x, r.y + 7.0, 100.0, 15.0), &TextStyle::caption().weight(Weight::Semibold).color(head_c));
+    let big = TextStyle::value().tabular();
+    let count = n.to_string();
+    let cw = ui.c.measure(&count, &big, 60.0).0.ceil();
+    ui.c.text(&count, Rect::new(x, r.y + 22.0, cw + 2.0, 24.0), &big);
+    let of = format!("/ {goal} glasses");
+    ui.c.text(&of, Rect::new(x + cw + 4.0, r.y + 26.0, 100.0, 18.0), &TextStyle::footnote().tabular().color(palette::TEXT_DIM));
+
     let plus = Rect::new(r.right() - 10.0 - PILL_SMALL, r.center().y - PILL_SMALL / 2.0, PILL_SMALL, PILL_SMALL);
     let minus = Rect::new(plus.x - PILL_GAP - PILL_SMALL, plus.y, PILL_SMALL, PILL_SMALL);
     let mut delta = 0;
-    if ui.pill(wid("widgets.water.minus"), minus, "−", None, PillStyle::Utility).clicked {
+    if scaled(ui, minus.center(), minus_k, |ui| ui.pill(wid("widgets.water.minus"), minus, "", Some(Icon::Minus), PillStyle::Utility)).clicked {
         delta = -1;
     }
-    if ui.pill(wid("widgets.water.plus"), plus, "+", None, PillStyle::Primary(palette::CYAN)).clicked {
+    if scaled(ui, plus.center(), plus_k, |ui| ui.pill(wid("widgets.water.plus"), plus, "", Some(Icon::Plus), PillStyle::Primary(palette::CYAN))).clicked {
         delta = 1;
     }
     if delta != 0 {

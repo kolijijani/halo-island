@@ -14,6 +14,7 @@ pub mod caffeine;
 pub mod card;
 pub mod downloads;
 pub mod downloads_offer;
+pub mod entrance;
 pub mod focus;
 pub mod media;
 pub mod notifications;
