@@ -10,10 +10,13 @@ use crate::activities::HudTag;
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
 use crate::island::Geom;
-use crate::state::{AppState, HudKind};
+use crate::state::{AppState, Hud, HudKind};
 use crate::ui::Ui;
 use halo_core::geom::{palette, Color, Point, Rect};
+use halo_core::spring::Spring;
 use halo_core::svgpath::Seg;
+
+use super::media;
 
 /// One height for every pop-up, with round ends (spec 6.1).
 const H: f32 = 32.0;
@@ -57,6 +60,203 @@ const SEP: f32 = 7.0;
 /// The least room kept between the left group and the battery.
 const MID_GAP: f32 = 16.0;
 
+/// The pop-ups' one motion language (plan 0.3.00 §2.1): a pop when
+/// something comes on or arrives, a settle when it goes, nothing for a
+/// warning or a repeat. Text and numbers never move.
+const POP: (f32, f32) = (520.0, 30.0);
+const POP_FROM: f32 = 0.6;
+/// How far the glyph rises in on a pop (from below) or drops in on a settle.
+const LIFT: f32 = 3.0;
+/// The settle's dip: `Spring::smooth` kicked from rest at this speed
+/// bottoms out at 0.92 about 50 ms in, and comes back (measured on `step`).
+const SETTLE_KICK: f32 = 5.0;
+/// The gesture waits for the content's fade (plan §4's timing).
+const DELAY: f64 = 0.08;
+/// The disc while off, Classic's and the Pill's.
+const DISC_OFF: Color = Color::white(0.16);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Gesture {
+    Pop,
+    Settle,
+    Still,
+}
+
+/// What this pop-up does as it shows, and whether its disc is lit.
+fn gesture(k: &HudKind) -> (Gesture, bool) {
+    match k {
+        HudKind::Volume { .. } | HudKind::LowBattery { .. } => (Gesture::Still, false),
+        HudKind::Charging { plugged, .. } => (if *plugged { Gesture::Pop } else { Gesture::Settle }, false),
+        HudKind::Bluetooth { connected, .. } => (if *connected { Gesture::Pop } else { Gesture::Settle }, *connected),
+        k => {
+            let on = crate::activities::toggle_glyph(k).1;
+            (if on { Gesture::Pop } else { Gesture::Settle }, on)
+        }
+    }
+}
+
+/// The pop-up's moving parts (`PageUiState::hud`), Classic's and the Pill's.
+/// It starts over only when the pop-up says something else, or a new one
+/// shows after the last one's time ran out.
+#[derive(Clone, Debug)]
+pub struct Motion {
+    /// Windows' Animation effects or the Mac's Reduce motion are off: every
+    /// pop-up (and a notice) shows at rest at once (the app sets it as the
+    /// island changes mode).
+    pub still: bool,
+    kind: Option<HudKind>,
+    until: f64,
+    gesture: Gesture,
+    /// When the gesture began, when its parts start to move, and the last frame.
+    since: f64,
+    hold: f64,
+    last: f64,
+    scale: Spring,
+    lift: Spring,
+    lit: Spring,
+    level: Spring,
+}
+
+impl Default for Motion {
+    fn default() -> Self {
+        Self {
+            still: false,
+            kind: None,
+            until: 0.0,
+            gesture: Gesture::Still,
+            since: f64::NEG_INFINITY,
+            hold: f64::NEG_INFINITY,
+            last: 0.0,
+            scale: Spring::smooth(1.0),
+            lift: Spring::smooth(0.0),
+            lit: Spring::smooth(0.0),
+            level: Spring::smooth(0.0),
+        }
+    }
+}
+
+/// Where the moving parts are this frame.
+pub(crate) struct Pose {
+    pub scale: f32,
+    pub lift: f32,
+    pub lit: f32,
+    /// The volume bar.
+    pub level: f32,
+    /// Seconds into the glow, while there is one.
+    pub glow: Option<f32>,
+}
+
+impl Motion {
+    /// Step to `ui.now` for `hud`, asking for frames only while something moves.
+    pub(crate) fn frame(&mut self, ui: &mut Ui, hud: &Hud, saver: bool) -> Pose {
+        let p = self.step(ui.now, hud, saver);
+        if self.moving(ui.now) {
+            ui.request_anim();
+        }
+        p
+    }
+
+    fn step(&mut self, now: f64, hud: &Hud, saver: bool) -> Pose {
+        // At rest no frames came: the time since the last one isn't motion.
+        let dt = if self.moving(self.last) { (now - self.last) as f32 } else { 0.0 };
+        let (g, on) = gesture(&hud.kind);
+        // A new pop-up, or a word about the same thing in place of one showing.
+        let fresh = now >= self.until || self.kind.as_ref().is_none_or(|k| !k.same_slot(&hud.kind));
+        let turned = self.kind.as_ref().map(gesture) != Some((g, on));
+        if turned || (fresh && self.until != hud.until) {
+            self.start(g, on, fresh, now);
+        }
+        self.kind = Some(hud.kind.clone());
+        self.until = hud.until;
+        if let HudKind::Volume { level, muted } = hud.kind {
+            self.level.set_target(if muted { 0.0 } else { level });
+        }
+        if self.still || saver {
+            for s in [&mut self.scale, &mut self.lift, &mut self.lit, &mut self.level] {
+                s.snap(s.target);
+            }
+            self.gesture = Gesture::Still;
+        }
+        self.last = now;
+        self.level.step_eps(dt, 0.002);
+        if now >= self.hold {
+            self.scale.step_eps(dt, 0.005);
+            self.lift.step_eps(dt, 0.01);
+            self.lit.step_eps(dt, 0.005);
+        }
+        let glow = (self.gesture == Gesture::Pop).then(|| (now - self.since) as f32);
+        Pose { scale: self.scale.value, lift: self.lift.value, lit: self.lit.value.clamp(0.0, 1.0), level: self.level.value.clamp(0.0, 1.0), glow }
+    }
+
+    fn start(&mut self, g: Gesture, on: bool, fresh: bool, now: f64) {
+        self.gesture = g;
+        self.since = now;
+        // A quick second press carries on from where the first one is.
+        self.hold = if fresh { now + DELAY } else { now };
+        let lit = if on { 1.0 } else { 0.0 };
+        match g {
+            Gesture::Still => {
+                self.scale.snap(1.0);
+                self.lift.snap(0.0);
+                self.lit.snap(lit);
+                return;
+            }
+            // In place of one still showing, the parts keep where they are
+            // and how they move: no jump, just the kick.
+            _ if !fresh => self.scale.velocity -= SETTLE_KICK,
+            Gesture::Pop => {
+                self.scale.snap(POP_FROM);
+                self.lift.snap(LIFT);
+                self.lit.snap(1.0 - lit);
+            }
+            Gesture::Settle => {
+                self.scale.snap(1.0);
+                self.scale.velocity = -SETTLE_KICK;
+                self.lift.snap(-LIFT);
+                self.lit.snap(1.0 - lit);
+            }
+        }
+        let s = Spring::smooth(0.0);
+        let (k, d) = if g == Gesture::Pop { POP } else { (s.stiffness, s.damping) };
+        self.scale.retune(k, d);
+        self.scale.set_target(1.0);
+        self.lift.set_target(0.0);
+        self.lit.set_target(lit);
+    }
+
+    /// Something still moves at `now` (the self-test waits it out).
+    pub fn moving(&self, now: f64) -> bool {
+        let t = (now - self.since) as f32;
+        !self.level.is_settled_eps(0.002)
+            || (self.gesture != Gesture::Still
+                && (now < self.hold
+                    || !self.scale.is_settled_eps(0.005)
+                    || !self.lift.is_settled_eps(0.01)
+                    || !self.lit.is_settled_eps(0.005)
+                    || (self.gesture == Gesture::Pop && t < media::PULSE_FROM + media::PULSE_S)))
+    }
+}
+
+/// A pop-up's disc (radius `r`) and its glyph (`g` square) at `c`, as `p`
+/// has them: lit with `on` and `ink`, popped or settled.
+pub(crate) fn disc(ui: &mut Ui, c: Point, r: f32, icon: Icon, g: f32, on: Color, ink: Color, p: &Pose) {
+    let m = ui.c.save_transform();
+    ui.c.scale_about(c, p.scale.max(0.01));
+    ui.c.fill_circle(c, r, Color::lerp(DISC_OFF, on, p.lit));
+    ui.c.translate(0.0, p.lift);
+    ui.c.icon(icon, Rect::from_center(c, g, g), Color::lerp(palette::TEXT, ink, p.lit));
+    ui.c.restore_transform(m);
+}
+
+/// A glyph without a disc (the power pop-ups'), popped or settled as `p` has it.
+pub(crate) fn glyph(ui: &mut Ui, r: Rect, icon: Icon, color: Color, p: &Pose) {
+    let m = ui.c.save_transform();
+    ui.c.scale_about(r.center(), p.scale.max(0.01));
+    ui.c.translate(0.0, p.lift);
+    ui.c.icon(icon, r, color);
+    ui.c.restore_transform(m);
+}
+
 pub fn geom(t: HudTag, st: &AppState) -> Option<Geom> {
     let w = match t {
         HudTag::Volume => VOLUME_W,
@@ -70,15 +270,21 @@ pub fn geom(t: HudTag, st: &AppState) -> Option<Geom> {
 pub fn draw(ui: &mut Ui, st: &mut AppState, _t: HudTag, body: Rect) -> bool {
     // As in Classic, a pop-up whose time is up draws nothing while its pill morphs away.
     let Some(hud) = st.hud.clone() else { return true };
+    let p = st.ui.hud.frame(ui, &hud, st.power.saver);
+    // The glow lies under everything else: the bolt's green, else the accent.
+    if let Some(t) = p.glow {
+        let color = if matches!(hud.kind, HudKind::Charging { .. }) { palette::GREEN } else { st.accent };
+        media::pulse(ui, body, color, t);
+    }
     match hud.kind {
-        HudKind::Volume { level, muted } => volume(ui, st, body, level, muted),
+        HudKind::Volume { level, muted } => volume(ui, body, level, muted, p.level),
         HudKind::Charging { percent, plugged } => {
             let (icon, color, label) = if plugged { (Icon::Bolt, palette::GREEN, "Charging") } else { (Icon::Battery, palette::TEXT, "On battery") };
-            power(ui, body, icon, color, label, percent, plugged);
+            power(ui, body, icon, color, label, percent, plugged, &p);
         }
-        HudKind::LowBattery { percent } => power(ui, body, Icon::Battery, palette::RED, "Low battery", percent, false),
-        HudKind::Bluetooth { name, connected, battery, audio } => bluetooth(ui, st, body, &name, connected, battery, audio),
-        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. }) => toggle(ui, st, body, &k),
+        HudKind::LowBattery { percent } => power(ui, body, Icon::Battery, palette::RED, "Low battery", percent, false, &p),
+        HudKind::Bluetooth { name, connected, battery, audio } => bluetooth(ui, st, body, &name, connected, battery, audio, &p),
+        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. }) => toggle(ui, st, body, &k, &p),
     }
     true
 }
@@ -98,7 +304,7 @@ fn snap(ui: &Ui, v: f32) -> f32 {
 }
 
 /// The speaker by level, the bar and the percentage (or "Muted").
-fn volume(ui: &mut Ui, st: &mut AppState, body: Rect, level: f32, muted: bool) {
+fn volume(ui: &mut Ui, body: Rect, level: f32, muted: bool, shown: f32) {
     let cy = body.center().y;
     let waves = if muted || level <= 0.001 {
         None
@@ -114,16 +320,7 @@ fn volume(ui: &mut Ui, st: &mut AppState, body: Rect, level: f32, muted: bool) {
     let slot = ui.c.measure("100%", &vs, 200.0).0.max(ui.c.measure("Muted", &vs, 200.0).0);
     let right = body.right() - VALUE_INSET;
     let (x0, x1) = (body.x + TRACK_X, right - slot - VALUE_GAP);
-    // The bar glides to new levels; the number is exact immediately (Classic's glide).
-    let target = if muted { 0.0 } else { level };
-    let cur = st.ui.hud_level;
-    let shown = if (cur - target).abs() > 0.002 {
-        ui.request_anim();
-        cur + (target - cur) * 0.32
-    } else {
-        target
-    };
-    st.ui.hud_level = shown;
+    // The bar glides to new levels (`Motion`); the number is exact immediately.
     // While the pill is still growing there may be no room for it yet.
     if x1 - x0 >= TRACK_H {
         let bar = Rect::new(x0, snap(ui, cy - TRACK_H / 2.0), x1 - x0, TRACK_H);
@@ -166,11 +363,12 @@ fn speaker(ui: &mut Ui, r: Rect, waves: Option<u8>, color: Color) {
 
 /// Charging, on battery or low: the glyph, the label, and the battery as
 /// the resting pill shows it.
-fn power(ui: &mut Ui, body: Rect, icon: Icon, color: Color, label: &str, percent: u8, charging: bool) {
+#[allow(clippy::too_many_arguments)]
+fn power(ui: &mut Ui, body: Rect, icon: Icon, color: Color, label: &str, percent: u8, charging: bool, p: &Pose) {
     let cy = body.center().y;
     // The battery outline is a flat glyph: a bigger box gives it the bolt's weight.
     let g = if icon == Icon::Battery { BATTERY_ICON } else { GLYPH };
-    ui.c.icon(icon, Rect::from_center(Point::new(body.x + GLYPH_X + GLYPH / 2.0, cy), g, g), color);
+    glyph(ui, Rect::from_center(Point::new(body.x + GLYPH_X + GLYPH / 2.0, cy), g, g), icon, color, p);
     battery_cluster(ui, body.right() - BATTERY_INSET, cy, percent, charging);
     // The label's room at the pill's own width, so it doesn't re-ellipsize while the pill grows.
     let room = body.w.max(BATTERY_W) - TEXT_X - MID_GAP - CLUSTER_W - BATTERY_INSET;
@@ -179,12 +377,12 @@ fn power(ui: &mut Ui, body: Rect, icon: Icon, color: Color, label: &str, percent
 
 /// The device's glyph in a disc (the accent while connected), its name and
 /// whether it came or went on one line, and its battery when it reports one.
-fn bluetooth(ui: &mut Ui, st: &AppState, body: Rect, name: &str, connected: bool, battery: Option<u8>, audio: bool) {
+#[allow(clippy::too_many_arguments)]
+fn bluetooth(ui: &mut Ui, st: &AppState, body: Rect, name: &str, connected: bool, battery: Option<u8>, audio: bool, p: &Pose) {
     let cy = body.center().y;
     let c = Point::new(body.x + body.h / 2.0, cy);
-    let (disc, glyph) = if connected { (st.accent, ink_on(st.accent)) } else { (Color::white(0.16), palette::TEXT) };
-    ui.c.fill_circle(c, DISC / 2.0, disc);
-    ui.c.icon(if audio { Icon::Headphones } else { Icon::Bluetooth }, Rect::from_center(c, DISC_GLYPH, DISC_GLYPH), glyph);
+    let icon = if audio { Icon::Headphones } else { Icon::Bluetooth };
+    disc(ui, c, DISC / 2.0, icon, DISC_GLYPH, st.accent, ink_on(st.accent), p);
 
     let (name_st, state_st) = (label_style(), TextStyle::body().color(palette::TEXT_DIM));
     let state = if connected { "Connected" } else { "Disconnected" };
@@ -216,13 +414,11 @@ fn bluetooth(ui: &mut Ui, st: &AppState, body: Rect, name: &str, connected: bool
 
 /// Caps Lock or Wi-Fi: the glyph in a disc (the accent while on or
 /// joined), what it is and its state on one line, as Bluetooth's.
-fn toggle(ui: &mut Ui, st: &AppState, body: Rect, k: &HudKind) {
+fn toggle(ui: &mut Ui, st: &AppState, body: Rect, k: &HudKind, p: &Pose) {
     let cy = body.center().y;
     let c = Point::new(body.x + body.h / 2.0, cy);
-    let (icon, on) = crate::activities::toggle_glyph(k);
-    let (disc, glyph) = if on { (st.accent, ink_on(st.accent)) } else { (Color::white(0.16), palette::TEXT) };
-    ui.c.fill_circle(c, DISC / 2.0, disc);
-    ui.c.icon(icon, Rect::from_center(c, DISC_GLYPH, DISC_GLYPH), glyph);
+    let icon = crate::activities::toggle_glyph(k).0;
+    disc(ui, c, DISC / 2.0, icon, DISC_GLYPH, st.accent, ink_on(st.accent), p);
     let (title, state) = k.words();
     let (name_st, state_st) = (label_style(), TextStyle::body().color(palette::TEXT_DIM));
     let sw = ui.c.measure(&state, &state_st, 400.0).0;
@@ -326,6 +522,54 @@ mod tests {
             let g = geom(t, &st).unwrap();
             assert_eq!((g.h, g.r), (32.0, 16.0), "{t:?}");
         }
+    }
+
+    /// Steps `m` through `secs` at 60 Hz; the least scale and lift seen, and
+    /// whether it still moved at the end.
+    fn run(m: &mut Motion, hud: &Hud, from: f64, secs: f64) -> (f32, f32, bool) {
+        let (mut lo, mut lift) = (f32::MAX, 0.0f32);
+        let n = (secs * 60.0) as usize;
+        for i in 0..=n {
+            let p = m.step(from + i as f64 / 60.0, hud, false);
+            lo = lo.min(p.scale);
+            lift = if lift.abs() > p.lift.abs() { lift } else { p.lift };
+        }
+        (lo, lift, m.moving(from + secs))
+    }
+
+    #[test]
+    fn pop_ups_pop_settle_or_hold_still_and_then_rest() {
+        let caps = |on| Hud { kind: HudKind::CapsLock { on }, until: 10.0 };
+        // On: from 0.6 up, rising in from below, glowing; at rest by 0.75 s.
+        let mut m = Motion::default();
+        let first = m.step(1.0, &caps(true), false);
+        assert_eq!((first.scale, first.lift, first.glow), (POP_FROM, LIFT, Some(0.0)));
+        let (lo, _, moving) = run(&mut m, &caps(true), 1.0, 0.75);
+        assert!(lo >= POP_FROM && !moving);
+        assert_eq!(m.step(1.75, &caps(true), false).scale, 1.0);
+        // Off, in place: dips under 1 without a jump, no glow, rests again.
+        let (lo, _, moving) = run(&mut m, &caps(false), 2.0, 0.75);
+        assert!(lo < 0.97 && lo > 0.85 && !moving, "{lo}");
+        assert_eq!(m.step(2.75, &caps(false), false).glow, None);
+        // A fresh Off dips to about 0.92 and drops in from above.
+        let mut m = Motion::default();
+        let (lo, lift, moving) = run(&mut m, &caps(false), 1.0, 0.75);
+        assert!((lo - 0.92).abs() < 0.01 && lift == -LIFT && !moving, "{lo} {lift}");
+        // Low battery and volume never pop; the bar glides on the clock.
+        let mut m = Motion::default();
+        let low = Hud { kind: HudKind::LowBattery { percent: 9 }, until: 10.0 };
+        assert!(!m.moving(1.0) && m.step(1.0, &low, false).scale == 1.0 && !m.moving(1.0));
+        let vol = |level| Hud { kind: HudKind::Volume { level, muted: false }, until: 10.0 };
+        m.step(2.0, &vol(0.5), false);
+        let half = (0..9).map(|i| m.step(2.0 + i as f64 / 60.0, &vol(0.5), false).level).last().unwrap();
+        let mut fast = Motion::default();
+        fast.step(2.0, &vol(0.5), false);
+        let half_144 = (0..20).map(|i| fast.step(2.0 + i as f64 / 144.0, &vol(0.5), false).level).last().unwrap();
+        assert!((half - half_144).abs() < 0.03, "60 Hz {half} vs 144 Hz {half_144}");
+        // Battery saver: at rest at once.
+        let mut m = Motion::default();
+        let p = m.step(1.0, &caps(true), true);
+        assert!(p.scale == 1.0 && p.lift == 0.0 && p.lit == 1.0 && p.glow.is_none() && !m.moving(1.0));
     }
 
     #[test]

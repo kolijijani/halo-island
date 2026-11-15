@@ -365,8 +365,8 @@ pub struct PageUiState {
     /// Smoothly animated lyric scroll position (line index as float).
     pub lyric_pos: f32,
     pub lyric_track: String,
-    /// Volume HUD bar position, gliding toward the real level.
-    pub hud_level: f32,
+    /// The pop-up's motion: its pop or settle, glow and volume bar.
+    pub hud: crate::pill::hud::Motion,
     /// Collapsed media pill shows the track title until this mono time.
     pub peek_until: f64,
     /// The page whose entrance plays and when it began (mono seconds;

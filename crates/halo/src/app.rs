@@ -3694,6 +3694,7 @@ impl App {
             self.motion_name = motion_name(&self.mode, &target);
             // Reduced motion: a pop-up comes and goes without the morph.
             let hud = matches!(target, Mode::Hud(_)) || matches!(self.mode, Mode::Hud(_));
+            self.st.ui.hud.still = self.reduce_motion;
             if self.reduce_motion && hud {
                 self.island.snap(self.geom_for(&target));
                 self.outgoing = None;
@@ -5199,6 +5200,8 @@ impl App {
             && self.outgoing.is_none()
             && !self.glass_moving
             && !pages::entrance::moving(&self.st)
+            && !(self.st.hud.is_some() && self.st.ui.hud.moving(self.st.now))
+            && !crate::pill::notice::glowing(self.st.now)
     }
 
     /// Self-test: the frame just drawn left the frame clock running, so

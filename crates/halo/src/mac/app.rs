@@ -3512,6 +3512,7 @@ impl App {
                 }
             }
             self.motion_name = motion_name(&self.mode, &target_mode);
+            self.st.ui.hud.still = settings_host::reduce_motion();
             let g = self.geom_for(&target_mode);
             self.island.set_target(g, now, new_content);
             self.mode = target_mode;

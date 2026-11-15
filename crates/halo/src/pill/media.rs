@@ -374,6 +374,21 @@ fn bounce(i: usize, t: f64) -> f32 {
 /// see-through stops as premultiplied and paints them nearly solid (the
 /// self-test showed a white band), and rows need no mask layer to keep
 /// inside the round ends.
+/// The one-off pulse of the glow (plan 0.3.00 §2.1): from `PULSE_FROM` s
+/// in, up to 0.45 and back on a sine over 600 ms, then nothing.
+pub(crate) const PULSE_FROM: f32 = 0.12;
+pub(crate) const PULSE_S: f32 = 0.6;
+const PULSE_PEAK: f32 = 0.45;
+
+/// The pulse `t` s after what brought it showed. Whether it still runs.
+pub(crate) fn pulse(ui: &mut Ui, body: Rect, color: Color, t: f32) -> bool {
+    let k = (t - PULSE_FROM) / PULSE_S;
+    if (0.0..1.0).contains(&k) {
+        glow(ui, body, color, PULSE_PEAK / GLOW_ALPHA * (std::f32::consts::PI * k).sin());
+    }
+    k < 1.0
+}
+
 fn glow(ui: &mut Ui, body: Rect, color: Color, level: f32) {
     let a = GLOW_ALPHA * level;
     if a <= 0.004 {

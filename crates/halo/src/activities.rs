@@ -896,6 +896,12 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
 
 fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
     let Some(hud) = st.hud.clone() else { return };
+    // The Pill's motion, on Classic's blue (plan 0.3.00 §2.1).
+    let p = st.ui.hud.frame(ui, &hud, st.power.saver);
+    if let Some(t) = p.glow {
+        let color = if matches!(hud.kind, HudKind::Charging { .. }) { palette::GREEN } else { palette::BLUE };
+        crate::pill::media::pulse(ui, body, color, t);
+    }
     let cy = body.center().y;
     let icon_r = Rect::new(body.x + 16.0, cy - 10.0, 20.0, 20.0);
     let label_st = TextStyle::body().weight(Weight::Semibold);
@@ -912,15 +918,7 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
             // The bar stops 62 DIPs short so "100%" and "Muted" keep a gap.
             let bar = Rect::new(body.x + 48.0, cy - 3.0, body.w - 48.0 - 62.0, 6.0);
             // The bar glides to new levels; the number is exact immediately.
-            let target = if muted { 0.0 } else { level };
-            let cur = st.ui.hud_level;
-            let shown = if (cur - target).abs() > 0.002 {
-                ui.request_anim();
-                cur + (target - cur) * 0.32
-            } else {
-                target
-            };
-            st.ui.hud_level = shown;
+            let shown = p.level;
             ui.c.fill_rrect(bar, 3.0, palette::TRACK);
             if shown > 0.0 {
                 // Classic fills the level in white; a look with its own accent (Halo's) in it.
@@ -935,7 +933,7 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
         }
         HudKind::Charging { percent, plugged } => {
             let (icon, color, label) = if plugged { (Icon::Bolt, palette::GREEN, "Charging") } else { (Icon::Battery, palette::TEXT, "On battery") };
-            ui.c.icon(icon, icon_r, color);
+            crate::pill::hud::glyph(ui, icon_r, icon, color, &p);
             ui.c.text(label, Rect::new(body.x + 46.0, body.y, 140.0, body.h), &label_st);
             battery_badge(ui, body.right() - HUD_PAD, cy, percent, color);
         }
@@ -945,20 +943,16 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
             battery_badge(ui, body.right() - HUD_PAD, cy, percent, palette::RED);
         }
         k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. }) => {
-            let (icon, on) = toggle_glyph(&k);
-            let c = Point::new(body.x + 30.0, cy);
-            ui.c.fill_circle(c, 15.0, if on { palette::BLUE } else { Color::white(0.16) });
-            ui.c.icon(icon, Rect::from_center(c, 17.0, 17.0), if on { palette::ON_ACCENT } else { palette::TEXT });
+            let icon = toggle_glyph(&k).0;
+            crate::pill::hud::disc(ui, Point::new(body.x + 30.0, cy), 15.0, icon, 17.0, palette::BLUE, palette::ON_ACCENT, &p);
             let (title, detail) = k.words();
             let (x, w) = (body.x + 54.0, body.right() - HUD_PAD - body.x - 54.0);
             ui.c.text(&title, Rect::new(x, cy - 17.0, w, 18.0), &label_st);
             ui.c.text(&detail, Rect::new(x, cy + 1.0, w, 16.0), &TextStyle::footnote().color(palette::TEXT_DIM));
         }
         HudKind::Bluetooth { name, connected, battery, audio } => {
-            let c = Point::new(body.x + 30.0, cy);
-            ui.c.fill_circle(c, 15.0, if connected { palette::BLUE } else { Color::white(0.16) });
-            let glyph = if connected { palette::ON_ACCENT } else { palette::TEXT };
-            ui.c.icon(if audio { Icon::Headphones } else { Icon::Bluetooth }, Rect::from_center(c, 17.0, 17.0), glyph);
+            let icon = if audio { Icon::Headphones } else { Icon::Bluetooth };
+            crate::pill::hud::disc(ui, Point::new(body.x + 30.0, cy), 15.0, icon, 17.0, palette::BLUE, palette::ON_ACCENT, &p);
             let text_x = body.x + 54.0;
             let text_right = match battery {
                 Some(b) => battery_badge(ui, body.right() - HUD_PAD, cy, b, if b <= 20 { palette::RED } else { palette::GREEN }) - 12.0,

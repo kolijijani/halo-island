@@ -46,6 +46,16 @@ thread_local! {
     /// before the app draws its fade, so the fade draws this one: it fades
     /// as the pill shrinks instead of vanishing on the first frame.
     static LAST: RefCell<Option<Notice>> = const { RefCell::new(None) };
+    /// The notice on screen (its title's hash; 0 for none) and when it
+    /// came, for its one glow as it lands. Its words changing (Show, the
+    /// check) don't bring it again.
+    static ARRIVED: Cell<(u64, f64)> = const { Cell::new((0, 0.0)) };
+}
+
+/// The notice's landing glow still shows at `now` (the self-test waits it out).
+pub fn glowing(now: f64) -> bool {
+    let (k, at) = ARRIVED.with(|a| a.get());
+    k != 0 && ((now - at) as f32) < super::media::PULSE_FROM + super::media::PULSE_S
 }
 
 fn title_style() -> TextStyle {
@@ -143,10 +153,23 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, body: Rect) -> bool {
                     *l = Some(n.clone());
                 }
             });
+            // One accent glow as it lands (plan 0.3.00 §2), none at rest.
+            let k = wid(&n.title).max(1);
+            let at = ARRIVED.with(|a| match a.get() {
+                (ak, at) if ak == k => at,
+                _ => {
+                    a.set((k, ui.now));
+                    ui.now
+                }
+            });
+            if !st.ui.hud.still && !st.power.saver && super::media::pulse(ui, body, st.accent, (ui.now - at) as f32) {
+                ui.request_anim();
+            }
             draw_notice(ui, st, n, body);
         }
         // The notice just left and this is its fade (no input reaches it).
         None => LAST.with(|l| {
+            ARRIVED.with(|a| a.set((0, 0.0)));
             if let Some(n) = l.borrow().as_ref() {
                 draw_notice(ui, st, n, body);
             }

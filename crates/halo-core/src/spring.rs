@@ -46,7 +46,13 @@ impl Spring {
 
     /// Advance by `dt` seconds (semi-implicit Euler with fixed sub-steps).
     pub fn step(&mut self, dt: f32) {
-        if self.is_settled() {
+        self.step_eps(dt, 0.05);
+    }
+
+    /// [`Spring::step`], landing only within `eps` of the target (0.005 for
+    /// values 0..1, where 0.05 would show as a jump).
+    pub fn step_eps(&mut self, dt: f32, eps: f32) {
+        if self.is_settled_eps(eps) {
             self.value = self.target;
             self.velocity = 0.0;
             return;
@@ -60,7 +66,7 @@ impl Spring {
             self.value += self.velocity * h;
             remaining -= h;
         }
-        if self.is_settled() {
+        if self.is_settled_eps(eps) {
             self.value = self.target;
             self.velocity = 0.0;
         }

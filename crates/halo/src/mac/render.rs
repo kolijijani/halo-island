@@ -929,6 +929,8 @@ fn base_state(theme: Theme) -> AppState {
     let mut st = AppState::new(settings, Store::default());
     st.now = NOW_MONO;
     st.unix = NOW_UNIX;
+    // Stills show the pop-ups at rest.
+    st.ui.hud.still = true;
     st.local = LocalDateTime { year: 2026, month: 10, day: 24, hour: 9, minute: 41, second: 0 };
     st.accent = match theme {
         Theme::Halo => crate::face::ORANGE,
@@ -1146,7 +1148,6 @@ fn render_scene(gfx: &mut Gfx, scene: Scene, theme: Theme, notch: Option<Notch>,
         }
         Scene::VolumeHud => {
             st.hud = Some(Hud { kind: HudKind::Volume { level: 0.64, muted: false }, until: NOW_MONO + 30.0 });
-            st.ui.hud_level = 0.64;
             Mode::Hud(activities::HudTag::Volume)
         }
         Scene::ChargingHud => {
