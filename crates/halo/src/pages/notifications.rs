@@ -10,8 +10,12 @@
 //! (either off, it waits for Show). A change saves at once
 //! (`Command::SaveSettings`). The page keeps no notifications: they come and
 //! go on the closed island.
+//!
+//! As the page opens (`pages::entrance`) the bell pops and rings once (a
+//! short swing), its buttons pop, the rule draws out from the left and the
+//! rows rise in, one after another down each column.
 
-use super::entrance::{scaled, Entrance};
+use super::entrance::{rise, scaled, Entrance};
 use super::PageKind;
 use crate::commands::{Command, NotifyCmd};
 use crate::gfx::{TextStyle, Weight};
@@ -85,11 +89,15 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let head = Rect::new(area.x, area.y, area.w, HEAD_H);
     let cy = head.center().y;
     let c = Point::new(head.x + DISC / 2.0, cy);
-    // The bell pops in as the page opens (`pages::entrance`).
-    let k = Entrance::of(ui, st, PageKind::Notifications).pop(0.0);
+    // The bell pops in as the page opens (`pages::entrance`), then rings:
+    // a swing either side that dies away by the entrance's end.
+    let e = Entrance::of(ui, st, PageKind::Notifications);
+    let k = e.pop(0.0);
+    let ring = e.draw(0.25, 0.7);
+    let swing = if ring < 1.0 { 3.0 * (ring * std::f32::consts::TAU * 2.0).sin() * (1.0 - ring) } else { 0.0 };
     scaled(ui, c, k, |ui| {
         ui.c.fill_circle(c, DISC / 2.0, accent.with_alpha(0.22));
-        ui.c.icon(Icon::Bell, Rect::from_center(c, 20.0, 20.0), accent);
+        ui.c.icon(Icon::Bell, Rect::from_center(Point::new(c.x + swing, c.y), 20.0, 20.0), accent);
     });
     let (line, buttons) = access_look(st.notify_access);
     let mut right = head.right();
@@ -97,7 +105,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let w = ui.pill_width(label, false, true);
         let b = Rect::new(right - w, cy - PILL_SMALL / 2.0, w, PILL_SMALL);
         let style = if primary { PillStyle::Primary(accent) } else { PillStyle::Utility };
-        if ui.pill(wid_n("notify.access", i as u64), b, label, None, style).clicked {
+        if scaled(ui, b.center(), e.pop(0.08 + 0.05 * i as f32), |ui| ui.pill(wid_n("notify.access", i as u64), b, label, None, style)).clicked {
             if cmd == NotifyCmd::Ask {
                 st.notify_access = NotifyAccess::Asking;
             }
@@ -113,7 +121,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     ui.c.text(line, Rect::new(x, cy + 1.0, w, 17.0), &TextStyle::footnote().color(line_color));
 
     let px = 1.0 / ui.c.scale().max(0.5);
-    ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w, px), Color::white(0.10));
+    ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w * e.draw(0.1, 0.6), px), Color::white(0.10));
     let col_w = ((area.w - COL_GAP) / 2.0).max(0.0);
     let cols = [area.x, area.x + col_w + COL_GAP];
     let label_st = TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_FAINT);
@@ -130,7 +138,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         ui.c.text(note, r, &TextStyle::footnote().color(palette::TEXT_DIM).wrap().top());
     }
     for (i, (id, name, on)) in apps.iter().enumerate() {
-        if switch_row(ui, wid_n("notify.app", i as u64), row(i, 0), name, Some(*on), accent) {
+        let k = e.pop(0.15 + 0.05 * i as f32);
+        if rise(ui, k, |ui| switch_row(ui, wid_n("notify.app", i as u64), row(i, 0), name, Some(*on), accent)) {
             st.settings.notifications.set(id, !on);
             st.cmd(Command::SaveSettings);
         }
@@ -139,11 +148,11 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // What a notice shows at once.
     let n = &st.settings.notifications;
     let (who, text) = (n.who, n.text);
-    if switch_row(ui, wid("notify.who"), row(0, 1), "Who it's from", Some(who), accent) {
+    if rise(ui, e.pop(0.18), |ui| switch_row(ui, wid("notify.who"), row(0, 1), "Who it's from", Some(who), accent)) {
         st.settings.notifications.who = !who;
         st.cmd(Command::SaveSettings);
     }
-    if switch_row(ui, wid("notify.text"), row(1, 1), "Message text", Some(text), accent) {
+    if rise(ui, e.pop(0.23), |ui| switch_row(ui, wid("notify.text"), row(1, 1), "Message text", Some(text), accent)) {
         st.settings.notifications.text = !text;
         st.cmd(Command::SaveSettings);
     }
