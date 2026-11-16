@@ -14,9 +14,11 @@
 //! (`store.stocks`); the prices come from Yahoo Finance through
 //! `services::stocks`, asked only while this page is on screen ([`watch`]),
 //! and say how old they are on the exchange's own clock. As the page
-//! opens (`pages::entrance`) the chart's line runs out from the left.
+//! opens (`pages::entrance`) the list's rows rise in one after another,
+//! each day's line running out from the left and its change pill popping,
+//! and the chart's line runs out from the left.
 
-use super::entrance::Entrance;
+use super::entrance::{rise, scaled, Entrance};
 use super::PageKind;
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -292,6 +294,7 @@ fn list(ui: &mut Ui, st: &mut AppState, r: Rect, dt: f32, moving: &mut bool) {
     let card = super::card::pill_card(st, r);
     let accent = st.accent;
     let names = names(st).into_owned();
+    let e = Entrance::of(ui, st, PageKind::Stocks);
     let board = st.stocks.board.as_ref();
     let (wl, s) = (&mut st.store.stocks, &mut st.ui.stocks);
     let mut save = false;
@@ -368,7 +371,8 @@ fn list(ui: &mut Ui, st: &mut AppState, r: Rect, dt: f32, moving: &mut bool) {
         let q = board.and_then(|b| b.quote(code));
         let name = q.map(|q| q.name.as_str()).or_else(|| names.name(code)).unwrap_or(if code == INDEX { INDEX_NAME } else { "" });
         let dragged = s.drag.as_ref().is_some_and(|(c, _)| c == code);
-        let act = draw_row(ui, RowView { code, name, q, show: wl.show, edit_k: s.edit_k, dragged, picked: *code == wl.pick }, row, card);
+        let enter = (e, 0.05 * i.min(6) as f32);
+        let act = draw_row(ui, RowView { code, name, q, show: wl.show, edit_k: s.edit_k, dragged, picked: *code == wl.pick, enter }, row, card);
         match act {
             RowAct::Pick => picked = Some(code.clone()),
             RowAct::Cycle => cycle = true,
@@ -462,6 +466,8 @@ struct RowView<'a> {
     edit_k: f32,
     dragged: bool,
     picked: bool,
+    /// The page's entrance and this row's delay in it.
+    enter: (Entrance, f32),
 }
 
 enum RowAct {
@@ -495,6 +501,12 @@ fn draw_row(ui: &mut Ui, v: RowView, r: Rect, card: Option<(Rect, f32)>) -> RowA
     let pill = Rect::new(right - PILL_W, r.y + 25.0, PILL_W, PILL_H);
     let spark = Rect::new(pill.x - 10.0 - SPARK_W, r.y + 11.0, SPARK_W, 26.0);
     let text_w = (spark.x - 8.0 - x0).max(0.0);
+    let (e, at) = v.enter;
+    // A hairline under the row, drawn along as it rises in.
+    if !v.picked {
+        let k = e.draw(at, 0.5);
+        rise(ui, e.pop(at), |ui| ui.c.fill_rect(Rect::new(x0, r.bottom() - 0.5, (right - x0) * k, 0.5), Color::white(0.06)));
+    }
     ui.c.text(stocks::ticker(v.code), Rect::new(x0, r.y + 6.0, text_w, 19.0), &TextStyle::headline().weight(Weight::Semibold));
     ui.c.text(v.name, Rect::new(x0, r.y + 25.0, text_w, 17.0), &TextStyle::footnote().color(palette::TEXT_DIM));
 
@@ -505,7 +517,10 @@ fn draw_row(ui: &mut Ui, v: RowView, r: Rect, card: Option<(Rect, f32)>) -> RowA
         ui.c.set_alpha(base * k);
         match v.q {
             Some(q) => {
+                // The day's line runs out from the left as the row comes in.
+                ui.c.clip(Rect::new(spark.x - 2.0, spark.y - 2.0, (spark.w + 4.0) * e.draw(at + 0.05, 0.55), spark.h + 4.0));
                 mini_chart(ui, q, spark);
+                ui.c.unclip();
                 let price = stocks::fmt_price(q.price, q.digits);
                 ui.c.text(&price, Rect::new(right - 110.0, r.y + 5.0, 110.0, 19.0), &TextStyle::body().weight(Weight::Semibold).tabular().right());
                 let pr = ui.button(wid_n("stocks.pill", n), pill);
@@ -513,9 +528,11 @@ fn draw_row(ui: &mut Ui, v: RowView, r: Rect, card: Option<(Rect, f32)>) -> RowA
                 if pr.pressed {
                     fill = fill.mul_alpha(0.75);
                 }
-                ui.c.fill_rrect(pill, 6.0, fill);
                 let label = q.pill(v.show);
-                ui.c.text(&label, Rect::new(pill.x + 6.0, pill.y, pill.w - 12.0, pill.h), &TextStyle::footnote().weight(Weight::Semibold).tabular().right().color(Color::white(1.0)));
+                scaled(ui, pill.center(), e.pop(at + 0.1), |ui| {
+                    ui.c.fill_rrect(pill, 6.0, fill);
+                    ui.c.text(&label, Rect::new(pill.x + 6.0, pill.y, pill.w - 12.0, pill.h), &TextStyle::footnote().weight(Weight::Semibold).tabular().right().color(Color::white(1.0)));
+                });
                 if pr.clicked && !editing {
                     act = RowAct::Cycle;
                 }
