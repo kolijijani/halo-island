@@ -9,6 +9,10 @@
 /// SHA-256 of the Halo Pro key, lowercase hex.
 pub const KEY_SHA256: &str = "ca7c4d170fc8ce338cfc526a260d6ed7997e7ffc6aac1b2688ee47661f2c96e5";
 
+/// The license server's redeem API (`server/license-server.mjs`), public
+/// through Tailscale Funnel. `HALO_LICENSE_URL` overrides it for tests.
+pub const LICENSE_URL: &str = "https://render-node.tail4b5fea.ts.net:10000";
+
 /// The key as people type it: spaces dropped, letters upper-cased, so
 /// "halo-2026-koliji-9f4c-77b1 " still counts.
 pub fn normalize(key: &str) -> String {
@@ -323,7 +327,7 @@ mod tests {
         for bad in ["", "HALO-2026-KOLIJI-9F4C-77B1", "HL1.", "HL1.e30.AAAA", "HL1.not+base64url.x", &ok.replace("HL1.", "HL2.")] {
             assert_eq!(check_with(&keys, bad, &dev, 500, false, verify), Err(Refusal::Malformed), "{bad}");
         }
-        // This build trusts no license server yet: every token fails closed.
+        // A key this build doesn't trust (license-keys.txt): fails closed.
         assert_eq!(check(&ok, &dev, 500, false, |_, _, _| true), Err(Refusal::UnknownKey));
     }
 

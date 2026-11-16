@@ -36,7 +36,7 @@ Halo Pro unlocks in two ways:
 
 `POST /api/status` `{"lic","device","seat"?}` → `{"state":"active"|"expired"|"revoked"|"unused"|"lapsed"}`. An unknown license, one whose seat is on another install, or a `seat` that has since moved on answers `revoked`, so a kicked PC drops and nothing is learned by guessing.
 
-The app asks it once a day while a license from the server is on (`STATUS_EVERY_S`; an hour later after no answer), on the island's minute timer: no new timer, nothing while locked, the display off or on battery saver, nothing without `HALO_LICENSE_URL`. `revoked` (or `unused`/`lapsed`) deletes the token here and shows **REVOKED**; `expired` shows **EXPIRED**; anything unclear (offline, 429, 5xx) changes nothing and the token keeps checking offline.
+The app asks it once a day while a license from the server is on (`STATUS_EVERY_S`; an hour later after no answer), on the island's minute timer: no new timer, nothing while locked, the display off or on battery saver. `revoked` (or `unused`/`lapsed`) deletes the token here and shows **REVOKED**; `expired` shows **EXPIRED**; anything unclear (offline, 429, 5xx) changes nothing and the token keeps checking offline.
 
 ## Admin portal
 
@@ -85,9 +85,10 @@ Uninstalling removes the cache (`%LOCALAPPDATA%\Halo`) and keeps `%APPDATA%\Halo
 - **Revocation and seat moves reach the app** within a day, through the daily `/api/status` look above.
 - **Keys can be viewed again** in the portal (sealed at rest, every view audited).
 - **Uninstalling keeps the license.**
+- **The redeem API is public** at `halo_core::license::LICENSE_URL` (`https://render-node.tail4b5fea.ts.net:10000`, Tailscale Funnel to the server's `127.0.0.1:8791`; the portal stays tailnet-only). `HALO_LICENSE_URL` (https only) overrides it for tests.
+- **The signing key** is `d35cbe2e3ce72200`, its public line in `license-keys.txt`.
 
 ## What is not decided here (needs the maintainer)
 
-- **Where the redeem API is public.** The app asks `HALO_LICENSE_URL` (https only); no address is built in, so this build redeems nothing and says "This version has no license server set up." Choosing a host, its TLS and putting the address into the build (or a release-time setting) is a deployment decision.
-- **The signing key.** `license-keys.txt` is empty: until a key is made on the server and its public line committed, every token fails closed. Keep a second key offline for rotation, as `update-keys.txt` does.
+- **A second signing key** kept offline for rotation, as `update-keys.txt` does.
 - **Backups** of `license-data/` (losing it loses who redeemed what, not the tokens already out).

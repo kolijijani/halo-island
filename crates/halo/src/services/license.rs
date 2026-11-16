@@ -11,9 +11,8 @@
 //! - One seat: a license is on one install at a time. Redeeming its code on
 //!   another moves the seat there; this one learns at its daily look at
 //!   `/api/status` ([`standing_job`]) and drops to Free.
-//! - Where the server is: `HALO_LICENSE_URL` (its redeem API's https
-//!   address). This build has none built in, a deployment decision: without
-//!   it, redeeming says so and nothing is sent.
+//! - Where the server is: `halo_core::license::LICENSE_URL`, built in;
+//!   `HALO_LICENSE_URL` (an https address) overrides it for tests.
 //!
 //! A redemption runs once, on the add-on thread's HTTP client (one job), and
 //! answers with [`AppEvent::License`]. The daily look is one more job, only
@@ -43,9 +42,10 @@ pub enum Redeemed {
     NoServer,
 }
 
-/// The redeem API's address, from `HALO_LICENSE_URL`. https only.
+/// The redeem API's address: `HALO_LICENSE_URL` when set (https only, for
+/// tests), otherwise the one built in (`halo_core::license::LICENSE_URL`).
 pub fn server() -> Option<String> {
-    let u = std::env::var("HALO_LICENSE_URL").ok()?;
+    let Ok(u) = std::env::var("HALO_LICENSE_URL") else { return Some(license::LICENSE_URL.to_string()) };
     let u = u.trim().trim_end_matches('/');
     (u.starts_with("https://") && halo_core::net::configured(u)).then(|| u.to_string())
 }
@@ -259,7 +259,7 @@ mod tests {
     fn the_servers_answers_read_honestly() {
         let dev = "d".repeat(64);
         let yes = |_: &[u8], _: &[u8; 64], _: &[u8; 65]| true;
-        // A real token, but this build trusts no license key: refused.
+        // A real token, but from a throwaway key this build doesn't trust: refused.
         let fx: serde_json::Value = serde_json::from_str(include_str!("../../../halo-core/tests/fixtures/license/token.json")).unwrap();
         let body = serde_json::json!({ "token": fx["token"] }).to_string();
         assert_eq!(read_answer(200, &body, &dev, 1_794_564_100, yes), Redeemed::Refused("This version can't check that license. Update Halo Island."));

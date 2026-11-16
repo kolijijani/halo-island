@@ -6,7 +6,5 @@
 # in hex (04, X, Y), exactly as `node server/license-server.mjs init-key`
 # prints it. The private half stays on the license server, in a file outside
 # this repository: never here, never in the app.
-#
-# Empty until the maintainer runs init-key on the license server and pastes
-# its line here: until then no token is accepted (fail closed), and the
-# built-in key in halo_core::license still unlocks Pro as before.
+
+d35cbe2e3ce72200 04c4784afb632ee53cc5212e490f9da842b1606cfcefe9df5db2d24283b3166f7b43be8470587e59dcec34328eae003ce1bb60aaf255a96bdcd236ce1413b8c170
