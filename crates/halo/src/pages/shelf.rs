@@ -12,9 +12,12 @@
 //! files (`services::phonedrop`, `halo_core::phonedrop`).
 //!
 //! As the page opens (`pages::entrance`) the tiles rise in one after
-//! another, or the empty drop zone rises and its tray pops; names stay put.
+//! another, each thumbnail popping a moment after its tile, and the header's
+//! pills pop; or the empty drop zone rises, the Phone tile beside it, and its
+//! tray pops. A tile's hover fades in, a press dips it, and the remove button
+//! pops onto its corner. Names stay put.
 
-use super::entrance::{rise, scaled, Entrance};
+use super::entrance::{hover, rise, scaled, Entrance};
 use super::PageKind;
 use crate::commands::{Command, PairCmd, PhoneCmd};
 use crate::dragdrop;
@@ -366,6 +369,12 @@ fn draw_items(
         if hot {
             hovered = Some((id, i));
         }
+        let h = hover(ui, st, id, hot);
+        // Pressed, the tile dips a little, as Widgets' and Today's cards do.
+        let m0 = ui.c.save_transform();
+        if resp.pressed {
+            ui.c.scale_about(tile.center(), 0.97);
+        }
 
         let img = match st.shelf_thumbs.get(&it.path) {
             Some(Some(img)) => {
@@ -382,22 +391,25 @@ fn draw_items(
         ui.c.set_alpha(base * appear * (1.0 - glow));
         if resp.pressed {
             ui.c.fill_rrect(tile, TILE_R, palette::SURFACE_HOVER);
-        } else if hot {
-            ui.c.fill_rrect(tile, TILE_R, palette::SURFACE);
+        } else if h > 0.0 {
+            ui.c.fill_rrect(tile, TILE_R, palette::SURFACE.mul_alpha(h));
         }
         let thumb = Rect::new(tile.x + (TILE_W - THUMB) / 2.0, tile.y + 10.0, THUMB, THUMB);
         let tile_a = ui.c.alpha();
         // Missing files: everything but the caption is greyed out.
         ui.c.set_alpha(tile_a * if missing { 0.38 } else { 1.0 });
-        ui.c.fill_rrect(thumb, THUMB_R, palette::SURFACE);
-        match &img {
-            Some(im) => ui.c.image(im, thumb, THUMB_R),
-            None => {
-                let folder = kind == Some(PathKind::Folder) || (kind.is_none() && extension(&it.path).is_empty());
-                let icon = if folder { Icon::Folder } else { Icon::File };
-                ui.c.icon(icon, Rect::from_center(thumb.center(), 24.0, 24.0), palette::TEXT_DIM);
+        // The thumbnail pops a moment after its tile, and lifts a little under the pointer.
+        scaled(ui, thumb.center(), e.pop(0.08 + 0.04 * i.min(8) as f32) * (1.0 + 0.04 * h), |ui| {
+            ui.c.fill_rrect(thumb, THUMB_R, palette::SURFACE);
+            match &img {
+                Some(im) => ui.c.image(im, thumb, THUMB_R),
+                None => {
+                    let folder = kind == Some(PathKind::Folder) || (kind.is_none() && extension(&it.path).is_empty());
+                    let icon = if folder { Icon::Folder } else { Icon::File };
+                    ui.c.icon(icon, Rect::from_center(thumb.center(), 24.0, 24.0), palette::TEXT_DIM);
+                }
             }
-        }
+        });
         let name_r = Rect::new(tile.x + 6.0, thumb.bottom() + 8.0, TILE_W - 12.0, 16.0);
         ui.c.text(&display_name(&it.path), name_r, &TextStyle::footnote().weight(Weight::Medium).center());
         ui.c.set_alpha(tile_a);
@@ -419,14 +431,17 @@ fn draw_items(
             } else {
                 Color::white(0.24)
             };
-            ui.c.fill_circle(c, 11.0, palette::ISLAND);
-            ui.c.fill_circle(c, 9.0, fill);
-            ui.c.icon(Icon::Close, Rect::from_center(c, 10.0, 10.0), palette::TEXT);
+            scaled(ui, c, h, |ui| {
+                ui.c.fill_circle(c, 11.0, palette::ISLAND);
+                ui.c.fill_circle(c, 9.0, fill);
+                ui.c.icon(Icon::Close, Rect::from_center(c, 10.0, 10.0), palette::TEXT);
+            });
             if cr.clicked {
                 actions.push(Action::Remove(it.path.clone()));
             }
         }
         ui.c.set_alpha(base);
+        ui.c.restore_transform(m0);
 
         if resp.clicked {
             actions.push(if missing { Action::Recheck(it.path.clone()) } else { Action::Open(it.path.clone()) });
@@ -468,10 +483,11 @@ fn draw_items(
     if glow > 0.01 {
         draw_drop_overlay(ui, st, Rect::new(row.x, row.y, row.w, tile_h), glow, card);
     }
-    draw_header(ui, st, l, head, items, hovered.map(|(_, i)| i), actions);
+    draw_header(ui, st, l, head, items, hovered.map(|(_, i)| i), e, actions);
 }
 
-fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[ShelfItem], hovered: Option<usize>, actions: &mut Vec<Action>) {
+#[allow(clippy::too_many_arguments)]
+fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[ShelfItem], hovered: Option<usize>, e: Entrance, actions: &mut Vec<Action>) {
     let n = items.len();
     let count = format!("{n} {}", if n == 1 { "item" } else { "items" });
     let cs = TextStyle::body().weight(Weight::Semibold).color(palette::TEXT_DIM);
@@ -481,7 +497,7 @@ fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[Shelf
     // Small utility pills on the right: Clear, plus Undo for a while after a removal.
     let clear_w = ui.pill_width("Clear", true, true);
     let clear_r = Rect::new(head.right() - clear_w, head.y, clear_w, PILL_SMALL);
-    if ui.pill(wid("shelf.clear"), clear_r, "Clear", Some(Icon::Trash), PillStyle::Utility).clicked {
+    if scaled(ui, clear_r.center(), e.pop(0.1), |ui| ui.pill(wid("shelf.clear"), clear_r, "Clear", Some(Icon::Trash), PillStyle::Utility)).clicked {
         actions.push(Action::Clear);
     }
     let mut right = clear_r.x;
@@ -497,7 +513,7 @@ fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[Shelf
     if st.phone.is_none() {
         let phone_w = ui.pill_width("Phone", true, true);
         let phone_r = Rect::new(right - PILL_GAP - phone_w, head.y, phone_w, PILL_SMALL);
-        if ui.pill(wid("shelf.phone"), phone_r, "Phone", Some(Icon::Phone), PillStyle::Utility).clicked {
+        if scaled(ui, phone_r.center(), e.pop(0.14), |ui| ui.pill(wid("shelf.phone"), phone_r, "Phone", Some(Icon::Phone), PillStyle::Utility)).clicked {
             actions.push(Action::PhoneOpen);
         }
         right = phone_r.x;
@@ -576,7 +592,7 @@ fn draw_empty(ui: &mut Ui, st: &AppState, l: &Local, area: Rect, card: Option<(R
     // The Phone tile shares the row until Phone drop is open.
     let zone = if st.phone.is_none() {
         let tile = Rect::new(full.right() - PHONE_TILE_W, full.y, PHONE_TILE_W, full.h);
-        if draw_phone_tile(ui, tile, 1.0 - g, card) {
+        if rise(ui, e.pop(0.08), |ui| draw_phone_tile(ui, tile, 1.0 - g, card)) {
             actions.push(Action::PhoneOpen);
         }
         Rect::new(full.x, full.y, (full.w - PHONE_TILE_W - PILL_GAP).max(0.0), full.h)
