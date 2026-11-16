@@ -1,17 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="820" height="184" viewBox="0 0 820 184" role="img" aria-labelledby="title">
-<title id="title">Halo Island downloads per release</title>
-<rect width="820" height="184" rx="16" fill="#FFF1DE"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="442" viewBox="0 0 820 442" role="img" aria-labelledby="title">
+<title id="title">Halo Island downloads per release and per day</title>
+<rect width="820" height="442" rx="16" fill="#FFF1DE"/>
 <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif">
 <path d="M86.5,68.0L86.5,160.0" stroke="#D8BF9C" stroke-width="1"/>
-<path d="M87.0,75.0H357.4A4.0,4.0 0 0 1 361.4,79.0V89.0A4.0,4.0 0 0 1 357.4,93.0H87.0Z" fill="#D9661C"/>
+<path d="M46.0,358.5L656.5,358.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M678.8,358.5L792.0,358.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M46.0,321.5L792.0,321.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M46.0,284.5L792.0,284.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M46.0,246.5L792.0,246.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M46.0,396.5L792.0,396.5" stroke="#D8BF9C" stroke-width="1"/>
+<path d="M87.0,75.0H494.6A4.0,4.0 0 0 1 498.6,79.0V89.0A4.0,4.0 0 0 1 494.6,93.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,107.0H494.6A4.0,4.0 0 0 1 498.6,111.0V121.0A4.0,4.0 0 0 1 494.6,125.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,139.0H769.0A4.0,4.0 0 0 1 773.0,143.0V153.0A4.0,4.0 0 0 1 769.0,157.0H87.0Z" fill="#D9661C"/>
+<path d="M158.3,396.0V362.5A4.0,4.0 0 0 1 162.3,358.5H178.3A4.0,4.0 0 0 1 182.3,362.5V396.0Z" fill="#D9661C"/>
+<path d="M407.0,396.0V250.0A4.0,4.0 0 0 1 411.0,246.0H427.0A4.0,4.0 0 0 1 431.0,250.0V396.0Z" fill="#D9661C"/>
+<path d="M655.7,396.0V381.2A4.0,4.0 0 0 1 659.7,377.2H675.7A4.0,4.0 0 0 1 679.7,381.2V396.0Z" fill="#D9661C"/>
 <text x="28.0" y="44.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per release</text>
 <text x="77.0" y="88.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.51</text>
-<text x="369.4" y="88.5" font-size="14" fill="#2B1B10" font-weight="600">2</text>
+<text x="506.6" y="88.5" font-size="14" fill="#2B1B10" font-weight="600">3</text>
 <text x="77.0" y="120.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.50</text>
 <text x="506.6" y="120.5" font-size="14" fill="#2B1B10" font-weight="600">3</text>
 <text x="77.0" y="152.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.40</text>
 <text x="781.0" y="152.5" font-size="14" fill="#2B1B10" font-weight="600">5</text>
+<text x="28.0" y="208.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per day</text>
+<text x="667.7" y="370.2" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">1</text>
+<text x="419.0" y="239.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">8</text>
+<text x="36.0" y="400.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">0</text>
+<text x="36.0" y="362.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">2</text>
+<text x="36.0" y="325.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">4</text>
+<text x="36.0" y="288.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">6</text>
+<text x="36.0" y="250.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">8</text>
+<text x="667.7" y="416.0" font-size="12" fill="#7A6450" text-anchor="middle">16 Nov</text>
 </g>
 </svg>
