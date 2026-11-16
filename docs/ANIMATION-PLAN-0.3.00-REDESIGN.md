@@ -59,3 +59,27 @@ Susun atur (kad 230×52 sama, supaya Clipboard tak hilang satu baris):
 | Keadaan kosong (`pages::empty_state`, 5 paparan) | ikon pop 0.05 s | sama |
 
 Notch luar (frame, header, tab, expand/collapse) tidak disentuh.
+
+## 6. Fasa 3: semua tab lain (0.2.53, 16 Nov 2026)
+
+Semua tab kecuali Music, Widgets dan Today (sudah okay) dapat reka bentuk dan animasi lebih. Peraturan sama: bentuk sahaja, teks dan angka tepat dari frame pertama, tiada entrance bila reduced motion / battery saver. Alat baharu: `Entrance::at(ui, t0)` (main semula entrance dari masa sendiri, contoh System bila modul dipilih). Animasi ambien (`entrance::alive`) hanya di Focus (halo bernafas bila sesi berjalan) dan Record (cincin dari titik merah bila merakam): ~30 fps 10 s selepas tab dibuka, berhenti bila kunci / skrin mati, tiada dalam self-test.
+
+| Paparan | Entrance / interaksi | Reka bentuk |
+|---|---|---|
+| System | cip strip rise stagger 0.04·i s, sparkline draw kiri→kanan; lajur cascade ikut tinggi (`cascade`: 0.08 + 0.27·y/H s): garis pemisah tumbuh dari tajuk, grid + carta draw kiri→kanan, bar naik kiri→kanan, titik + ikon apl pop; jarum tekanan memori berpusing | pilihan modul meluncur (spring) ke cip baharu dan lajur draw semula; hover cip fade 0.16 s; garis accent di kaki cip terpilih |
+| Games | sama dengan System (bahagian dikongsi) | sama |
+| Shelf | thumbnail pop selepas tile; pil Clear/Phone pop; tile Phone rise | hover fade, thumbnail naik 4%, butang buang pop, tekan = dip 0.97 |
+| Tasks | pil footer pop | hover baris fade, butang padam pop; ripple hijau dari ring bila tugasan terakhir hari ini selesai |
+| Focus | picker rise, Start/Reset/Skip pop stagger, titik di hujung arc pop | cakera warna fasa dalam ring; halo bernafas (alive) bila berjalan; hover segmen fade |
+| AI | butang atas pop; kad rise + shine, logo pop, bar had draw baris demi baris, bar hari naik kiri→kanan; baris Services rise stagger | sorotan atas kad |
+| Script | penanda baris pop, garis kemajuan draw, butang bar pop stagger | penanda accent di sebelah baris dibaca; garis nipis atas bar = sejauh mana dibaca |
+| Record | cip input pop stagger, Record pop; Pause/Stop pop | pilihan sasaran meluncur (spring); hover fade; cincin dari titik merah (alive) |
+| Prayer | pil footer pop; cahaya di hujung bar menunggu pop | hover baris pemilih bandar fade + tanda accent |
+| Stocks | baris rise stagger, garis bawah draw, sparkline draw kiri→kanan, pil perubahan pop | sama |
+| Caffeine | baris senarai rise stagger, Add pop; cip jenis minuman pop baris demi baris bila sheet dibuka / langkah bertukar | hover baris fade |
+| Downloads | Paste/Download pop, baris rise + garis + bar draw, Clear pop | lencana hijau + tanda bila siap |
+| Notifications | loceng pop dan berayun sekali, butang pop, garis draw, suis rise stagger | sama |
+| Add-ons, Settings | suis meluncur dan picker angkat meluncur (`entrance::glide`, sesi lain) | sama |
+
+Kos: tiada benang, pemasa atau poll baharu. Frame tambahan hanya 1.1 s selepas tab dibuka atau modul System / sasaran Record dipilih, < 0.6 s untuk hover / tekan / spring, dan 10 s ambien di Focus (sesi berjalan) dan Record (sedang merakam). Tiada langsung dengan reduced motion atau battery saver.
+
