@@ -15,7 +15,14 @@
 //!
 //! Once Halo Island Recorder is installed, Record (by Paste) has it record
 //! the island's screen; pausing and stopping stay on the recorder's own bar.
+//!
+//! An accent mark beside the line to say and a hairline over the bar show
+//! where the reading is. As the page opens (`pages::entrance`) the mark
+//! pops, the hairline draws to how far it has got and the bar's buttons pop
+//! one after another; the words stay put.
 
+use super::entrance::{scaled, Entrance};
+use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{ts, TextStyle, Weight};
 use crate::icons::Icon;
@@ -187,12 +194,12 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
 
 fn draw_empty(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let top = Rect::new(area.x, area.y, area.w, area.h - 52.0);
-    let e = super::entrance::Entrance::of(ui, st, super::PageKind::Script);
+    let e = Entrance::of(ui, st, PageKind::Script);
     super::empty_state(ui, top, Icon::Script, "Paste a script to read", "Copy it anywhere, then press Paste. Or drop a .txt file here.", e);
     let label = "Paste";
     let w = ui.pill_width(label, true, false);
     let r = Rect::new(area.center().x - w / 2.0, top.bottom() - 6.0, w, PILL_REGULAR);
-    if ui.pill(wid("script.paste.empty"), r, label, Some(Icon::Clipboard), PillStyle::Primary(st.accent)).clicked {
+    if scaled(ui, r.center(), e.pop(0.15), |ui| ui.pill(wid("script.paste.empty"), r, label, Some(Icon::Clipboard), PillStyle::Primary(st.accent))).clicked {
         st.cmd(Command::ScriptPaste);
     }
     if let Some(text) = live_note(ui, st) {
@@ -298,7 +305,21 @@ fn draw_reading(ui: &mut Ui, st: &mut AppState, area: Rect, cache: &mut Cache) {
         ui.c.stroke_rrect(view.inset(-4.0, -2.0), 10.0, Color::white(0.18), 1.0);
     }
 
-    draw_bar(ui, st, area, bar_y, &lines, focused);
+    // Where the reading is: a mark beside the line to say, in the page's
+    // gutter, and a hairline over the bar as far as it has got.
+    let e = Entrance::of(ui, st, PageKind::Script);
+    let mark = Rect::new(view.x - 10.0, anchor_y + 3.0, 3.0, READ_SIZE * LEADING - 6.0);
+    let mark_c = if st.script.playing() { st.accent } else { Color::white(0.3) };
+    scaled(ui, mark.center(), e.pop(0.05), |ui| ui.c.fill_rrect(mark, 1.5, mark_c));
+    let done = if lines.len() > 1 { cur as f32 / (lines.len() - 1) as f32 } else { 1.0 };
+    let track = Rect::new(view.x, bar_y - BAR_GAP / 2.0 - 1.0, view.w, 2.0);
+    ui.c.fill_rrect(track, 1.0, Color::white(0.06));
+    let w = track.w * done.clamp(0.0, 1.0) * e.draw(0.1, 0.6);
+    if w > 0.5 {
+        ui.c.fill_rrect(Rect::new(track.x, track.y, w.max(2.0), track.h), 1.0, st.accent.with_alpha(0.7));
+    }
+
+    draw_bar(ui, st, area, bar_y, &lines, focused, e);
     cache.lines = lines;
 }
 
@@ -313,7 +334,8 @@ fn set_pace(st: &mut AppState, lines: &[Line], wpm: u32) {
 
 /// Read/Pause, back to the start, the pace, then what's going on; Record
 /// (with the recorder installed), Paste and Clear on the right.
-fn draw_bar(ui: &mut Ui, st: &mut AppState, area: Rect, y: f32, lines: &[Line], focused: bool) {
+/// As the page opens the buttons pop one after another (`e`).
+fn draw_bar(ui: &mut Ui, st: &mut AppState, area: Rect, y: f32, lines: &[Line], focused: bool, e: Entrance) {
     let now = ui.now;
     let wpm = st.store.script.pace();
     let r = &st.script;
@@ -328,43 +350,44 @@ fn draw_bar(ui: &mut Ui, st: &mut AppState, area: Rect, y: f32, lines: &[Line], 
     };
     let w = ui.pill_width(label, true, false).max(READ_MIN_W);
     let read_r = Rect::new(area.x, y, w, PILL_REGULAR);
-    if ui.pill(wid("script.read"), read_r, label, Some(icon), PillStyle::Primary(st.accent)).clicked {
+    if scaled(ui, read_r.center(), e.pop(0.12), |ui| ui.pill(wid("script.read"), read_r, label, Some(icon), PillStyle::Primary(st.accent))).clicked {
         st.script.toggle(now, lines);
     }
     let mut x = read_r.right() + PILL_GAP;
     let cy = y + PILL_REGULAR / 2.0;
     let btn = |x: f32| Rect::new(x, cy - ICON_BTN / 2.0, ICON_BTN, ICON_BTN);
+    let k = e.pop(0.16);
     if st.script.active {
-        if ui.icon_button(wid("script.stop"), btn(x), Icon::Stop, palette::TEXT_DIM, 15.0).clicked {
+        if scaled(ui, btn(x).center(), k, |ui| ui.icon_button(wid("script.stop"), btn(x), Icon::Stop, palette::TEXT_DIM, 15.0)).clicked {
             st.script.stop(now);
         }
-    } else if ui.icon_button(wid("script.restart"), btn(x), Icon::Reset, palette::TEXT_DIM, 15.0).clicked {
+    } else if scaled(ui, btn(x).center(), k, |ui| ui.icon_button(wid("script.restart"), btn(x), Icon::Reset, palette::TEXT_DIM, 15.0)).clicked {
         st.script.restart(now);
     }
     x += ICON_BTN + PILL_GAP;
 
     // Pace: − 140 wpm +
-    if ui.icon_button(wid("script.slower"), btn(x), Icon::Minus, palette::TEXT_DIM, 14.0).clicked {
+    if scaled(ui, btn(x).center(), e.pop(0.2), |ui| ui.icon_button(wid("script.slower"), btn(x), Icon::Minus, palette::TEXT_DIM, 14.0)).clicked {
         set_pace(st, lines, wpm.saturating_sub(WPM_STEP));
     }
     x += ICON_BTN;
     let pace = format!("{wpm} wpm");
     ui.c.text(&pace, Rect::new(x, y, PACE_LABEL_W, PILL_REGULAR), &TextStyle::body().weight(Weight::Semibold).tabular().center());
     x += PACE_LABEL_W;
-    if ui.icon_button(wid("script.faster"), btn(x), Icon::Plus, palette::TEXT_DIM, 14.0).clicked {
+    if scaled(ui, btn(x).center(), e.pop(0.24), |ui| ui.icon_button(wid("script.faster"), btn(x), Icon::Plus, palette::TEXT_DIM, 14.0)).clicked {
         set_pace(st, lines, wpm + WPM_STEP);
     }
     x += ICON_BTN + PILL_GAP + 4.0;
 
     // Right: Clear, then Paste (a new script replaces this one), then Record.
     let clear_r = btn(area.right() - ICON_BTN);
-    if ui.icon_button(wid("script.clear"), clear_r, Icon::Trash, palette::TEXT_DIM, 14.0).clicked {
+    if scaled(ui, clear_r.center(), e.pop(0.3), |ui| ui.icon_button(wid("script.clear"), clear_r, Icon::Trash, palette::TEXT_DIM, 14.0)).clicked {
         set_text(st, String::new());
     }
     let paste = "Paste";
     let pw = ui.pill_width(paste, true, false);
     let paste_r = Rect::new(clear_r.x - PILL_GAP - pw, y, pw, PILL_REGULAR);
-    if ui.pill(wid("script.paste"), paste_r, paste, Some(Icon::Clipboard), PillStyle::Utility).clicked {
+    if scaled(ui, paste_r.center(), e.pop(0.26), |ui| ui.pill(wid("script.paste"), paste_r, paste, Some(Icon::Clipboard), PillStyle::Utility)).clicked {
         st.cmd(Command::ScriptPaste);
     }
 
@@ -372,8 +395,11 @@ fn draw_bar(ui: &mut Ui, st: &mut AppState, area: Rect, y: f32, lines: &[Line], 
     let mut hint = None;
     if st.recorder {
         let record_r = btn(paste_r.x - PILL_GAP - ICON_BTN);
-        let resp = ui.icon_button(wid("script.record"), record_r, Icon::Record, palette::RED, RECORD_ICON);
-        ui.c.icon(Icon::Circle, Rect::from_center(record_r.center(), RECORD_ICON, RECORD_ICON), palette::TEXT_DIM);
+        let resp = scaled(ui, record_r.center(), e.pop(0.22), |ui| {
+            let resp = ui.icon_button(wid("script.record"), record_r, Icon::Record, palette::RED, RECORD_ICON);
+            ui.c.icon(Icon::Circle, Rect::from_center(record_r.center(), RECORD_ICON, RECORD_ICON), palette::TEXT_DIM);
+            resp
+        });
         if resp.clicked {
             st.cmd(Command::RecordScreen);
             note(st, "Opening the recorder");

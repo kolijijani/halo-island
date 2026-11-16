@@ -395,6 +395,9 @@ pub struct PageUiState {
     /// The last full System reading had the whole PC's power (keeps its chip
     /// while the page's first, light reading shows).
     pub system_power: bool,
+    /// The Record page's target picked before the last pick, and when: the
+    /// selection glides over. Never set while motion is off.
+    pub record_pick: Option<(halo_core::recorder::Target, f64)>,
     /// The page the Settings button was pressed on (pressing it again goes back).
     pub before_settings: Option<PageKind>,
     /// Start with Windows, as last read off the UI thread (None until Settings first opens).

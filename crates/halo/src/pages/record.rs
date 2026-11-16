@@ -10,8 +10,14 @@
 //!
 //! Nothing here runs by itself: while it records, the time repaints once a
 //! second through the app's wake timer, and not at all while paused.
+//!
+//! As the page opens (`pages::entrance`) the targets' track rises, the
+//! inputs pop one after another and Record pops; picking a target glides
+//! the selection over (`PageUiState::record_pick`), and a hover fades in.
+//! During a recording the red dot pops, then pulses a ring for a few seconds
+//! (`entrance::alive`) and rests; Pause and Stop pop.
 
-use super::entrance::{rise, scaled, Entrance};
+use super::entrance::{alive, hover, rise, scaled, still, Entrance};
 use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{ts, TextStyle, Weight};
@@ -77,9 +83,10 @@ fn draw_choices(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let label = "Record";
     let w = ui.pill_width(label, true, false).max(ACTION_MIN_W);
     let r = Rect::new(area.x, ay, w, PILL_REGULAR);
+    let k = Entrance::of(ui, st, PageKind::Record).pop(0.2);
     if opening {
-        disabled_pill(ui, r, label, Icon::Record);
-    } else if ui.pill(wid("record.start"), r, label, Some(Icon::Record), PillStyle::Primary(palette::RED)).clicked {
+        scaled(ui, r.center(), k, |ui| disabled_pill(ui, r, label, Icon::Record));
+    } else if scaled(ui, r.center(), k, |ui| ui.pill(wid("record.start"), r, label, Some(Icon::Record), PillStyle::Primary(palette::RED))).clicked {
         st.cmd(Command::Record);
     }
     let (status, color) = match &st.rec.error {
@@ -127,22 +134,31 @@ fn draw_targets(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) -> f32 {
     let k = Entrance::of(ui, st, PageKind::Record).pop(0.0);
     rise(ui, k, |ui| ui.c.fill_rrect(track, ROW_H / 2.0, palette::SURFACE));
     let picked = st.settings.record.target;
+    // The selection glides from the target picked before, on the spring.
+    let at = |t: Target| cells.iter().find(|c| c.0 == t).map(|c| c.1);
+    let glide = st.ui.record_pick.map(|(from, t0)| (from, (ui.now - t0) as f32)).filter(|(_, t)| *t < 0.6);
+    if glide.is_some() {
+        ui.request_anim();
+    }
+    if let Some(to) = at(picked) {
+        let sel = glide.and_then(|(from, t)| at(from).map(|f| Rect::lerp(f, to, halo_core::spring::bouncy_at(t)))).unwrap_or(to);
+        rise(ui, k, |ui| ui.c.fill_rrect(sel, inner_h / 2.0, Color::white(0.16)));
+    }
     let mut choice = None;
     for (i, (t, r)) in cells.iter().enumerate() {
         let color = if *t == picked {
-            ui.c.fill_rrect(*r, inner_h / 2.0, Color::white(0.16));
             palette::TEXT
         } else {
-            let resp = ui.button(wid_n("record.target", i as u64), Rect::new(r.x, y, r.w, ROW_H));
+            let id = wid_n("record.target", i as u64);
+            let resp = ui.button(id, Rect::new(r.x, y, r.w, ROW_H));
             if resp.clicked {
                 choice = Some(*t);
             }
-            if resp.pressed || resp.hovered {
-                ui.c.fill_rrect(*r, inner_h / 2.0, Color::white(if resp.pressed { 0.10 } else { 0.06 }));
-                palette::TEXT
-            } else {
-                palette::TEXT_DIM
+            let h = hover(ui, st, id, resp.hovered || resp.pressed);
+            if h > 0.0 {
+                ui.c.fill_rrect(*r, inner_h / 2.0, Color::white(if resp.pressed { 0.10 } else { 0.06 * h }));
             }
+            Color::lerp(palette::TEXT_DIM, palette::TEXT, h)
         };
         let ix = r.x + CELL_PAD;
         ui.c.icon(target_icon(*t), Rect::new(ix, r.center().y - CELL_ICON / 2.0, CELL_ICON, CELL_ICON), color);
@@ -150,6 +166,7 @@ fn draw_targets(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) -> f32 {
         ui.c.text(t.label(), Rect::new(tx, y, (r.right() - tx).max(0.0), ROW_H), &label_st.color(color));
     }
     if let Some(t) = choice {
+        st.ui.record_pick = (!still(st)).then_some((picked, ui.now));
         st.settings.record.target = t;
         st.cmd(Command::SaveSettings);
     }
@@ -167,20 +184,27 @@ fn draw_inputs(ui: &mut Ui, st: &mut AppState, x0: f32, x1: f32, y: f32) {
     let widths: Vec<f32> = if labels { full } else { vec![ROW_H + 8.0; 3] };
     let mut x = x1 - widths.iter().sum::<f32>() - CHIP_GAP * 2.0;
     let mut flip = None;
+    let e = Entrance::of(ui, st, PageKind::Record);
     for (i, ((icon, label, on), w)) in chips.iter().zip(widths).enumerate() {
         let r = Rect::new(x, y, w, ROW_H);
         x += w + CHIP_GAP;
-        let resp = ui.button(wid_n("record.input", i as u64), r);
+        let id = wid_n("record.input", i as u64);
+        let resp = ui.button(id, r);
         if resp.clicked {
             flip = Some(i);
         }
-        let fill = match (*on, resp.pressed, resp.hovered) {
-            (_, true, _) => Color::white(0.22),
-            (true, _, true) => Color::white(0.20),
-            (true, _, false) => Color::white(0.16),
-            (false, _, true) => Color::white(0.12),
-            (false, _, false) => palette::SURFACE,
+        let h = hover(ui, st, id, resp.hovered);
+        let fill = match (*on, resp.pressed) {
+            (_, true) => Color::white(0.22),
+            (true, _) => Color::lerp(Color::white(0.16), Color::white(0.20), h),
+            (false, _) => Color::lerp(palette::SURFACE, Color::white(0.12), h),
         };
+        // As the page opens the chips pop one after another.
+        let m0 = ui.c.save_transform();
+        let a0 = ui.c.alpha();
+        let k = e.pop(0.08 + 0.05 * i as f32);
+        ui.c.set_alpha(a0 * k.clamp(0.0, 1.0));
+        ui.c.scale_about(r.center(), k.max(0.01));
         ui.c.fill_rrect(r, ROW_H / 2.0, fill);
         let color = if *on { palette::TEXT } else { palette::TEXT_DIM };
         let ix = if labels { r.x + CELL_PAD } else { r.center().x - CELL_ICON / 2.0 };
@@ -194,6 +218,8 @@ fn draw_inputs(ui: &mut Ui, st: &mut AppState, x0: f32, x1: f32, y: f32) {
             let tx = ix + CELL_ICON + ICON_GAP;
             ui.c.text(label, Rect::new(tx, y, (r.right() - tx).max(0.0), ROW_H), &label_st.color(color));
         }
+        ui.c.restore_transform(m0);
+        ui.c.set_alpha(a0);
     }
     if let Some(i) = flip {
         let rec = &mut st.settings.record;
@@ -215,8 +241,16 @@ fn draw_recording(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let time_h = 40.0;
     let cy = y + time_h / 2.0;
     let dot = Point::new(area.x + DOT_R + 1.0, cy);
-    // The red dot pops in as the page opens (`pages::entrance`).
-    let k = Entrance::of(ui, st, PageKind::Record).pop(0.0);
+    // The red dot pops in as the page opens (`pages::entrance`), then sends
+    // out a ring every second for a few seconds and rests.
+    let e = Entrance::of(ui, st, PageKind::Record);
+    let k = e.pop(0.0);
+    if phase == Phase::Recording {
+        if let Some((t, strength)) = alive(ui, st, PageKind::Record) {
+            let p = t.fract();
+            ui.c.stroke_circle(dot, DOT_R + 8.0 * p, palette::RED.with_alpha(0.45 * (1.0 - p) * strength), 1.5);
+        }
+    }
     match phase {
         Phase::Recording => scaled(ui, dot, k, |ui| ui.c.fill_circle(dot, DOT_R, palette::RED)),
         Phase::Paused => ui.c.icon(Icon::Pause, Rect::from_center(dot, 14.0, 14.0), palette::TEXT_DIM),
@@ -244,17 +278,19 @@ fn draw_recording(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let sw = ui.pill_width(stop, true, false).max(96.0);
     let stop_r = Rect::new(area.right() - sw, cy - PILL_REGULAR / 2.0, sw, PILL_REGULAR);
     let busy = matches!(phase, Phase::Starting | Phase::Stopping);
+    let stop_k = e.pop(0.16);
     if phase == Phase::Stopping {
-        disabled_pill(ui, stop_r, stop, Icon::Stop);
-    } else if ui.pill(wid("record.stop"), stop_r, stop, Some(Icon::Stop), PillStyle::Primary(palette::RED)).clicked {
+        scaled(ui, stop_r.center(), stop_k, |ui| disabled_pill(ui, stop_r, stop, Icon::Stop));
+    } else if scaled(ui, stop_r.center(), stop_k, |ui| ui.pill(wid("record.stop"), stop_r, stop, Some(Icon::Stop), PillStyle::Primary(palette::RED))).clicked {
         st.cmd(Command::RecordStop);
     }
     let (label, icon, cmd) = if paused { ("Resume", Icon::Play, Command::RecordResume) } else { ("Pause", Icon::Pause, Command::RecordPause) };
     let pw = ["Pause", "Resume"].iter().map(|l| ui.pill_width(l, true, false)).fold(0.0, f32::max);
     let pause_r = Rect::new(stop_r.x - PILL_GAP - pw, stop_r.y, pw, PILL_REGULAR);
+    let pause_k = e.pop(0.1);
     if busy {
-        disabled_pill(ui, pause_r, label, icon);
-    } else if ui.pill(wid("record.pause"), pause_r, label, Some(icon), PillStyle::Neutral).clicked {
+        scaled(ui, pause_r.center(), pause_k, |ui| disabled_pill(ui, pause_r, label, icon));
+    } else if scaled(ui, pause_r.center(), pause_k, |ui| ui.pill(wid("record.pause"), pause_r, label, Some(icon), PillStyle::Neutral)).clicked {
         st.cmd(cmd);
     }
     foot(ui, area, "Stop saves it and opens the recorder's editor. The island stays out of the video.");
