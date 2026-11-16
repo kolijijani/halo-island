@@ -49,7 +49,7 @@ const DEVICE_RE = /^[0-9a-f]{64}$/;
 const LIC_RE = /^[0-9a-f]{32}$/;
 
 const SECURITY_HEADERS = [
-  ['Content-Security-Policy', "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"],
+  ['Content-Security-Policy', "default-src 'none'; style-src 'self'; font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"],
   ['Referrer-Policy', 'no-referrer'],
   ['X-Content-Type-Options', 'nosniff'],
   ['Cache-Control', 'no-store'],
@@ -361,13 +361,102 @@ function cookies(req) {
   return out;
 }
 
-const CSS = `body{font:15px/1.45 system-ui,sans-serif;max-width:980px;margin:32px auto;padding:0 16px;color:#141821;background:#F3F5F9}
-h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:6px 8px;border-bottom:1px solid #D5DAE3;text-align:left}
-input,select,button{font:inherit;padding:6px 8px}code{font-size:15px;background:#fff;padding:2px 6px;border-radius:4px}
-td form{display:inline;margin-right:4px}.box{background:#fff;border:1px solid #D5DAE3;border-radius:12px;padding:16px;margin:16px 0}.warn{color:#9A3412}.muted{color:#5B6270}`;
+// Admin assets are versioned in their URLs and cached for a year: bump
+// ASSET_V whenever CSS or the fonts change. Pages stay no-store (codes).
+const ASSET_V = 4;
+const CACHE_LONG = 'public, max-age=31536000, immutable';
+const FONTS = ['outfit-400.woff2', 'outfit-600.woff2'];
+
+// Black and white, following the OS: black on white by day, white on black
+// at night, greys between. Only badges and the two action buttons keep
+// colour: the Diorama looks' (crates/halo-core/src/look.rs), day and night.
+// Outfit, as Halo writes.
+const CSS = `@font-face{font-family:Outfit;font-weight:400;font-display:swap;src:url(/fonts/outfit-400.woff2?v=${ASSET_V}) format("woff2")}
+@font-face{font-family:Outfit;font-weight:600;font-display:swap;src:url(/fonts/outfit-600.woff2?v=${ASSET_V}) format("woff2")}
+:root{color-scheme:light dark;--page:#FFFFFF;--pane:#FFFFFF;--field:#FFFFFF;--hover:#F4F4F4;--ink:#000000;--muted:#5C5C5C;--line:#D9D9D9;
+--accent:#000000;--accent-ink:#FFFFFF;--tile:#0B0D12;--eyes:#F2F5FA;
+--primary:#4C58A8;--primary-ink:#FFFFFF;--unused:#3B4274;--green:#4A6A30;--red:#B0392D;--yellow:#86600E;--orange:#9E5418;--mono:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--page:#000000;--pane:#000000;--field:#0D0D0D;--hover:#161616;--ink:#FFFFFF;--muted:#A3A3A3;--line:#333333;
+--accent:#FFFFFF;--accent-ink:#000000;--tile:#F2F5FA;--eyes:#0B0D12;
+--primary:#E9AE3A;--primary-ink:#1B1D40;--unused:#7AB0FF;--green:#5FD068;--red:#FF6A5E;--yellow:#FFD76A;--orange:#F2B550}}
+*{box-sizing:border-box}
+body{margin:0;font:400 15px/22px Outfit,system-ui,sans-serif;color:var(--ink);background:var(--page)}
+h1{font-size:28px;line-height:34px;font-weight:600;margin:0}
+h2{font-size:18px;line-height:24px;font-weight:600;margin:0 0 16px}
+p{margin:0}a{color:var(--ink)}
+code,.mono,textarea{font-family:var(--mono)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)}
+.bar{background:var(--pane);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1200px;margin:0 auto;padding:0 24px;height:56px;display:flex;align-items:center;gap:24px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:600;color:var(--ink);text-decoration:none}
+.mark{width:28px;height:28px;display:block}.mark rect{fill:var(--eyes)}.mark .tile{fill:var(--tile)}
+.tabs{display:flex;gap:24px;align-self:stretch;flex:1}
+.tabs a{display:flex;align-items:center;color:var(--muted);text-decoration:none;font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a:hover{color:var(--ink)}.tabs a[aria-current]{color:var(--ink);border-bottom-color:var(--accent)}
+.link-btn{background:none;border:0;padding:8px 0;font:600 15px/22px Outfit,system-ui,sans-serif;color:var(--muted);cursor:pointer}.link-btn:hover{color:var(--ink)}
+main{max-width:1200px;margin:0 auto;padding:32px 24px 48px;display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+.head{display:grid;gap:4px}
+.card{background:var(--pane);border:1px solid var(--line);border-radius:20px;padding:24px}
+.flush{padding:0;overflow-x:auto}
+.error{background:var(--hover);color:var(--ink);border:1px solid var(--ink);border-radius:10px;padding:12px 16px;font-weight:600}
+.card>.error{margin-bottom:16px}
+label{display:grid;gap:4px;font-size:12px;line-height:16px;font-weight:600;letter-spacing:.02em;color:var(--muted)}
+input,select{font:400 15px/22px Outfit,system-ui,sans-serif;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:10px;height:40px;padding:0 12px;width:100%}
+button{font:600 15px/22px Outfit,system-ui,sans-serif;border-radius:10px;cursor:pointer}
+.primary{height:40px;padding:0 20px;border:0;background:var(--primary);color:var(--primary-ink)}
+.danger{height:32px;padding:0 12px;border:0;background:var(--red);color:var(--pane);font-size:13px}
+.make{display:grid;grid-template-columns:1fr 1fr 1fr 2fr auto;gap:12px;align-items:end}
+.make+p{margin-top:12px;font-size:14px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.stat{background:var(--pane);border:1px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:8px;justify-items:start}
+.stat b{font-size:28px;line-height:34px;font-weight:600;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;line-height:16px;font-weight:600;letter-spacing:.02em;color:var(--c,var(--muted));background:color-mix(in srgb,var(--c,var(--muted)) 14%,transparent)}
+.s-active,.a-create,.a-redeem,.a-reissue{--c:var(--green)}.s-unused{--c:var(--unused)}.s-expired{--c:var(--yellow)}
+.s-revoked,.a-login_failed,.a-login_blocked{--c:var(--red)}.a-revoke{--c:var(--orange)}.a-view_key{--c:var(--yellow)}.a-seat_move{--c:var(--unused)}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:14px;line-height:20px;font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;background:var(--pane);text-align:left;font-size:12px;line-height:16px;font-weight:600;letter-spacing:.02em;color:var(--muted);padding:12px 10px;border-bottom:1px solid var(--line)}
+th:first-child{border-top-left-radius:20px}th:last-child{border-top-right-radius:20px}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
+.wrap{white-space:normal;overflow-wrap:anywhere}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td,tr:has(details[open]) td{background:var(--hover)}
+td code{font-size:13px}
+.note{max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{padding:32px 24px;text-align:center}
+details summary{list-style:none;display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+details summary::-webkit-details-marker{display:none}
+.acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:flex-start}.acts details form{justify-items:end;text-align:right}.danger{white-space:nowrap}.acts form{margin:0}
+.ghost{height:32px;padding:0 12px;border:1px solid var(--line);background:none;color:var(--ink);font-size:13px;white-space:nowrap}.ghost:hover{border-color:var(--ink)}
+details[open] summary{border-color:var(--red);color:var(--red)}
+details form{display:grid;gap:4px;justify-items:start;margin-top:8px;font-size:12px}
+.once{border-left:4px solid var(--ink)}
+.once h2{display:flex;gap:8px;align-items:center;margin-bottom:4px}.once h2 svg{width:20px;height:20px;color:var(--ink);flex:none}
+.once ul{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px}
+.once li{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.once code{font-size:22px;line-height:30px;user-select:all;overflow-wrap:anywhere}
+.once label{margin-top:16px}
+textarea{font-size:14px;line-height:20px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:10px;padding:12px;width:100%;resize:vertical}
+.login{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login .card{width:min(360px,100%);display:grid;gap:16px;justify-items:center;text-align:center}
+.login .mark{width:56px;height:56px}.login form{display:grid;gap:12px;width:100%;text-align:left}.login .primary{width:100%}.login .error{width:100%;text-align:left}
+@media (max-width:640px){
+.bar-in{padding:0 16px;gap:16px}.brand span{display:none}
+main{padding:24px 16px 40px}
+.make{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}
+table,tbody,tr,td{display:block}thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+tr{padding:12px 16px;border-bottom:1px solid var(--line)}tr:last-child{border-bottom:0}
+td{display:flex;justify-content:space-between;gap:16px;padding:4px 0;border:0;background:none!important}
+td[data-label]::before{content:attr(data-label);flex:none;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.02em}
+.note,.wrap{max-width:none;white-space:normal;text-align:right}.once code{font-size:18px;line-height:26px}td:empty{display:none}
+}`;
+
+// Halo the mascot, as the app icon draws him (draw_mascot in tools/make_brand.py).
+const MARK = '<svg class="mark" aria-hidden="true" focusable="false" viewBox="0 0 100 100"><rect class="tile" x="4.7" y="4.7" width="90.6" height="90.6" rx="20.27"/><rect x="33.01" y="34.9" width="15.1" height="30.2" rx="7.55"/><rect x="51.89" y="34.9" width="15.1" height="30.2" rx="7.55"/></svg>';
+const WARN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 1 21h22L12 2Zm-1 7h2v6h-2V9Zm0 8h2v2h-2v-2Z"/></svg>';
 
 function page(title, inner) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><link rel="stylesheet" href="/admin.css"></head><body>${inner}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · Halo Pro keys</title><link rel="stylesheet" href="/admin.css?v=${ASSET_V}"></head><body>${inner}</body></html>`;
 }
 
 /**
@@ -387,6 +476,9 @@ export function createLicenseServer(opts) {
   const loginFails = new Limiter(LIMITS.loginFailures, LIMITS.loginWindowMs);
   const redeemByAddr = new Limiter(LIMITS.redeemPerMinute, 60_000);
   const redeemAll = new Limiter(LIMITS.redeemGlobalPerMinute, 60_000);
+  // The portal's two Outfit weights, read once (about 33 KB).
+  const fontDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
+  const fonts = new Map(FONTS.map((f) => [`/fonts/${f}`, fs.readFileSync(path.join(fontDir, f))]));
   const cookieFlags = `HttpOnly; SameSite=Strict; Path=/${opts.secureCookie ? '; Secure' : ''}`;
 
   const session = (req) => {
@@ -406,7 +498,8 @@ export function createLicenseServer(opts) {
     if (!isTailnetOrLoopback(peer)) return send(res, 403, 'Forbidden', { 'Content-Type': 'text/plain' });
     const url = new URL(req.url, 'http://admin');
     try {
-      if (req.method === 'GET' && url.pathname === '/admin.css') return send(res, 200, CSS, { 'Content-Type': 'text/css; charset=utf-8' });
+      if (req.method === 'GET' && url.pathname === '/admin.css') return send(res, 200, CSS, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': CACHE_LONG });
+      if (req.method === 'GET' && fonts.has(url.pathname)) return send(res, 200, fonts.get(url.pathname), { 'Content-Type': 'font/woff2', 'Cache-Control': CACHE_LONG });
       if (url.pathname === '/login') {
         if (req.method === 'GET') return send(res, 200, page('Sign in', loginForm()), { 'Content-Type': 'text/html; charset=utf-8' });
         if (req.method !== 'POST') return send(res, 405, 'Method not allowed', { 'Content-Type': 'text/plain' });
@@ -470,7 +563,7 @@ export function createLicenseServer(opts) {
         return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
       }
       if (req.method === 'GET' && url.pathname === '/') return send(res, 200, page('Keys', home(s, store)), { 'Content-Type': 'text/html; charset=utf-8' });
-      if (req.method === 'GET' && url.pathname === '/audit') return send(res, 200, page('Audit', auditPage(store)), { 'Content-Type': 'text/html; charset=utf-8' });
+      if (req.method === 'GET' && url.pathname === '/audit') return send(res, 200, page('Audit', auditPage(s, store)), { 'Content-Type': 'text/html; charset=utf-8' });
       return send(res, 404, 'Not found', { 'Content-Type': 'text/plain' });
     } catch (e) {
       if (e instanceof UserError) return send(res, 400, 'Bad request', { 'Content-Type': 'text/plain' });
@@ -483,47 +576,68 @@ export function createLicenseServer(opts) {
     return t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') : '';
   }
 
+  const csrfField = (s) => `<input type="hidden" name="csrf" value="${esc(s.csrf)}">`;
+
+  function bar(s, current) {
+    const tab = (href, name) => `<a href="${href}"${current === name ? ' aria-current="page"' : ''}>${name}</a>`;
+    return `<header class="bar"><div class="bar-in"><a class="brand" href="/">${MARK}<span>Halo Pro keys</span></a>
+<nav class="tabs" aria-label="Pages">${tab('/', 'Keys')}${tab('/audit', 'Audit')}</nav>
+<form method="post" action="/logout">${csrfField(s)}<button class="link-btn">Sign out</button></form></div></header>`;
+  }
+
   function home(s, st, codes, error, viewed = false) {
     const t = now();
+    const STATES = ['active', 'unused', 'expired', 'lapsed', 'revoked'];
+    const counts = Object.fromEntries(STATES.map((k) => [k, 0]));
+    for (const l of st.data.licenses) counts[stateOf(l, t)]++;
     const rows = [...st.data.licenses]
       .sort((a, b) => b.created_at - a.created_at)
       .slice(0, 500)
       .map((l) => {
         const state = stateOf(l, t);
-        const hidden = `<input type="hidden" name="csrf" value="${esc(s.csrf)}"><input type="hidden" name="id" value="${esc(l.id)}">`;
-        const view = l.code_sealed ? `<form method="post" action="/view">${hidden}<button>View key</button></form>` : '';
-        const revoke = state === 'revoked' ? '' : `<form method="post" action="/revoke">${hidden}<button>Revoke</button></form>`;
-        const seat = l.device_sha256 ? `${esc(l.device_sha256.slice(0, 12))} #${l.seat ?? 0}` : '';
-        return `<tr><td><code>${esc(l.id.slice(0, 8))}</code></td><td>${l.kind === 'pro' ? 'Pro' : 'Trial'}</td><td>${l.days ?? '∞'}</td><td>${esc(state)}</td><td>${homeTimes(l.created_at)}</td><td>${homeTimes(l.redeemed_at)}</td><td>${homeTimes(l.expires_at)}</td><td>${seat}</td><td>${esc(l.note)}</td><td>${view}${revoke}</td></tr>`;
+        const hidden = `${csrfField(s)}<input type="hidden" name="id" value="${esc(l.id)}">`;
+        const view = l.code_sealed ? `<form method="post" action="/view">${hidden}<button class="ghost">View key</button></form>` : '';
+        const revoke = state === 'revoked' ? '' : `<details><summary>Revoke…</summary><form method="post" action="/revoke">${hidden}<button class="danger">Revoke for good</button><span class="muted">Can't be undone.</span></form></details>`;
+        const seat = l.device_sha256 ? `<code>${esc(l.device_sha256.slice(0, 12))}</code> #${l.seat ?? 0}` : '';
+        return `<tr><td data-label="Id"><code>${esc(l.id.slice(0, 8))}</code></td><td data-label="Kind">${l.kind === 'pro' ? 'Pro' : 'Trial'}</td><td data-label="Days">${l.days ?? '∞'}</td><td data-label="State"><span class="badge s-${state}">${state}</span></td><td data-label="Made">${homeTimes(l.created_at)}</td><td data-label="Redeemed">${homeTimes(l.redeemed_at)}</td><td data-label="Ends">${homeTimes(l.expires_at)}</td><td data-label="Seat">${seat}</td><td data-label="Note" class="note" title="${esc(l.note)}">${esc(l.note)}</td><td>${view || revoke ? `<div class="acts">${view}${revoke}</div>` : ''}</td></tr>`;
       })
       .join('');
     const made = codes?.length
-      ? `<div class="box"><p class="warn">${viewed ? '<b>This key is a secret.</b> Viewing it is in the audit log.' : '<b>New keys.</b> View key shows them again later.'}</p>${codes.map((c) => `<p><code>${esc(c.code)}</code> <span class="muted">${esc(c.id.slice(0, 8))}</span></p>`).join('')}</div>`
+      ? `<section class="card once" role="alert"><h2>${WARN_ICON}${viewed ? 'This key is a secret.' : 'New keys.'}</h2><p class="muted">${viewed ? 'Viewing it is in the audit log.' : 'View key shows them again later.'} Click a code to select it.</p>
+<ul>${codes.map((c) => `<li><code>${esc(c.code)}</code><span class="muted mono">${esc(c.id.slice(0, 8))}</span></li>`).join('')}</ul>${
+          codes.length > 1 ? `<label>All ${codes.length} codes, one per line<textarea readonly rows="${Math.min(codes.length, 10)}">${codes.map((c) => esc(c.code)).join('\n')}</textarea></label>` : ''
+        }</section>`
       : '';
-    return `<h1>Halo Pro keys</h1>
-<p class="muted">Internal. Reachable on the tailnet only. <a href="/audit">Audit log</a></p>
-${error ? `<p class="warn">${esc(error)}</p>` : ''}${made}
-<div class="box"><form method="post" action="/keys"><input type="hidden" name="csrf" value="${esc(s.csrf)}">
-<label>Kind <select name="kind"><option value="pro">Halo Pro</option><option value="trial">Trial Pro</option></select></label>
-<label>Lasts (days from redemption; empty = no end) <input name="days" inputmode="numeric" size="6"></label>
-<label>How many <input name="count" value="1" inputmode="numeric" size="4"></label>
-<label>Note <input name="note" maxlength="${LIMITS.noteMax}"></label>
-<button>Make keys</button></form>
-<p class="muted">Each key is one seat: one PC at a time. Activating it on another PC moves the seat there and the first PC drops to Free at its next daily check. Unredeemed keys lapse after ${LIMITS.redeemWindowDays} days.</p></div>
-<table><tr><th>Id</th><th>Kind</th><th>Days</th><th>State</th><th>Made</th><th>Redeemed</th><th>Ends</th><th>Seat (PC #)</th><th>Note</th><th></th></tr>${rows}</table>
-<form method="post" action="/logout"><input type="hidden" name="csrf" value="${esc(s.csrf)}"><button>Sign out</button></form>`;
+    const table = rows
+      ? `<table><thead><tr><th>Id</th><th>Kind</th><th>Days</th><th>State</th><th>Made</th><th>Redeemed</th><th>Ends</th><th>Seat (PC #)</th><th>Note</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="empty muted">No keys yet. Make the first one above.</p>';
+    return `${bar(s, 'Keys')}<main>${made}
+<div class="head"><h1>Keys</h1><p class="muted">Internal. Reachable on the tailnet only.</p></div>
+<div class="stats">${STATES.map((k) => `<div class="stat"><span class="badge s-${k}">${k}</span><b>${counts[k]}</b></div>`).join('')}</div>
+<section class="card"><h2>Make keys</h2>${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}<form method="post" action="/keys" class="make">${csrfField(s)}
+<label>Kind<select name="kind"><option value="pro">Halo Pro</option><option value="trial">Trial Pro</option></select></label>
+<label>Days<input name="days" type="number" min="1" max="${LIMITS.maxDays}" placeholder="No end"></label>
+<label>How many<input name="count" type="number" min="1" max="${LIMITS.keysPerBatch}" value="1"></label>
+<label>Note<input name="note" maxlength="${LIMITS.noteMax}"></label>
+<button class="primary">Make keys</button></form>
+<p class="muted">Days count from redemption; leave empty for no end. Each key is one seat: one PC at a time. Activating it on another PC moves the seat there and the first PC drops to Free at its next daily check. Unredeemed keys lapse after ${LIMITS.redeemWindowDays} days.</p></section>
+<section class="card flush">${table}</section></main>`;
   }
 
-  function auditPage(st) {
+  function auditPage(s, st) {
     const rows = st
       .auditTail()
-      .map((e) => `<tr><td>${esc(e.at)}</td><td>${esc(e.action)}</td><td>${esc(e.actor ?? e.peer ?? '')}</td><td>${esc((e.id ?? (e.ids ?? []).join(', ')).toString().slice(0, 200))}</td><td>${esc(e.kind ?? '')}</td></tr>`)
+      .map((e) => `<tr><td data-label="When">${esc(e.at)}</td><td data-label="What"><span class="badge a-${esc(String(e.action).replace(/[^a-z_]/g, ''))}">${esc(e.action)}</span></td><td data-label="Who">${esc(e.actor ?? e.peer ?? '')}</td><td data-label="License" class="wrap"><code>${esc((e.id ?? (e.ids ?? []).join(', ')).toString().slice(0, 200))}</code></td><td data-label="Kind">${esc(e.kind ?? '')}</td></tr>`)
       .join('');
-    return `<h1>Audit</h1><p><a href="/">Keys</a></p><table><tr><th>When</th><th>What</th><th>Who</th><th>License</th><th>Kind</th></tr>${rows}</table>`;
+    const table = rows
+      ? `<table><thead><tr><th>When</th><th>What</th><th>Who</th><th>License</th><th>Kind</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="empty muted">No entries yet.</p>';
+    return `${bar(s, 'Audit')}<main><div class="head"><h1>Audit</h1><p class="muted">The newest 200 entries, newest first. Never a code, a token or a secret.</p></div>
+<section class="card flush">${table}</section></main>`;
   }
 
   function loginForm(error) {
-    return `<h1>Halo Pro keys</h1>${error ? `<p class="warn">${esc(error)}</p>` : ''}<form method="post" action="/login"><label>Admin token <input type="password" name="token" autocomplete="current-password" autofocus></label> <button>Sign in</button></form>`;
+    return `<main class="login"><div class="card">${MARK}<h1>Halo Pro keys</h1>${error ? `<p class="error" role="alert">${esc(error)}</p>` : ''}<form method="post" action="/login"><label>Admin token<input type="password" name="token" autocomplete="current-password" autofocus></label><button class="primary">Sign in</button></form><p class="muted">Internal. Reachable on the tailnet only.</p></div></main>`;
   }
 
   async function redeemApi(req, res) {

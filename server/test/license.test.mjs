@@ -192,6 +192,33 @@ test('the portal needs the token, rate-limits sign-in, checks CSRF and audits', 
   }
 });
 
+test('the portal serves its two fonts and its CSS, cached, and nothing else from disk', async () => {
+  const srv = createLicenseServer({ dataDir: tempDir(), privateKey: key(), adminToken: TOKEN });
+  const s = await listen(srv.admin);
+  try {
+    for (const p of ['/fonts/outfit-400.woff2', '/fonts/outfit-600.woff2?v=1', '/admin.css?v=1']) {
+      const r = await call(s, 'GET', p);
+      assert.equal(r.status, 200, p);
+      assert.match(r.headers.get('cache-control'), /max-age=31536000, immutable/, p);
+    }
+    assert.equal((await call(s, 'GET', '/fonts/outfit-400.woff2')).headers.get('content-type'), 'font/woff2');
+    // Anything else is never a file: signed out, the sign-in page; signed in, 404.
+    const login = await call(s, 'POST', '/login', { body: `token=${TOKEN}`, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    for (const p of ['/fonts/outfit-700.woff2', '/fonts/../license-server.mjs', '/fonts/%2e%2e/license-server.mjs', '/fonts/']) {
+      assert.equal((await call(s, 'GET', p)).status, 303, p);
+      assert.equal((await call(s, 'GET', p, { headers: { cookie } })).status, 404, p);
+    }
+    const csp = (await call(s, 'GET', '/login')).headers.get('content-security-policy');
+    assert.match(csp, /font-src 'self'/);
+    assert.match(csp, /default-src 'none'/);
+    assert.doesNotMatch(csp, /script-src/);
+    assert.equal((await call(s, 'GET', '/login')).headers.get('cache-control'), 'no-store');
+  } finally {
+    s.close();
+  }
+});
+
 test('the redeem API takes JSON only and rate-limits', async () => {
   const srv = createLicenseServer({ dataDir: tempDir(), privateKey: key(), adminToken: TOKEN });
   const [k] = makeKeys(srv.store, { kind: 'pro', days: '', count: 1, actor: 't' });
