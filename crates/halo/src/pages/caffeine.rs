@@ -21,12 +21,15 @@
 //! and where the labels go, in the island's look.
 //!
 //! Nothing here moves by itself past the page's entrance as it opens
-//! (`pages::entrance`), and the page draws only when the app does. The field's dots (72 columns by 22 rows) are painted into one
+//! (`pages::entrance`: the dots run out from the left, the drinks' dots pop,
+//! the list's rows rise in one after another and Add a drink pops), or Add a
+//! drink's step changing (its chips pop in, row by row), and the page draws
+//! only when the app does. The field's dots (72 columns by 22 rows) are painted into one
 //! picture when what they show changes (a drink added, moved, removed or
 //! picked, the settings, the day, the theme or the display's scale), so a
 //! frame draws them as one image.
 
-use super::entrance::Entrance;
+use super::entrance::{hover, rise, scaled, still as motion_off, Entrance};
 use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
@@ -129,8 +132,10 @@ pub struct CaffeineUi {
     /// row into view on the next frame (a drink just added).
     scroll: f32,
     reveal: bool,
-    /// Add a drink, while it is open.
+    /// Add a drink, while it is open, and when its step last changed (its
+    /// chips pop in from then; none while motion is off).
     sheet: Option<Sheet>,
+    sheet_at: Option<f64>,
     /// Still pictures (the self-test's, the Mac renders'): the sheet leaves
     /// the keyboard alone.
     still: bool,
@@ -968,6 +973,7 @@ fn list(ui: &mut Ui, st: &mut AppState, lay: &Layout, c: &Chart, pick: Option<u3
     let day: Vec<Drink> = st.store.caffeine.day(c.today.start).cloned().collect();
     let card = super::card::pill_card(st, lay.area);
     let glass = ui.c.look().material == Material::Glass;
+    let e = Entrance::of(ui, st, PageKind::Caffeine);
     let mut act = None;
     if day.is_empty() {
         ui.c.text("Nothing yet today.", Rect::new(r.x + ROW_PAD, r.y, (r.w - 2.0 * ROW_PAD).max(0.0), 20.0), &TextStyle::footnote().color(palette::TEXT_DIM));
@@ -981,28 +987,31 @@ fn list(ui: &mut Ui, st: &mut AppState, lay: &Layout, c: &Chart, pick: Option<u3
                 s.scroll = s.scroll.clamp((top + ROW_H - r.h).max(0.0), top).clamp(0.0, max);
             }
         }
+        let scroll = s.scroll;
         let clip = Rect::new(r.x - 2.0, r.y, r.w + 4.0, r.h);
         ui.c.clip(clip);
         for (i, d) in day.iter().enumerate() {
-            let row = Rect::new(r.x, r.y + i as f32 * ROW_H - s.scroll, r.w, ROW_H);
+            let row = Rect::new(r.x, r.y + i as f32 * ROW_H - scroll, r.w, ROW_H);
             if row.bottom() <= r.y || row.y >= r.bottom() {
                 continue;
             }
-            if let Some(a) = draw_row(ui, card, row, r, d, Some(d.id) == pick, c.late.contains(&d.id)) {
+            let k = e.pop(0.12 + 0.05 * i.min(6) as f32);
+            if let Some(a) = rise(ui, k, |ui| draw_row(ui, st, card, row, r, d, Some(d.id) == pick, c.late.contains(&d.id))) {
                 act = Some((d.id, a));
             }
         }
         // The list fades out at an edge it scrolls on past.
-        if !glass && s.scroll > 0.5 {
+        if !glass && scroll > 0.5 {
             fade(ui, Rect::new(clip.x, r.y, clip.w, 12.0), true);
         }
-        if !glass && s.scroll < max - 0.5 {
+        if !glass && scroll < max - 0.5 {
             fade(ui, Rect::new(clip.x, r.bottom() - 14.0, clip.w, 14.0), false);
         }
         ui.c.unclip();
     }
-    if ui.pill(wid("caffeine.add"), lay.add, "Add a drink", Some(Icon::Plus), PillStyle::Primary(st.accent)).clicked {
+    if scaled(ui, lay.add.center(), e.pop(0.2), |ui| ui.pill(wid("caffeine.add"), lay.add, "Add a drink", Some(Icon::Plus), PillStyle::Primary(st.accent))).clicked {
         st.ui.caffeine.sheet = Some(Sheet::new(now, st.settings.caffeine.bean));
+        st.ui.caffeine.sheet_at = (!motion_off(st)).then_some(ui.now);
     }
     match act {
         Some((id, RowAct::Pick)) => st.ui.caffeine.pick = Some(id),
@@ -1014,14 +1023,18 @@ fn list(ui: &mut Ui, st: &mut AppState, lay: &Layout, c: &Chart, pick: Option<u3
 /// One of the day's drinks in the list (`r`, cut to the list's `clip`):
 /// its time, its title over its detail, its mg and a remove button; lit
 /// while picked. Its time is blue while picked, orange while late for bed.
-fn draw_row(ui: &mut Ui, card: Option<(Rect, f32)>, r: Rect, clip: Rect, d: &Drink, picked: bool, late: bool) -> Option<RowAct> {
+/// Its hover fades in (`entrance::hover`).
+#[allow(clippy::too_many_arguments)]
+fn draw_row(ui: &mut Ui, st: &mut AppState, card: Option<(Rect, f32)>, r: Rect, clip: Rect, d: &Drink, picked: bool, late: bool) -> Option<RowAct> {
     let n = u64::from(d.id);
     let bg = r.inset(0.0, 1.0);
-    let resp = ui.button(wid_n("caffeine.row", n), intersect(bg, clip));
+    let id = wid_n("caffeine.row", n);
+    let resp = ui.button(id, intersect(bg, clip));
+    let h = hover(ui, st, id, resp.hovered || resp.pressed);
     if picked {
         super::card::fill_box(ui, card, bg, 9.0, Color::white(0.10));
-    } else if resp.hovered || resp.pressed {
-        super::card::fill_box(ui, card, bg, 9.0, Color::white(if resp.pressed { 0.08 } else { 0.05 }));
+    } else if h > 0.0 {
+        super::card::fill_box(ui, card, bg, 9.0, Color::white(if resp.pressed { 0.08 } else { 0.05 * h }));
     }
     let rm_r = Rect::from_center(Point::new(r.right() - 11.0, r.center().y), 20.0, 20.0);
     let rm = ui.button(wid_n("caffeine.remove", n), intersect(rm_r, clip));
@@ -1227,12 +1240,18 @@ fn sheet(ui: &mut Ui, st: &mut AppState, area: Rect, now: LocalMinute) {
         }
     }
     let mut drawn = Act::Stay;
+    let kind_before = sh.kind;
+    let e = Entrance::at(ui, st.ui.caffeine.sheet_at);
     match sh.kind {
-        None => kinds(ui, &mut sh, area, &mut drawn),
+        None => kinds(ui, &mut sh, area, e, &mut drawn),
         Some(kind) => details(ui, st, &mut sh, kind, area, now, still, &mut drawn),
     }
     if act == Act::Stay {
         act = drawn;
+    }
+    // A new step pops its chips in again.
+    if sh.kind != kind_before && !motion_off(st) && !still {
+        st.ui.caffeine.sheet_at = Some(ui.now);
     }
     match act {
         Act::Stay => st.ui.caffeine.sheet = Some(sh),
@@ -1259,10 +1278,13 @@ fn buttons(area: Rect) -> (Rect, Rect) {
 }
 
 /// The sheet's first step: what kind of drink.
-fn kinds(ui: &mut Ui, sh: &mut Sheet, area: Rect, act: &mut Act) {
+/// The chips pop in row by row as the step opens (`e`).
+fn kinds(ui: &mut Ui, sh: &mut Sheet, area: Rect, e: Entrance, act: &mut Act) {
     ui.c.text("Add a drink", Rect::new(area.x, area.y, area.w, 22.0), &TextStyle::headline());
+    let cols = if area.w >= NARROW { KIND_COLS } else { KIND_COLS_NARROW };
     for (i, (kind, r)) in Kind::PICK.iter().zip(kind_grid(area)).enumerate() {
-        if ui.pill(wid_n("caffeine.kind", i as u64), r, kind.name(), None, PillStyle::Neutral).clicked {
+        let k = e.pop(0.03 * (i / cols + i % cols) as f32);
+        if scaled(ui, r.center(), k, |ui| ui.pill(wid_n("caffeine.kind", i as u64), r, kind.name(), None, PillStyle::Neutral)).clicked {
             sh.pick(*kind);
         }
     }
