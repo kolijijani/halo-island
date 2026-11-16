@@ -21,13 +21,19 @@
 //! Show over games has its own tab, Games (`pages::games`), which draws
 //! with this page's rings, charts and rows.
 //!
-//! As the page opens (`pages::entrance`) the rings, gauges and the
-//! battery's charge draw to their readings; the numbers show at once.
+//! As the page opens (`pages::entrance`) the strip's chips rise in one
+//! after another, their minute running out from the left, then the columns
+//! fill top to bottom ([`cascade`]): section rules grow out from their
+//! titles, the rings, gauges and the battery's charge draw to their
+//! readings, charts run out from the left, bars rise and dots and app icons
+//! pop. Picking a module glides the selection to its chip and draws the
+//! columns in again. The numbers show at once; nothing moves at rest.
 
-use super::entrance::Entrance;
+use super::entrance::{hover, rise, scaled, still, Entrance};
 use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
+use halo_core::spring::bouncy_at;
 use crate::icons::Icon;
 use crate::state::AppState;
 use crate::ui::{wid_n, Ui};
@@ -42,18 +48,33 @@ use halo_core::sysmon::{
 const HEIGHT: f32 = 256.0;
 
 thread_local! {
-    /// How far the page's arcs and bars are drawn this frame: under 1 only
-    /// while the page's entrance plays ([`draw`] sets it).
-    static SWEEP: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+    /// The entrance the page's shapes follow this frame and the top of the
+    /// part they cascade down from ([`draw`] sets it; Games sets its own).
+    static ENTRANCE: std::cell::Cell<(Entrance, f32)> = std::cell::Cell::new((Entrance::default(), 0.0));
 }
 
+/// What the page's rings, bars, dots and charts draw with this frame: its
+/// entrance and the top it cascades down from (outside one, all at rest).
+pub(super) fn set_entrance(e: Entrance, top: f32) {
+    ENTRANCE.with(|s| s.set((e, top)));
+}
+
+/// How far the rings, gauges and the battery's charge are drawn.
 fn sweep() -> f32 {
-    SWEEP.with(std::cell::Cell::get)
+    ENTRANCE.with(std::cell::Cell::get).0.draw(0.08, 0.7)
 }
 
-/// How far the rings and gauges draw this frame (the Games page sets its own).
-pub(super) fn set_sweep(k: f32) {
-    SWEEP.with(|s| s.set(k));
+/// A part `y` down the page: it starts a little after the parts above it
+/// (and `then` s after that, up to 0.15, for one of a row of parts), so the
+/// page fills top to bottom. `dur` (up to 0.6 s) None pops it, else draws it
+/// along. All of it has landed by `entrance::END`.
+fn cascade(y: f32, then: f32, dur: Option<f32>) -> f32 {
+    let (e, top) = ENTRANCE.with(std::cell::Cell::get);
+    let delay = 0.08 + 0.27 * ((y - top) / HEIGHT).clamp(0.0, 1.0) + then.min(0.15);
+    match dur {
+        Some(d) => e.draw(delay, d.min(0.6)),
+        None => e.pop(delay),
+    }
 }
 /// The module strip, and the gap under it.
 const STRIP_H: f32 = 40.0;
@@ -144,7 +165,14 @@ fn modules(st: &AppState) -> Vec<Module> {
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // Fixed layout height: the island's spring may still be opening.
     let area = Rect::new(area.x, area.y, area.w, HEIGHT);
-    set_sweep(Entrance::of(ui, st, PageKind::System).draw(0.08, 0.7));
+    let e = Entrance::of(ui, st, PageKind::System);
+    // A module picked after the page opened draws the columns in again (the strip stays).
+    let body_e = match (st.ui.system_switch, st.ui.entrance) {
+        (Some((_, at)), Some((PageKind::System, opened))) if at <= opened => e,
+        (Some((_, at)), _) => Entrance::at(ui, Some(at)),
+        _ => e,
+    };
+    set_entrance(e, area.y);
     if let Some(r) = &st.system.latest {
         st.ui.system_gpu = r.gpu.is_some();
         // Only the page's own (full) readings, the ones with app lists, say
@@ -157,8 +185,9 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // CPU stands in while the chosen module isn't there (no reading yet, a
     // battery that didn't answer once); the choice itself is kept.
     let module = if mods.contains(&st.ui.system_module) { st.ui.system_module } else { Module::Cpu };
-    draw_strip(ui, st, &mods, module, Rect::new(area.x, area.y, area.w, STRIP_H));
+    draw_strip(ui, st, &mods, module, Rect::new(area.x, area.y, area.w, STRIP_H), e);
     let body = Rect::new(area.x, area.y + STRIP_H + STRIP_GAP, area.w, HEIGHT - STRIP_H - STRIP_GAP);
+    set_entrance(body_e, body.y);
     let Some(r) = st.system.latest.clone() else {
         ui.c.text("Reading…", body, &TextStyle::footnote().color(palette::TEXT_FAINT).center());
         return;
@@ -248,30 +277,56 @@ fn chip_widths(ui: &mut Ui, mods: &[Module], avail: f32) -> Vec<f32> {
     needs.iter().map(|w| w + share).collect()
 }
 
-fn draw_strip(ui: &mut Ui, st: &mut AppState, mods: &[Module], module: Module, r: Rect) {
+/// The strip: the chips rise in one after another as the page opens, a
+/// hover fades in, and the selection glides from the chip picked before
+/// (`PageUiState::system_switch`) on the spring.
+fn draw_strip(ui: &mut Ui, st: &mut AppState, mods: &[Module], module: Module, r: Rect, e: Entrance) {
     let n = mods.len().max(1) as f32;
     let widths = chip_widths(ui, mods, (r.w - CHIP_GAP * (n - 1.0)).max(0.0));
     let accent = st.accent;
-    let mut x = r.x;
-    for (i, (&m, &w)) in mods.iter().zip(&widths).enumerate() {
-        let chip = Rect::new(x, r.y, w, r.h);
-        x += w + CHIP_GAP;
-        let resp = ui.button(wid_n("system-module", i as u64), chip);
+    let chips: Vec<Rect> = widths
+        .iter()
+        .scan(r.x, |x, &w| {
+            let chip = Rect::new(*x, r.y, w, r.h);
+            *x += w + CHIP_GAP;
+            Some(chip)
+        })
+        .collect();
+    let at = |m: Module| mods.iter().position(|x| *x == m).map(|i| chips[i]);
+    // The selection, gliding from the chip picked before.
+    let glide = st.ui.system_switch.map(|(from, t0)| (from, (ui.now - t0) as f32)).filter(|(_, t)| *t < 0.6);
+    if glide.is_some() {
+        ui.request_anim();
+    }
+    if let Some(to) = at(module) {
+        let sel = glide.and_then(|(from, t)| at(from).map(|f| Rect::lerp(f, to, bouncy_at(t)))).unwrap_or(to);
+        let k = e.pop(0.04 * mods.iter().position(|x| *x == module).unwrap_or(0) as f32);
+        rise(ui, k, |ui| ui.c.fill_rrect(sel, 10.0, Color::white(0.15)));
+    }
+    for (i, (&m, &chip)) in mods.iter().zip(&chips).enumerate() {
+        let id = wid_n("system-module", i as u64);
+        let resp = ui.button(id, chip);
         let selected = m == module;
-        let fill = if selected {
-            Color::white(0.15)
-        } else if resp.hovered {
-            Color::white(0.11)
-        } else {
-            palette::SURFACE
-        };
-        ui.c.fill_rrect(chip, 10.0, fill);
+        let h = if selected { 0.0 } else { hover(ui, st, id, resp.hovered) };
+        rise(ui, e.pop(0.04 * i as f32), |ui| {
+            if !selected {
+                ui.c.fill_rrect(chip, 10.0, Color::lerp(palette::SURFACE, Color::white(0.11), h));
+            }
+            // A hairline of the accent along the chosen chip's foot.
+            if selected {
+                ui.c.fill_rrect(Rect::new(chip.x + 12.0, chip.bottom() - 2.5, chip.w - 24.0, 1.5), 0.75, accent.with_alpha(0.7));
+            }
+        });
         if resp.clicked && !selected {
+            st.ui.system_switch = (!still(st)).then_some((module, ui.now));
             st.ui.system_module = m;
         }
         let (value, spark) = chip_value(st, m);
         // The minute behind the value, faint under the text (inside the rounded corners).
         let band = Rect::new(chip.x + 6.0, chip.y + chip.h * 0.45, chip.w - 12.0, chip.h * 0.55 - 4.0);
+        // As the page opens it runs out from the left, after its chip.
+        let run = e.draw(0.12 + 0.04 * i as f32, 0.5);
+        ui.c.clip(Rect::new(chip.x, chip.y, chip.w * run, chip.h));
         match spark {
             Some(Spark::Share(s)) => plot(ui, &s, 1.0, accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
             Some(Spark::Rate(s)) => plot(ui, &s, nice_ceiling(s.max()), accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
@@ -283,6 +338,7 @@ fn draw_strip(ui: &mut Ui, st: &mut AppState, mods: &[Module], module: Module, r
             }
             None => {}
         }
+        ui.c.unclip();
         let ink = if selected { palette::TEXT } else { palette::TEXT_DIM };
         ui.c.text(m.title(), Rect::new(chip.x + 10.0, chip.y + 4.0, chip.w - 20.0, 14.0), &TextStyle::caption().weight(Weight::Semibold).color(ink));
         ui.c.text(&value, Rect::new(chip.x + 10.0, chip.y + 17.0, chip.w - 20.0, 18.0), &TextStyle::body().weight(Weight::Semibold).tabular());
@@ -560,7 +616,8 @@ fn drive_row(ui: &mut Ui, d: &Drive, r: Rect) {
     } else {
         IN_C
     };
-    ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * used).max(bar.h), bar.h), 3.0, fill);
+    let k = cascade(r.y, 0.0, Some(0.6));
+    ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * used * k).max(bar.h), bar.h), 3.0, fill.with_alpha(k.min(1.0)));
 }
 
 // ------------------------------------------------------------------ network
@@ -953,7 +1010,7 @@ fn pressure_gauge(ui: &mut Ui, c: Point, d: f32, p: f32) {
     for (a, b, color) in zones {
         ui.c.arc(c, radius, 0.75 + 0.5 * a, 0.5 * (b - a) - 0.012, color, GAUGE_W - 1.0);
     }
-    let angle = (0.75 + 0.5 * p.clamp(0.0, 1.0)) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+    let angle = (0.75 + 0.5 * p.clamp(0.0, 1.0) * sweep()) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
     let tip = Point::new(c.x + (radius - 4.0) * angle.cos(), c.y + (radius - 4.0) * angle.sin());
     ui.c.line(c, tip, palette::TEXT, 2.0);
     ui.c.fill_circle(c, 3.0, palette::TEXT);
@@ -982,7 +1039,8 @@ impl Row {
     pub(super) fn draw(&self, ui: &mut Ui, r: Rect) {
         let mut x = r.x;
         if let Some(c) = self.dot {
-            ui.c.fill_rrect(Rect::new(r.x, r.center().y - 4.0, 8.0, 8.0), 2.0, c);
+            let dot = Point::new(r.x + 4.0, r.center().y);
+            scaled(ui, dot, cascade(r.y, 0.0, None), |ui| ui.c.fill_rrect(Rect::from_center(dot, 8.0, 8.0), 2.0, c));
             x += 14.0;
         }
         let vst = TextStyle::footnote().tabular().right();
@@ -1014,8 +1072,10 @@ pub(super) fn separator(ui: &mut Ui, r: Rect, title: &str) {
     let cy = (r.center().y).round();
     let lw = ((r.w - tw) / 2.0 - 8.0).max(0.0);
     if lw >= 6.0 {
-        ui.c.fill_rect(Rect::new(r.x, cy, lw, px), RULE_C);
-        ui.c.fill_rect(Rect::new(r.right() - lw, cy, lw, px), RULE_C);
+        // As the page opens they grow out from the title.
+        let k = lw * cascade(r.y, 0.0, Some(0.5));
+        ui.c.fill_rect(Rect::new(r.x + lw - k, cy, k, px), RULE_C);
+        ui.c.fill_rect(Rect::new(r.right() - lw, cy, k, px), RULE_C);
     }
     ui.c.text(title, r, &st);
 }
@@ -1040,9 +1100,9 @@ fn processes(ui: &mut Ui, st: &mut AppState, r: Rect, apps: &[AppUse], value: im
         return;
     }
     let value_st = TextStyle::footnote().tabular().right().color(palette::TEXT_DIM);
-    for (a, row) in apps.iter().zip(stack(rest, PROC_H)) {
+    for (i, (a, row)) in apps.iter().zip(stack(rest, PROC_H)).enumerate() {
         let icon = Rect::new(row.x, row.center().y - APP_ICON / 2.0, APP_ICON, APP_ICON);
-        draw_app_icon(ui, st, a, icon);
+        scaled(ui, icon.center(), cascade(row.y, 0.03 * i as f32, None), |ui| draw_app_icon(ui, st, a, icon));
         let v = value(a);
         let vw = ui.c.measure(&v, &value_st, 200.0).0;
         ui.c.text(&v, Rect::new(row.right() - vw - 2.0, row.y, vw + 2.0, row.h), &value_st);
@@ -1077,7 +1137,8 @@ fn legend_row(ui: &mut Ui, r: Rect, items: &[(Option<Color>, String)]) {
     let mut x = r.x;
     for (dot, text) in items {
         if let Some(c) = dot {
-            ui.c.fill_circle(Point::new(x + 3.5, r.center().y), 3.0, *c);
+            let p = Point::new(x + 3.5, r.center().y);
+            scaled(ui, p, cascade(r.y, 0.0, None), |ui| ui.c.fill_circle(p, 3.0, *c));
             x += 10.0;
         }
         let tw = ui.c.measure(text, &st, r.w).0;
@@ -1093,9 +1154,13 @@ fn legend_row(ui: &mut Ui, r: Rect, items: &[(Option<Color>, String)]) {
 
 pub(super) fn chart_box(ui: &mut Ui, r: Rect) {
     ui.c.fill_rrect(r, BOX_R, BOX_C);
+    // As the page opens the grid lines draw along, one after another.
     for i in 1..4 {
         let y = (r.y + r.h * i as f32 / 4.0).round();
-        ui.c.line(Point::new(r.x + 4.0, y), Point::new(r.right() - 4.0, y), GRID_C, 1.0);
+        let k = cascade(r.y, 0.04 * i as f32, Some(0.5));
+        if k > 0.0 {
+            ui.c.line(Point::new(r.x + 4.0, y), Point::new(r.x + 4.0 + (r.w - 8.0) * k, y), GRID_C, 1.0);
+        }
     }
 }
 
@@ -1132,8 +1197,10 @@ fn plot_from(ui: &mut Ui, s: &Series, top: f32, color: Color, r: Rect, fill: Fil
     };
     let values: Vec<f32> = s.values().collect();
     // Kept to its box: a stroke's cap may otherwise reach past the last point
-    // (Wine's renderer draws a few pixels on along the line).
-    ui.c.clip(Rect::new(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0));
+    // (Wine's renderer draws a few pixels on along the line). As the page
+    // opens the box uncovers from the left.
+    let run = cascade(r.y, 0.07, Some(0.6));
+    ui.c.clip(Rect::new(r.x - 1.0, r.y - 1.0, (r.w + 2.0) * run, r.h + 2.0));
     let mut i = 0;
     while i < values.len() {
         if !values[i].is_finite() {
@@ -1195,8 +1262,10 @@ fn bar_chart(ui: &mut Ui, r: Rect, bars: &[(f32, Color)]) {
         let x = inner.x + i as f32 * (bw + gap);
         shapes[0].1.extend([Seg::MoveTo(x, inner.bottom()), Seg::LineTo(x, inner.y), Seg::LineTo(x + bw, inner.y), Seg::LineTo(x + bw, inner.bottom()), Seg::Close]);
     }
+    let n_f = n as f32;
     for (i, &(v, c)) in bars.iter().enumerate() {
-        let h = (v.clamp(0.0, 1.0) * inner.h).max(1.5);
+        // As the page opens they rise, left to right.
+        let h = (v.clamp(0.0, 1.0) * inner.h * cascade(r.y, 0.15 * i as f32 / n_f, Some(0.5))).max(1.5);
         let (x, top, bottom) = (inner.x + i as f32 * (bw + gap), inner.bottom() - h, inner.bottom());
         let segs = match shapes.iter_mut().find(|(k, _)| *k == c) {
             Some((_, segs)) => segs,
@@ -1217,11 +1286,11 @@ fn labelled_bars(ui: &mut Ui, r: Rect, bars: &[(f32, Color, &str)]) {
     ui.c.fill_rrect(r, BOX_R, BOX_C);
     let cells = r.inset(8.0, 4.0).columns(bars.len().max(1), 8.0);
     let lst = TextStyle::new(9.5).color(palette::TEXT_DIM).center();
-    for (&(v, c, name), cell) in bars.iter().zip(cells) {
+    for (i, (&(v, c, name), cell)) in bars.iter().zip(cells).enumerate() {
         let (track, label) = cell.split_bottom(13.0);
         let bar = Rect::new(track.center().x - 7.0, track.y + 2.0, 14.0, track.h - 2.0);
         ui.c.fill_rrect(bar, 3.0, palette::TRACK);
-        let h = (v.clamp(0.0, 1.0) * bar.h).max(2.0);
+        let h = (v.clamp(0.0, 1.0) * bar.h * cascade(r.y, 0.04 * i as f32, Some(0.5))).max(2.0);
         ui.c.fill_rrect(Rect::new(bar.x, bar.bottom() - h, bar.w, h), 3.0, c);
         ui.c.text(name, label, &lst);
     }
@@ -1240,8 +1309,9 @@ fn stacked_meter(ui: &mut Ui, r: Rect, parts: &[(f32, Color)], left: &str, right
     let bar = Rect::new(rest.x, rest.y + 3.0, rest.w, 7.0);
     ui.c.fill_rrect(bar, 3.5, palette::TRACK);
     let mut x = bar.x;
+    let k = cascade(r.y, 0.05, Some(0.6));
     for &(f, c) in parts {
-        let w = bar.w * f.clamp(0.0, 1.0);
+        let w = bar.w * f.clamp(0.0, 1.0) * k;
         if w >= 1.0 {
             ui.c.fill_rect(Rect::new(x, bar.y, w.min(bar.right() - x), bar.h), c);
             x += w;

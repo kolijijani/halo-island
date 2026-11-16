@@ -10,12 +10,14 @@
 //! (with the one-time OK). It draws with the System page's rings, charts
 //! and rows, from the same readers; the page itself starts none.
 //!
-//! As the page opens (`pages::entrance`) the ring and gauges draw to their
-//! readings and the chart runs out from the left; the numbers show at once.
+//! As the page opens (`pages::entrance`) it fills top to bottom as System
+//! does: the section rules grow out from their titles, the ring and gauges
+//! draw to their readings, the chart's grid and line run out from the left;
+//! the numbers and the switches show at once.
 
 use super::entrance::Entrance;
 use super::system::{
-    chart_box, dashboard, history_column, plot, separator, set_sweep, stack, temperature, Cols,
+    chart_box, dashboard, history_column, plot, separator, set_entrance, stack, temperature, Cols,
     Fill, Gauge, Ring, Row,
 };
 use super::PageKind;
@@ -72,11 +74,10 @@ fn hz_name(hz: u16) -> String {
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // Fixed layout height: the island's spring may still be opening.
     let area = Rect::new(area.x, area.y, area.w, HEIGHT);
-    let e = Entrance::of(ui, st, PageKind::Games);
-    set_sweep(e.draw(0.08, 0.7));
+    set_entrance(Entrance::of(ui, st, PageKind::Games), area.y);
     let cols = Cols::new(area);
     draw_settings(ui, st, cols.dash);
-    draw_chart(ui, st, cols.mid, e.draw(0.15, 0.7));
+    draw_chart(ui, st, cols.mid);
     draw_front(ui, st, cols.top);
 }
 
@@ -202,22 +203,15 @@ fn draw_settings(ui: &mut Ui, st: &mut AppState, r: Rect) {
     }
 }
 
-/// The frame rate's last minute (running out from the left by `k` as the
-/// page opens), and the frame times under it.
-fn draw_chart(ui: &mut Ui, st: &AppState, r: Rect, k: f32) {
+/// The frame rate's last minute (running out from the left as the page
+/// opens, as System's charts do), and the frame times under it.
+fn draw_chart(ui: &mut Ui, st: &AppState, r: Rect) {
     let (chart, sub) = history_column(ui, r, "FRAMES PER SECOND", "FRAME TIME");
     chart_box(ui, chart);
     let h = &st.game.history;
     if h.values().any(f32::is_finite) {
         let top = fps_top(st);
-        ui.c.clip(Rect::new(
-            chart.x - 1.0,
-            chart.y - 1.0,
-            (chart.w + 2.0) * k,
-            chart.h + 2.0,
-        ));
         plot(ui, h, top, st.accent, chart.inset(1.0, 1.0), Fill::Gradient);
-        ui.c.unclip();
         let scale = TextStyle::caption().tabular().color(palette::TEXT_FAINT);
         ui.c.text(
             &format!("{top:.0}"),

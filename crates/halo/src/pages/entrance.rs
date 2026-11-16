@@ -21,13 +21,20 @@ pub const END: f64 = 1.1;
 const RISE: f32 = 8.0;
 
 /// Seconds into `page`'s entrance, or None once it's over (or there was none).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Entrance(Option<f32>);
 
 impl Entrance {
     /// `page`'s entrance now; asks for the next frame while it moves.
     pub fn of(ui: &mut Ui, st: &AppState, page: PageKind) -> Self {
-        let t = st.ui.entrance.filter(|e| e.0 == page).map(|e| ui.now - e.1).filter(|&t| t < END);
+        Self::at(ui, st.ui.entrance.filter(|e| e.0 == page).map(|e| e.1))
+    }
+
+    /// An entrance that began at `t0` (mono seconds): a page's, or a part
+    /// of one replaying it (System's module picked). Asks for the next frame
+    /// while it moves. Callers pass no `t0` while motion is off ([`still`]).
+    pub fn at(ui: &mut Ui, t0: Option<f64>) -> Self {
+        let t = t0.map(|t0| ui.now - t0).filter(|&t| t < END);
         if t.is_some() {
             ui.request_anim();
         }

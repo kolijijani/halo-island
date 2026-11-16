@@ -386,6 +386,10 @@ pub struct PageUiState {
     pub water_tap: Option<(f64, f32)>,
     /// The module the System page shows under its strip.
     pub system_module: halo_core::sysmon::Module,
+    /// The module the System page showed before the last pick, and when it
+    /// was picked: the selection slides over and the columns draw in again.
+    /// Never set while motion is off.
+    pub system_switch: Option<(halo_core::sysmon::Module, f64)>,
     /// The last System reading had a GPU (keeps its chip while the next one is on its way).
     pub system_gpu: bool,
     /// The last full System reading had the whole PC's power (keeps its chip
