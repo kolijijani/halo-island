@@ -2199,13 +2199,11 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   });
 
   var primary = document.querySelector('.hero .dl-primary');
-  // On a phone the downloads lead to Get Halo Island, which there sends the link to your computer. The head
-  // script sets .phone with the same check, so the page paints right the first time.
   var phone = document.documentElement.classList.contains('phone');
-  if (phone) {
-    [document.querySelector('.top-dl'), document.querySelector('.side-dl'), primary].forEach(function (a) { if (a) { a.href = '#get'; a.removeAttribute('data-release'); } });
-    document.querySelectorAll('.side-dl [data-download-label]').forEach(function (s) { s.textContent = 'Send to your computer'; });
-  }
+  // Every download button stays a direct Windows installer link, including on phones.
+  [document.querySelector('.top-dl'), document.querySelector('.side-dl'), primary].forEach(function (a) {
+    if (a) a.href = WIN;
+  });
 
   // ---- Send it to your computer. The link keeps this visit's utm tags (a creator's link, say) and adds
   // utm_content=send-to-pc, so the visit it brings on the computer counts for the same place. Nothing leaves the
