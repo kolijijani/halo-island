@@ -79,7 +79,9 @@ Semua tab kecuali Music, Widgets dan Today (sudah okay) dapat reka bentuk dan an
 | Caffeine | baris senarai rise stagger, Add pop; cip jenis minuman pop baris demi baris bila sheet dibuka / langkah bertukar | hover baris fade |
 | Downloads | Paste/Download pop, baris rise + garis + bar draw, Clear pop | lencana hijau + tanda bila siap |
 | Notifications | loceng pop dan berayun sekali, butang pop, garis draw, suis rise stagger | sama |
-| Add-ons, Settings | suis meluncur dan picker angkat meluncur (`entrance::glide`, sesi lain) | sama |
+| Settings | baris draw in stagger; kad lembaran Update rise + shine; emoji lembaran About pop; tag dan pil halaman Pro pop | latar baris hover fade (`settings::row_wash`); kad Update: garis hover + dip bila tekan |
+| Add-ons | lencana, suis dan bar masuk stagger; bar muat turun meluncur | lencana terang bila hidup; latar baris hover fade |
+| Semua suis dan picker | suis meluncur dan angkat picker meluncur 0.2 s selepas berubah (`entrance::glide` / `glide_k`) | tiada dengan reduced motion, battery saver atau self-test (`entrance::set_still`) |
 
 Kos: tiada benang, pemasa atau poll baharu. Frame tambahan hanya 1.1 s selepas tab dibuka atau modul System / sasaran Record dipilih, < 0.6 s untuk hover / tekan / spring, dan 10 s ambien di Focus (sesi berjalan) dan Record (sedang merakam). Tiada langsung dengan reduced motion atau battery saver.
 
