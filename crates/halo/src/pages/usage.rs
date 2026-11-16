@@ -24,10 +24,13 @@
 //! that take one. All of it goes out as `Command`s: the page never calls the
 //! worker. The page is as tall as the System page and scrolls inside, so
 //! the window never grows for it, and nothing on it moves by itself past
-//! its entrance as it opens (`pages::entrance`): the cards rise in, one
-//! after another, and each limit's bar draws to what is used.
+//! its entrance as it opens (`pages::entrance`): the top row's buttons pop,
+//! the cards rise in one after another with a light crossing each, their
+//! marks pop, each limit's bar draws to what is used line by line and the
+//! days' bars rise left to right. The Services list's rows rise in one after
+//! another as it opens.
 
-use super::entrance::{rise, Entrance};
+use super::entrance::{rise, scaled, shine, Entrance};
 use crate::commands::{Command, UsageCmd};
 use crate::gfx::{TextStyle, Weight};
 use crate::icons::Icon;
@@ -210,7 +213,8 @@ fn top(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let (label, icon, style) = if services { ("Done", None, PillStyle::Neutral) } else { ("Services", Some(Icon::Sliders), PillStyle::Utility) };
     let pw = ui.pill_width(label, icon.is_some(), true);
     let pill = Rect::new(r.right() - pw, r.center().y - PILL_SMALL / 2.0, pw, PILL_SMALL);
-    if ui.pill(wid("usage.services"), pill, label, icon, style).clicked {
+    let e = Entrance::of(ui, st, PageKind::Ai);
+    if scaled(ui, pill.center(), e.pop(0.0), |ui| ui.pill(wid("usage.services"), pill, label, icon, style)).clicked {
         if services {
             ui.blur();
         }
@@ -218,7 +222,7 @@ fn top(ui: &mut Ui, st: &mut AppState, r: Rect) {
     }
     let busy = st.usage.refreshing;
     let refresh = Rect::new(pill.x - PILL_GAP - PILL_SMALL, pill.y, PILL_SMALL, PILL_SMALL);
-    if ui.icon_button(wid("usage.refresh"), refresh, Icon::Reset, if busy { palette::DISABLED } else { palette::TEXT_DIM }, 15.0).clicked && !busy {
+    if scaled(ui, refresh.center(), e.pop(0.04), |ui| ui.icon_button(wid("usage.refresh"), refresh, Icon::Reset, if busy { palette::DISABLED } else { palette::TEXT_DIM }, 15.0)).clicked && !busy {
         st.cmd(Command::Usage(UsageCmd::Refresh));
     }
 
@@ -521,7 +525,7 @@ fn cards(ui: &mut Ui, st: &mut AppState, view: Rect, dt: f32, moving: &mut bool)
         if r.bottom() < view.y || r.y > view.bottom() {
             continue;
         }
-        draw_card(ui, st, c, r, view, pill_card, &mut acts);
+        draw_card(ui, st, c, i, r, view, pill_card, &mut acts);
     }
     fades(ui, view, scroll, (content_h - view.h).max(0.0));
     ui.c.unclip();
@@ -530,20 +534,31 @@ fn cards(ui: &mut Ui, st: &mut AppState, view: Rect, dt: f32, moving: &mut bool)
     }
 }
 
-fn draw_card(ui: &mut Ui, st: &AppState, c: &Card, r: Rect, view: Rect, pill_card: Option<(Rect, f32)>, acts: &mut Vec<(ProviderId, Does)>) {
-    let k = Entrance::of(ui, st, PageKind::Ai).pop(0.05 * (ProviderId::ALL.iter().position(|p| *p == c.id).unwrap_or(0).min(6)) as f32);
-    rise(ui, k, |ui| super::card::fill_box(ui, pill_card, r, CARD_R, palette::SURFACE));
+/// A card rises in after the one before (`order`: its place among the
+/// cards shown), a light crossing it, its mark popping; its bars draw line
+/// by line after it.
+#[allow(clippy::too_many_arguments)]
+fn draw_card(ui: &mut Ui, st: &AppState, c: &Card, order: usize, r: Rect, view: Rect, pill_card: Option<(Rect, f32)>, acts: &mut Vec<(ProviderId, Does)>) {
+    let e = Entrance::of(ui, st, PageKind::Ai);
+    let at = 0.06 * order.min(5) as f32;
+    rise(ui, e.pop(at), |ui| {
+        super::card::fill_box(ui, pill_card, r, CARD_R, palette::SURFACE);
+        // Light from above along the top edge, as Widgets' tiles have.
+        ui.c.fill_rect(Rect::new(r.x + CARD_R, r.y + 0.5, (r.w - 2.0 * CARD_R).max(0.0), 1.0), Color::white(0.07));
+    });
+    shine(ui, e, r, CARD_R, 0.25 + at);
     let snap = st.usage.readings.get(&c.id).and_then(numbers);
     let x = r.x + PAD_X;
     let w = r.w - 2.0 * PAD_X;
-    head(ui, c.id, snap, Rect::new(x, r.y + PAD_Y, w, HEAD_H));
+    head(ui, c.id, snap, Rect::new(x, r.y + PAD_Y, w, HEAD_H), e.pop(at + 0.08));
     let mut y = r.y + PAD_Y + HEAD_H + HEAD_GAP;
     for (i, p) in c.parts.iter().enumerate() {
         let h = part_h(ui, p, w);
         let pr = Rect::new(x, y, w, h);
         // Widget ids: the service's place in the list, then the line's.
         let n = ((ProviderId::ALL.iter().position(|p| *p == c.id).unwrap_or(0) as u64) << 8) | i as u64;
-        if let Some(does) = draw_part(ui, st, p, pr, view, n) {
+        let drawn = (e, at + 0.12 + 0.05 * i.min(5) as f32);
+        if let Some(does) = draw_part(ui, st, p, pr, view, n, drawn) {
             acts.push((c.id, does));
         }
         y += h;
@@ -551,9 +566,10 @@ fn draw_card(ui: &mut Ui, st: &AppState, c: &Card, r: Rect, view: Rect, pill_car
 }
 
 /// Mark, name and plan on the left, the masked account on the right while
-/// there's room for it.
-fn head(ui: &mut Ui, id: ProviderId, snap: Option<&Snapshot>, r: Rect) {
-    mark(ui, id, Rect::new(r.x, r.center().y - MARK / 2.0, MARK, MARK), palette::TEXT);
+/// there's room for it. The mark pops by `k` as the page opens.
+fn head(ui: &mut Ui, id: ProviderId, snap: Option<&Snapshot>, r: Rect, k: f32) {
+    let m = Rect::new(r.x, r.center().y - MARK / 2.0, MARK, MARK);
+    scaled(ui, m.center(), k, |ui| mark(ui, id, m, palette::TEXT));
     let x = r.x + MARK + 7.0;
     let name_st = TextStyle::body().weight(Weight::Semibold);
     let nw = ui.c.measure(id.name(), &name_st, 1000.0).0.ceil().min((r.right() - x).max(0.0));
@@ -579,8 +595,10 @@ fn head(ui: &mut Ui, id: ProviderId, snap: Option<&Snapshot>, r: Rect) {
     }
 }
 
-/// Draws one line of a card; the button it holds, if one was clicked.
-fn draw_part(ui: &mut Ui, st: &AppState, p: &Part, r: Rect, view: Rect, n: u64) -> Option<Does> {
+/// Draws one line of a card; the button it holds, if one was clicked. Its
+/// bars draw in on the page's entrance from the delay in `drawn`.
+fn draw_part(ui: &mut Ui, st: &AppState, p: &Part, r: Rect, view: Rect, n: u64, drawn: (Entrance, f32)) -> Option<Does> {
+    let (e, at) = drawn;
     match p {
         Part::Limit(w) => {
             let when = w.resets_at.map(|at| if ui.hovered(r) && inside(view, r) { (in_words(at - st.unix), None) } else { resets_words(st, at) });
@@ -588,14 +606,14 @@ fn draw_part(ui: &mut Ui, st: &AppState, p: &Part, r: Rect, view: Rect, n: u64) 
                 Some((used, of)) if of > 0 => format!("{} of {}", group(used), group(of)),
                 _ => pct(w.used),
             };
-            limit(ui, st, r, &w.label, when, &right, w.used);
+            limit(ui, st, r, &w.label, when, &right, w.used, e.draw(at, 0.6));
             None
         }
         Part::Capped(s) => {
             let cap = s.cap.as_ref().map_or(1, |c| c.micros.max(1));
             let used = (s.money.micros as f64 / cap as f64) as f32;
             let right = format!("{} of {}", s.money.fmt(), s.cap.as_ref().map(Money::fmt).unwrap_or_default());
-            limit(ui, st, r, &s.label, None, &right, used);
+            limit(ui, st, r, &s.label, None, &right, used, e.draw(at, 0.6));
             None
         }
         Part::Balance(m) => {
@@ -634,7 +652,7 @@ fn draw_part(ui: &mut Ui, st: &AppState, p: &Part, r: Rect, view: Rect, n: u64) 
             None
         }
         Part::Days(days) => {
-            day_bars(ui, days, r);
+            day_bars(ui, days, r, e, at);
             None
         }
         Part::Note(text) => {
@@ -678,7 +696,9 @@ fn draw_part(ui: &mut Ui, st: &AppState, p: &Part, r: Rect, view: Rect, n: u64) 
 
 /// A limit's words (its name, when it resets) and how much is used, over
 /// its bar. `when`: the long form, and a shorter one for a narrow card.
-fn limit(ui: &mut Ui, st: &AppState, r: Rect, label: &str, when: Option<(String, Option<String>)>, right: &str, used: f32) {
+/// The bar shows `drawn` of what is used (under 1 while the page opens).
+#[allow(clippy::too_many_arguments)]
+fn limit(ui: &mut Ui, st: &AppState, r: Rect, label: &str, when: Option<(String, Option<String>)>, right: &str, used: f32, drawn: f32) {
     let near = (st.settings.usage.near_pct as f32 / 100.0).clamp(0.05, 1.0);
     let fill = if used >= 1.0 {
         palette::RED
@@ -708,14 +728,15 @@ fn limit(ui: &mut Ui, st: &AppState, r: Rect, label: &str, when: Option<(String,
     }
     let bar = Rect::new(r.x, r.y + BAR_Y, r.w, BAR_H);
     ui.c.fill_rrect(bar, BAR_H / 2.0, palette::TRACK);
-    let k = used.clamp(0.0, 1.0) * Entrance::of(ui, st, PageKind::Ai).draw(0.12, 0.6);
+    let k = used.clamp(0.0, 1.0) * drawn;
     if k > 0.0 {
         ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * k).max(BAR_H), BAR_H), BAR_H / 2.0, fill);
     }
 }
 
 /// "14 days" and a bar per day (money, else requests), today's the brightest.
-fn day_bars(ui: &mut Ui, days: &[DayUse], r: Rect) {
+/// As the page opens they rise left to right, from `at` s into `e`.
+fn day_bars(ui: &mut Ui, days: &[DayUse], r: Rect, e: Entrance, at: f32) {
     let label = format!("{} days", days.len());
     let label_st = TextStyle::caption().color(palette::TEXT_DIM);
     let lw = ui.c.measure(&label, &label_st, 200.0).0.ceil();
@@ -727,7 +748,8 @@ fn day_bars(ui: &mut Ui, days: &[DayUse], r: Rect) {
     let gap = 3.0;
     let bw = ((bars.w - gap * (n - 1.0)) / n).max(1.0);
     for (i, v) in vals.iter().enumerate() {
-        let h = if max > 0.0 && *v > 0.0 { (bars.h * (*v / max) as f32).max(3.0) } else { 2.0 };
+        let grow = e.draw(at + 0.2 * i as f32 / n, 0.45);
+        let h = if max > 0.0 && *v > 0.0 { (bars.h * (*v / max) as f32 * grow).max(3.0) } else { 2.0 };
         let color = if i + 1 == vals.len() {
             Color::white(0.86)
         } else if *v > 0.0 {
@@ -767,8 +789,11 @@ fn empty(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let block = th + 4.0 + bh + if looking { 0.0 } else { 12.0 + PILL_SMALL };
     let mut y = r.y + ((r.h - block) / 2.0).max(0.0);
     let c = Point::new(r.x + BADGE / 2.0, r.y + r.h / 2.0);
-    ui.c.fill_circle(c, BADGE / 2.0, st.accent.with_alpha(0.18));
-    ui.c.icon(PageKind::Ai.icon(), Rect::from_center(c, 24.0, 24.0), st.accent);
+    let e = Entrance::of(ui, st, PageKind::Ai);
+    scaled(ui, c, e.pop(0.05), |ui| {
+        ui.c.fill_circle(c, BADGE / 2.0, st.accent.with_alpha(0.18));
+        ui.c.icon(PageKind::Ai.icon(), Rect::from_center(c, 24.0, 24.0), st.accent);
+    });
     ui.c.text(title, Rect::new(x, y, w, th + 1.0), &title_st);
     y += th + 4.0;
     ui.c.text(&body, Rect::new(x, y, w, bh + 1.0), &body_st);
@@ -832,7 +857,9 @@ fn list(ui: &mut Ui, st: &mut AppState, view: Rect, dt: f32, moving: &mut bool) 
         if i > 0 {
             ui.c.line(Point::new(r.x, r.y + 0.5), Point::new(r.right(), r.y + 0.5), Color::white(0.07), 1.0);
         }
-        acts.extend(row(ui, st, id, r, view).into_iter().map(|d| (id, d)));
+        // As the list swaps in (`UsageUi::swap` gliding to 0) its rows rise one after another.
+        let k = ((1.0 - st.ui.usage.swap) * 1.6 - 0.07 * i.min(8) as f32).clamp(0.0, 1.0);
+        acts.extend(rise(ui, ease_out(k), |ui| row(ui, st, id, r, view)).into_iter().map(|d| (id, d)));
         if editing == Some(id) {
             if let Some(ask) = usage::provider(id).takes_key() {
                 key_editor(ui, st, id, ask, Rect::new(r.x, r.bottom(), r.w, EDIT_H), view);
