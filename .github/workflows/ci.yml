@@ -18,7 +18,7 @@ concurrency:
 
 env:
   # Keep in sync with Cargo.toml's workspace version, installer/halo.nsi and installer/halo.iss.
-  HALO_VERSION: "0.2.51"
+  HALO_VERSION: "0.2.52"
 
 jobs:
   core:
