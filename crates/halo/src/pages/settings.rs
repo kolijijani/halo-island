@@ -176,10 +176,12 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         }
         None => {}
     }
-    let k = Entrance::of(ui, st, PageKind::Settings).pop(0.0);
-    draw_head(ui, Rect::new(area.x, area.y, area.w, ACCOUNT_H), k);
-    let px = 1.0 / ui.c.scale().max(0.5);
-    ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w, px), Color::white(0.10));
+    // As the page opens (`pages::entrance`) the mascot pops, the line draws
+    // out from the left, the pickers' lifts and the switches pop column by
+    // column, then the tabs' chips; the words show where they are at once.
+    let e = Entrance::of(ui, st, PageKind::Settings);
+    draw_head(ui, Rect::new(area.x, area.y, area.w, ACCOUNT_H), e.pop(0.0));
+    rule(ui, Rect::new(area.x, area.y + RULE_Y, area.w, 0.0), e.draw(0.06, 0.6));
 
     let col_w = ((area.w - COL_GAP) / 2.0).max(0.0);
     let cols = [area.x, area.x + col_w + COL_GAP];
@@ -204,8 +206,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let y = area.y + PICKERS_Y;
         let look_pad = pad_to_fit(ui, &look_names, col_w);
         (
-            picker_padded(ui, "settings.theme", cols[0], y, PILL_SMALL, &theme_names, theme_sel, theme_pad),
-            picker_padded(ui, "settings.idle", cols[1], y, PILL_SMALL, &look_names, look_sel, look_pad),
+            picker_padded(ui, "settings.theme", cols[0], y, PILL_SMALL, &theme_names, theme_sel, theme_pad, e.pop(0.1)),
+            picker_padded(ui, "settings.idle", cols[1], y, PILL_SMALL, &look_names, look_sel, look_pad, e.pop(0.14)),
         )
     } else {
         // A row each, the labels in a column of their own and both pickers
@@ -217,7 +219,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             let row = Rect::new(area.x, area.y + STACK_Y[i], area.w, ROW_H);
             ui.c.text(labels[i], Rect::new(row.x, row.y, label_w + 2.0, row.h), &label_st);
             let pad = pad_to_fit(ui, names, row.right() - x).max(0.0);
-            picker_padded(ui, id, x, row.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, names, sel, pad)
+            picker_padded(ui, id, x, row.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, names, sel, pad, e.pop(0.1 + 0.04 * i as f32))
         };
         (pick(ui, 0, "settings.theme", &theme_names, theme_sel), pick(ui, 1, "settings.idle", &look_names, look_sel))
     };
@@ -249,7 +251,8 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
                     let label = if cfg!(target_os = "macos") && sw == Switch::Autostart { "Start at login" } else { label };
                     let on = switch_on(st, sw);
                     let id = wid_n("settings.switch", (c * ROWS + r) as u64);
-                    if switch_row_on(ui, id, row, label, on, accent, card) {
+                    let pop = e.pop(0.18 + 0.05 * r as f32 + 0.03 * c as f32);
+                    if switch_row_on(ui, id, row, label, on, accent, card, pop) {
                         flip(st, sw, on);
                     }
                 }
@@ -286,24 +289,32 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             }
         }
     }
-    draw_tabs(ui, st, Rect::new(area.x, area.y + TABS_Y, area.w, ROW_H));
-    draw_advanced(ui, st, Rect::new(area.x, area.y + ADVANCED_Y, area.w, ROW_H), card);
+    draw_tabs(ui, st, Rect::new(area.x, area.y + TABS_Y, area.w, ROW_H), e);
+    draw_advanced(ui, st, Rect::new(area.x, area.y + ADVANCED_Y, area.w, ROW_H), card, e);
+}
+
+/// A hairline across `r` (from its left edge, `k` of the way: the
+/// entrance draws it out).
+fn rule(ui: &mut Ui, r: Rect, k: f32) {
+    let px = 1.0 / ui.c.scale().max(0.5);
+    if k > 0.0 {
+        ui.c.fill_rect(Rect::new(r.x, r.y, r.w * k.min(1.0), px), Color::white(0.10));
+    }
 }
 
 /// The last row, under a line: Advanced settings, the window with every
 /// setting (`Command::OpenSettings`; the island closes as it opens). The
 /// whole row is the button, as a switch's row is.
-fn draw_advanced(ui: &mut Ui, st: &mut AppState, r: Rect, card: Option<(Rect, f32)>) {
-    let px = 1.0 / ui.c.scale().max(0.5);
-    ui.c.fill_rect(Rect::new(r.x, r.y, r.w, px), Color::white(0.10));
+fn draw_advanced(ui: &mut Ui, st: &mut AppState, r: Rect, card: Option<(Rect, f32)>, e: Entrance) {
+    rule(ui, r, e.draw(0.3, 0.5));
     let hit = Rect::new(r.x - ROW_BLEED, r.y, r.w + 2.0 * ROW_BLEED, r.h);
     let resp = ui.button(wid(ADVANCED_ID), hit);
     let lit = resp.hovered || resp.pressed;
-    if lit {
-        super::card::fill_box(ui, card, hit.inset(0.0, 1.0), 8.0, Color::white(if resp.pressed { 0.10 } else { 0.06 }));
-    }
-    let icon = Rect::new(r.right() - ADVANCED_ICON, r.center().y - ADVANCED_ICON / 2.0, ADVANCED_ICON, ADVANCED_ICON);
-    ui.c.icon(Icon::Open, icon, if lit { palette::TEXT } else { palette::TEXT_DIM });
+    row_wash(ui, wid(ADVANCED_ID), card, hit.inset(0.0, 1.0), 8.0, resp.hovered, resp.pressed);
+    // Its icon says it opens a window: it leans out a little under the pointer.
+    let lean = super::entrance::glide_k(ui, wid_n(ADVANCED_ID, 1), if lit { 2.0 } else { 0.0 });
+    let icon = Rect::new(r.right() - ADVANCED_ICON + lean, r.center().y - ADVANCED_ICON / 2.0 - lean, ADVANCED_ICON, ADVANCED_ICON);
+    scaled(ui, icon.center(), e.pop(0.36), |ui| ui.c.icon(Icon::Open, icon, if lit { palette::TEXT } else { palette::TEXT_DIM }));
     ui.c.text("Advanced settings", Rect::new(r.x, r.y, (icon.x - 10.0 - r.x).max(0.0), r.h), &TextStyle::body());
     if resp.clicked {
         st.cmd(Command::OpenSettings);
@@ -315,7 +326,8 @@ fn draw_advanced(ui: &mut Ui, st: &mut AppState, r: Rect, card: Option<(Rect, f3
 /// Record page marks an input that's off. A click flips it. Icons only
 /// where the names don't fit. Notifications' chip shows only where the copy
 /// can read them, and switches the whole of it off, not just its tab.
-fn draw_tabs(ui: &mut Ui, st: &mut AppState, r: Rect) {
+/// As the page opens the chips pop, left to right (`e`).
+fn draw_tabs(ui: &mut Ui, st: &mut AppState, r: Rect, e: Entrance) {
     let body = TextStyle::body();
     let label_w = ui.c.measure("Tabs", &body, 200.0).0.ceil();
     ui.c.text("Tabs", Rect::new(r.x, r.y, label_w + 1.0, r.h), &body);
@@ -337,20 +349,24 @@ fn draw_tabs(ui: &mut Ui, st: &mut AppState, r: Rect) {
         if resp.clicked {
             flip = Some(p);
         }
-        let fill = match (on, resp.pressed, resp.hovered) {
-            (_, true, _) => Color::white(0.22),
-            (true, _, true) => Color::white(0.20),
-            (true, _, false) => Color::white(0.16),
-            (false, _, true) => Color::white(0.12),
-            (false, _, false) => palette::SURFACE,
+        // The fill eases between off, on and hovered; the strike draws across as a tab goes.
+        let to = match (on, resp.pressed, resp.hovered) {
+            (_, true, _) => 0.22,
+            (true, _, true) => 0.20,
+            (true, _, false) => 0.16,
+            (false, _, true) => 0.12,
+            (false, _, false) => palette::SURFACE.a,
         };
-        ui.c.fill_rrect(c, CHIP_H / 2.0, fill);
+        let fill = super::entrance::glide_k(ui, wid_n("settings.tab.fill", i as u64), to);
+        scaled(ui, c.center(), e.pop(0.26 + 0.035 * i as f32), |ui| ui.c.fill_rrect(c, CHIP_H / 2.0, Color::white(fill)));
         let color = if on { palette::TEXT } else { palette::TEXT_DIM };
         let ix = if names { c.x + CHIP_PAD } else { c.center().x - CHIP_ICON / 2.0 };
         let ir = Rect::new(ix, c.center().y - CHIP_ICON / 2.0, CHIP_ICON, CHIP_ICON);
         ui.c.icon(p.icon(), ir, color);
-        if !on {
-            ui.c.line(Point::new(ir.x, ir.bottom()), Point::new(ir.right(), ir.y), color, 1.5);
+        let strike = super::entrance::glide_k(ui, wid_n("settings.tab.strike", i as u64), if on { 0.0 } else { 1.0 });
+        if strike > 0.01 {
+            let end = Point::new(ir.x + ir.w * strike, ir.bottom() - ir.h * strike);
+            ui.c.line(Point::new(ir.x, ir.bottom()), end, color, 1.5);
         }
         if names {
             let tx = ix + CHIP_ICON + CHIP_ICON_GAP;
@@ -471,9 +487,10 @@ fn draw_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, rel: &Release) {
     let head = Rect::new(area.x, area.y, area.w, ACCOUNT_H);
     let cy = head.center().y;
     let accent = st.accent;
-    let c = Point::new(head.x + ICON / 2.0, cy);
-    ui.c.fill_circle(c, ICON / 2.0, accent.with_alpha(0.22));
-    ui.c.icon(Icon::Download, Rect::from_center(c, 20.0, 20.0), accent);
+    // Opened with the page: the disc pops, the line draws, the cards rise
+    // in one after another with a light across each (`pages::entrance`).
+    let e = Entrance::of(ui, st, PageKind::Settings);
+    sheet_disc(ui, Point::new(head.x + ICON / 2.0, cy), Icon::Download, accent, e.pop(0.0));
     let later_w = ui.pill_width("Not now", false, true);
     let later = Rect::new(head.right() - later_w, cy - PILL_SMALL / 2.0, later_w, PILL_SMALL);
     if ui.pill(wid("update.later"), later, "Not now", None, PillStyle::Utility).clicked {
@@ -492,8 +509,7 @@ fn draw_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, rel: &Release) {
     };
     ui.c.text(&line, Rect::new(x, cy + 1.0, w, 17.0), &TextStyle::footnote().color(palette::TEXT_DIM));
 
-    let px = 1.0 / ui.c.scale().max(0.5);
-    ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w, px), Color::white(0.10));
+    rule(ui, Rect::new(area.x, area.y + RULE_Y, area.w, 0.0), e.draw(0.06, 0.6));
     let label_st = TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_FAINT);
     ui.c.text("WHAT'S NEW", Rect::new(area.x, area.y + SHEET_CAPTION_Y, area.w, 14.0), &label_st);
     ui.c.text(&rel.headline, Rect::new(area.x, area.y + SHEET_HEADLINE_Y, area.w, 20.0), &TextStyle::body());
@@ -516,7 +532,7 @@ fn draw_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, rel: &Release) {
     let card_w = ((area.w - (n - 1.0) * CARD_GAP) / n).max(0.0);
     for (i, (get, icon, title, line)) in cards.iter().enumerate() {
         let r = Rect::new(area.x + i as f32 * (card_w + CARD_GAP), area.y + CARDS_Y, card_w, CARD_H);
-        if card(ui, wid_n("update.card", i as u64), r, *icon, title, line, accent) {
+        if card(ui, wid_n("update.card", i as u64), r, *icon, title, line, accent, (e, 0.12 + 0.07 * i as f32)) {
             match get {
                 Get::Download | Get::InstallNow => st.cmd(Command::Update),
                 Get::NextStart => st.cmd(Command::InstallOnNextStart),
@@ -545,20 +561,36 @@ pub enum Sheet {
 }
 
 /// One of the sheet's choices: a card with an icon, what it does in bold
-/// and how under it. True when clicked.
-fn card(ui: &mut Ui, id: u64, r: Rect, icon: Icon, title: &str, line: &str, accent: Color) -> bool {
+/// and how under it. True when clicked. It rises in `delay` s into the
+/// entrance `e`, a light crossing it; under the pointer its face brightens
+/// and an accent outline fades in, pressed it dips.
+#[allow(clippy::too_many_arguments)]
+fn card(ui: &mut Ui, id: u64, r: Rect, icon: Icon, title: &str, line: &str, accent: Color, (e, delay): (Entrance, f32)) -> bool {
     let resp = ui.button(id, r);
-    let fill = if resp.pressed {
-        Color::white(0.14)
+    let to = if resp.pressed {
+        0.14
     } else if resp.hovered {
-        Color::white(0.10)
+        0.10
     } else {
-        Color::white(0.06)
+        0.06
     };
-    ui.c.fill_rrect(r, 12.0, fill);
+    let fill = super::entrance::glide_k(ui, wid_n("settings.card", id), to);
+    let lit = ((fill - 0.06) / 0.04).clamp(0.0, 1.0);
+    let dip = if resp.pressed { 0.985 } else { 1.0 };
+    scaled(ui, r.center(), dip, |ui| {
+        super::entrance::rise(ui, e.pop(delay), |ui| {
+            ui.c.fill_rrect(r, 12.0, Color::white(fill));
+            if lit > 0.0 {
+                ui.c.stroke_rrect(r, 12.0, accent.with_alpha(0.3 * lit), 1.0);
+            }
+        });
+    });
+    super::entrance::shine(ui, e, r, 12.0, delay + 0.2);
     let c = Point::new(r.x + 14.0 + CARD_DISC / 2.0, r.center().y);
-    ui.c.fill_circle(c, CARD_DISC / 2.0, accent.with_alpha(0.22));
-    ui.c.icon(icon, Rect::from_center(c, 16.0, 16.0), accent);
+    scaled(ui, c, e.pop(delay + 0.08), |ui| {
+        ui.c.fill_circle(c, CARD_DISC / 2.0, accent.with_alpha(0.22));
+        ui.c.icon(icon, Rect::from_center(c, 16.0, 16.0), accent);
+    });
     let x = c.x + CARD_DISC / 2.0 + 12.0;
     let w = (r.right() - 14.0 - x).max(0.0);
     let cy = r.center().y;
@@ -630,12 +662,13 @@ fn pad_to_fit(ui: &mut Ui, names: &[&str], w: f32) -> f32 {
 /// Choices side by side in a track `h` tall, the chosen one lifted (the
 /// Focus page's picker, a size smaller). Returns the choice clicked, if any.
 pub(crate) fn picker(ui: &mut Ui, id: &str, x: f32, y: f32, h: f32, names: &[&str], sel: usize) -> Option<usize> {
-    picker_padded(ui, id, x, y, h, names, sel, SEG_PAD)
+    picker_padded(ui, id, x, y, h, names, sel, SEG_PAD, 1.0)
 }
 
-/// [`picker`] with `pad` around each choice's name.
+/// [`picker`] with `pad` around each choice's name; `pop`, the page's
+/// entrance for the lift (1 at rest).
 #[allow(clippy::too_many_arguments)]
-fn picker_padded(ui: &mut Ui, id: &str, x: f32, y: f32, h: f32, names: &[&str], sel: usize, pad: f32) -> Option<usize> {
+fn picker_padded(ui: &mut Ui, id: &str, x: f32, y: f32, h: f32, names: &[&str], sel: usize, pad: f32, pop: f32) -> Option<usize> {
     let st = picker_text();
     let inner_h = h - 2.0 * SEG_INSET;
     let mut cx = x + SEG_INSET;
@@ -652,7 +685,7 @@ fn picker_padded(ui: &mut Ui, id: &str, x: f32, y: f32, h: f32, names: &[&str], 
     // The lift glides to the choice picked (`entrance::glide`).
     if let Some(cell) = cells.get(sel) {
         let lift = super::entrance::glide(ui, wid(id), *cell);
-        ui.c.fill_rrect(lift, inner_h / 2.0, Color::white(0.16));
+        scaled(ui, lift.center(), pop, |ui| ui.c.fill_rrect(lift, inner_h / 2.0, Color::white(0.16)));
     }
     let mut picked = None;
     for (i, (name, cell)) in names.iter().zip(&cells).enumerate() {
@@ -693,23 +726,33 @@ pub(crate) fn picker_width(ui: &mut Ui, names: &[&str]) -> f32 {
 /// `None` = not known yet: drawn off and dimmed, and it doesn't click.
 /// Returns true when clicked.
 pub(crate) fn switch_row(ui: &mut Ui, id: u64, r: Rect, label: &str, on: Option<bool>, accent: Color) -> bool {
-    switch_row_on(ui, id, r, label, on, accent, None)
+    switch_row_on(ui, id, r, label, on, accent, None, 1.0)
 }
 
 /// [`switch_row`] on the open card (`card` from `card::pill_card`): in
 /// Pill, a bottom row's hover wash follows the card's rounder corners.
-fn switch_row_on(ui: &mut Ui, id: u64, r: Rect, label: &str, on: Option<bool>, accent: Color, card: Option<(Rect, f32)>) -> bool {
+/// `pop`: the page's entrance for the switch (1 at rest).
+#[allow(clippy::too_many_arguments)]
+fn switch_row_on(ui: &mut Ui, id: u64, r: Rect, label: &str, on: Option<bool>, accent: Color, card: Option<(Rect, f32)>, pop: f32) -> bool {
     let hit = Rect::new(r.x - ROW_BLEED, r.y, r.w + 2.0 * ROW_BLEED, r.h);
     let resp = if on.is_some() { ui.button(id, hit) } else { Default::default() };
-    if resp.hovered || resp.pressed {
-        super::card::fill_box(ui, card, hit.inset(0.0, 1.0), 8.0, Color::white(if resp.pressed { 0.10 } else { 0.06 }));
-    }
+    row_wash(ui, id, card, hit.inset(0.0, 1.0), 8.0, resp.hovered, resp.pressed);
     let sw = Rect::new(r.right() - SWITCH_W, r.center().y - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
     ui.c.text(label, Rect::new(r.x, r.y, (sw.x - 10.0 - r.x).max(0.0), r.h), &TextStyle::body());
     let k = super::entrance::glide_k(ui, id, if on == Some(true) { 1.0 } else { 0.0 });
     let alpha = if on.is_some() { 1.0 } else { 0.5 };
-    ui.c.with_alpha(alpha, |c| draw_switch_k(c, sw, k, accent));
+    scaled(ui, sw.center(), pop, |ui| ui.c.with_alpha(alpha, |c| draw_switch_k(c, sw, k, accent)));
     resp.clicked
+}
+
+/// A row's hover wash (`id`: the row's), fading in and out
+/// (`entrance::glide`) rather than blinking on (also the Add-ons page's rows).
+pub(crate) fn row_wash(ui: &mut Ui, id: u64, card: Option<(Rect, f32)>, r: Rect, radius: f32, hovered: bool, pressed: bool) {
+    let to = if pressed { 0.10 } else if hovered { 0.06 } else { 0.0 };
+    let a = super::entrance::glide_k(ui, wid_n("settings.wash", id), to);
+    if a > 0.002 {
+        super::card::fill_box(ui, card, r, radius, Color::white(a));
+    }
 }
 
 /// A switch's track and knob (also the Add-ons and AI pages'): the knob
@@ -768,9 +811,10 @@ fn draw_about_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, title: &str, bod
     let head = Rect::new(area.x, area.y, area.w, ACCOUNT_H);
     let cy = head.center().y;
     let accent = st.accent;
-    let c = Point::new(head.x + ICON / 2.0, cy);
-    ui.c.fill_circle(c, ICON / 2.0, accent.with_alpha(0.22));
-    ui.c.icon(Icon::Ai, Rect::from_center(c, 20.0, 20.0), accent);
+    // Opened with the page: the disc pops, the line draws, each line's emoji
+    // pops down the list (`pages::entrance`); the words show at once.
+    let e = Entrance::of(ui, st, PageKind::Settings);
+    sheet_disc(ui, Point::new(head.x + ICON / 2.0, cy), Icon::Ai, accent, e.pop(0.0));
     let done_w = ui.pill_width("Done", false, true);
     let done = Rect::new(head.right() - done_w, cy - PILL_SMALL / 2.0, done_w, PILL_SMALL);
     if ui.pill(wid("about.done"), done, "Done", None, PillStyle::Utility).clicked {
@@ -780,18 +824,19 @@ fn draw_about_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, title: &str, bod
     let w = (done.x - 16.0 - x).max(0.0);
     text_with_dim(ui, title, crate::version::VERSION, Rect::new(x, cy - 12.0, w, 24.0), TextStyle::headline());
 
-    let px = 1.0 / ui.c.scale().max(0.5);
-    ui.c.fill_rect(Rect::new(area.x, area.y + RULE_Y, area.w, px), Color::white(0.10));
+    rule(ui, Rect::new(area.x, area.y + RULE_Y, area.w, 0.0), e.draw(0.06, 0.6));
     // Each line's emoji in a column of its own, the words lined up after it.
     let body_st = TextStyle::footnote().color(palette::TEXT).wrap().top();
     let w = (area.right() - x).max(0.0);
     let tw = (w - EMOJI_W).max(0.0);
     let line_h = ui.c.measure("Ag", &body_st, w).1.max(16.0);
     let mut y = area.y + RULE_Y + 12.0;
-    for line in body.lines() {
+    for (i, line) in body.lines().enumerate() {
         let (lx, lw, words) = match lead_emoji(line) {
-            Some((e, rest)) => {
-                ui.c.text(e, Rect::new(x, y, EMOJI_W, line_h + 1.0), &body_st);
+            Some((emoji, rest)) => {
+                let er = Rect::new(x, y, EMOJI_W, line_h + 1.0);
+                let ec = Point::new(x + 8.0, y + line_h / 2.0);
+                scaled(ui, ec, e.pop(0.12 + 0.04 * i.min(10) as f32), |ui| ui.c.text(emoji, er, &body_st));
                 (x + EMOJI_W, tw, rest)
             }
             None => (x, w, line),
@@ -800,6 +845,14 @@ fn draw_about_sheet(ui: &mut Ui, st: &mut AppState, area: Rect, title: &str, bod
         ui.c.text(words, Rect::new(lx, y, lw, h + 1.0), &body_st);
         y += h + if line.is_empty() { 0.0 } else { 5.0 };
     }
+}
+
+/// A sheet's disc and icon at `c`, popping by `k`.
+fn sheet_disc(ui: &mut Ui, c: Point, icon: Icon, accent: Color, k: f32) {
+    scaled(ui, c, k, |ui| {
+        ui.c.fill_circle(c, ICON / 2.0, accent.with_alpha(0.22));
+        ui.c.icon(icon, Rect::from_center(c, 20.0, 20.0), accent);
+    });
 }
 
 /// Room for a line's leading emoji on the About sheets.

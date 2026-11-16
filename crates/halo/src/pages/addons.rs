@@ -20,6 +20,12 @@
 //! people know what Pro brings before they buy it. Without Pro its switch
 //! gives way to a +, and a click opens what it does ([`locked`], [`draw_about`]).
 //! The Downloader's tools come only with Pro ([`needs_pro`]).
+//!
+//! As the page opens (`pages::entrance`) the badges and the switches (or
+//! the +) pop row by row, and a download's bar draws to where it is (a Pro
+//! add-on's page: its badge, PRO tag and pills pop); after that a row's wash fades in under the pointer, a switch
+//! slides, a bar glides to each new share and the badge of one just
+//! switched on brightens. The words show where they are from the first frame.
 
 use super::entrance::{scaled, Entrance};
 use super::PageKind;
@@ -29,7 +35,7 @@ use crate::icons::Icon;
 use crate::state::AppState;
 use crate::ui::{wid, wid_n, PillStyle, Ui, PILL_GAP, PILL_SMALL};
 use halo_core::addons::{self, Addon, Status};
-use halo_core::geom::{palette, Color, Point, Rect};
+use halo_core::geom::{palette, Point, Rect};
 use halo_core::phonedrop::fmt_bytes;
 
 const INTRO_H: f32 = 18.0;
@@ -153,8 +159,8 @@ fn about(a: &Addon) -> &'static str {
 fn draw_about(ui: &mut Ui, st: &mut AppState, area: Rect, a: &Addon) {
     let accent = st.accent;
     let c = Point::new(area.x + BADGE / 2.0, area.y + 4.0 + BADGE / 2.0);
-    let k = Entrance::of(ui, st, PageKind::Addons).pop(0.0);
-    scaled(ui, c, k, |ui| {
+    let e = Entrance::of(ui, st, PageKind::Addons);
+    scaled(ui, c, e.pop(0.0), |ui| {
         ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18));
         ui.c.icon(icon(a), Rect::from_center(c, 18.0, 18.0), accent);
     });
@@ -163,7 +169,7 @@ fn draw_about(ui: &mut Ui, st: &mut AppState, area: Rect, a: &Addon) {
     let title_w = ui.c.measure(a.title, &TextStyle::headline(), w.max(1.0)).0.ceil();
     ui.c.text(a.title, Rect::new(x, area.y + 3.0, title_w + 1.0, 20.0), &TextStyle::headline());
     let tag = Rect::new(x + title_w + 8.0, area.y + 4.0, 36.0, 18.0);
-    ui.c.fill_rrect(tag, 9.0, crate::face::ORANGE.with_alpha(0.2));
+    scaled(ui, tag.center(), e.pop(0.08), |ui| ui.c.fill_rrect(tag, 9.0, crate::face::ORANGE.with_alpha(0.2)));
     ui.c.text("PRO", tag, &TextStyle::caption().weight(Weight::Bold).center().color(crate::face::ORANGE));
     ui.c.text(a.blurb, Rect::new(x, area.y + 23.0, w, 17.0), &TextStyle::footnote().color(palette::TEXT_DIM));
     let para = TextStyle::footnote().wrap().top();
@@ -175,12 +181,14 @@ fn draw_about(ui: &mut Ui, st: &mut AppState, area: Rect, a: &Addon) {
     let y = y + 25.0;
     let see = "See Studio Pro";
     let see_w = ui.pill_width(see, false, true);
-    if ui.pill(wid("addons.about.see"), Rect::new(x, y, see_w, PILL_SMALL), see, None, PillStyle::Primary(accent)).clicked {
+    let see_r = Rect::new(x, y, see_w, PILL_SMALL);
+    if scaled(ui, see_r.center(), e.pop(0.16), |ui| ui.pill(wid("addons.about.see"), see_r, see, None, PillStyle::Primary(accent))).clicked {
         st.cmd(Command::OpenUrl(PRICING_URL.to_string()));
     }
     let back = "Back";
     let back_w = ui.pill_width(back, false, true);
-    if ui.pill(wid("addons.about.back"), Rect::new(x + see_w + PILL_GAP, y, back_w, PILL_SMALL), back, None, PillStyle::Neutral).clicked {
+    let back_r = Rect::new(x + see_w + PILL_GAP, y, back_w, PILL_SMALL);
+    if scaled(ui, back_r.center(), e.pop(0.21), |ui| ui.pill(wid("addons.about.back"), back_r, back, None, PillStyle::Neutral)).clicked {
         st.ui.addon_about = None;
     }
 }
@@ -222,10 +230,9 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     let status = status(st, a);
     let accent = st.accent;
     let hit = Rect::new(r.x - ROW_BLEED, r.y + 2.0, r.w + 2.0 * ROW_BLEED, r.h - 4.0);
-    let resp = ui.button(wid_n("addons.row", i as u64), hit);
-    if resp.hovered || resp.pressed {
-        super::card::fill_box(ui, card, hit, 10.0, Color::white(if resp.pressed { 0.10 } else { 0.06 }));
-    }
+    let row_id = wid_n("addons.row", i as u64);
+    let resp = ui.button(row_id, hit);
+    crate::pages::settings::row_wash(ui, row_id, card, hit, 10.0, resp.hovered, resp.pressed);
     let cy = r.center().y;
     // Six rows sit closer: a smaller badge, the text centred in the row;
     // eight are a line each.
@@ -241,19 +248,23 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     // As the page opens the badges pop, row by row (`pages::entrance`).
     let bc = Point::new(r.x + BADGE / 2.0, cy);
     let glyph = if one_line { 14.0f32.min(r.h - 8.0) } else { 18.0 };
-    let k = Entrance::of(ui, st, PageKind::Addons).pop(0.04 * i.min(10) as f32);
-    scaled(ui, bc, k, |ui| {
-        ui.c.fill_circle(bc, badge / 2.0, accent.with_alpha(0.18));
+    let e = Entrance::of(ui, st, PageKind::Addons);
+    let delay = 0.04 * i.min(10) as f32;
+    // An add-on that's on has a brighter badge, easing there as it's switched.
+    let lit = super::entrance::glide_k(ui, wid_n("addons.badge", i as u64), if status.is_on() { 1.0 } else { 0.0 });
+    scaled(ui, bc, e.pop(delay), |ui| {
+        ui.c.fill_circle(bc, badge / 2.0, accent.with_alpha(0.18 + 0.1 * lit));
         ui.c.icon(icon(a), Rect::from_center(bc, glyph, glyph), accent);
     });
 
     // A switch, or the + of a Pro add-on that opens what it does.
     let edge = if locked(st, a) {
-        ui.c.icon(Icon::Plus, Rect::from_center(Point::new(r.right() - 8.0, cy), 14.0, 14.0), palette::TEXT_DIM);
+        let pc = Point::new(r.right() - 8.0, cy);
+        scaled(ui, pc, e.pop(delay + 0.08), |ui| ui.c.icon(Icon::Plus, Rect::from_center(pc, 14.0, 14.0), palette::TEXT_DIM));
         r.right() - 16.0
     } else {
         let sw = Rect::new(r.right() - SWITCH_W, cy - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
-        crate::pages::settings::draw_switch(ui, wid_n("addons.switch", i as u64), sw, status.is_on(), accent);
+        scaled(ui, sw.center(), e.pop(delay + 0.08), |ui| crate::pages::settings::draw_switch(ui, wid_n("addons.switch", i as u64), sw, status.is_on(), accent));
         sw.x
     };
     // The size, while there is a choice to make.
@@ -292,6 +303,8 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     if let Some(p) = status.progress() {
         let bar = Rect::new(x, bar_y, w, BAR_H);
         ui.c.fill_rrect(bar, BAR_H / 2.0, palette::TRACK);
+        // It draws out as the page opens, then glides to each new share.
+        let p = super::entrance::glide_k(ui, wid_n("addons.bar", i as u64), p) * e.draw(delay + 0.1, 0.6);
         if p > 0.0 {
             ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * p).max(BAR_H), BAR_H), BAR_H / 2.0, accent);
         }
