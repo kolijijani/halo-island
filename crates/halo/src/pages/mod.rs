@@ -376,6 +376,9 @@ pub(crate) fn content_area(body: Rect) -> Rect {
 /// a switch moves the same in all of them.
 pub(crate) fn draw_pages(ui: &mut Ui, st: &mut AppState, body: Rect, header: Rect, page: PageKind, tr: Option<PageTransition>) {
     caffeine::put_away(ui, st);
+    // The shared controls' glides (switches, pickers): none with motion off
+    // or in the self-test, whose pictures are taken at rest.
+    entrance::set_still(entrance::still(st) || st.in_selftest);
     let area = content_area(body);
     // Content may reach a little above `area` (text boxes whose cap height,
     // not their line box, sits on the content top) but never into the tabs.

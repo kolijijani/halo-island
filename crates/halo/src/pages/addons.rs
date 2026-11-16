@@ -253,7 +253,7 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
         r.right() - 16.0
     } else {
         let sw = Rect::new(r.right() - SWITCH_W, cy - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
-        crate::pages::settings::draw_switch(ui.c, sw, status.is_on(), accent);
+        crate::pages::settings::draw_switch(ui, wid_n("addons.switch", i as u64), sw, status.is_on(), accent);
         sw.x
     };
     // The size, while there is a choice to make.

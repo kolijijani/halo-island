@@ -887,7 +887,7 @@ fn row(ui: &mut Ui, st: &mut AppState, id: ProviderId, r: Rect, view: Rect) -> O
     let sw = Rect::new(r.right() - SWITCH_W, cy - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
     let hit = sw.inset(-8.0, -5.0);
     let resp = if inside(view, hit) { ui.button(wid_n("usage.switch", idx), hit) } else { Default::default() };
-    super::settings::draw_switch(ui.c, sw, on, st.accent);
+    super::settings::draw_switch(ui, wid_n("usage.switch", idx), sw, on, st.accent);
     if resp.clicked {
         st.cmd(Command::Usage(if on { UsageCmd::Hide(id) } else { UsageCmd::Show(id) }));
     }

@@ -649,10 +649,14 @@ fn picker_padded(ui: &mut Ui, id: &str, x: f32, y: f32, h: f32, names: &[&str], 
         })
         .collect();
     ui.c.fill_rrect(Rect::new(x, y, cx + SEG_INSET - x, h), h / 2.0, palette::SURFACE);
+    // The lift glides to the choice picked (`entrance::glide`).
+    if let Some(cell) = cells.get(sel) {
+        let lift = super::entrance::glide(ui, wid(id), *cell);
+        ui.c.fill_rrect(lift, inner_h / 2.0, Color::white(0.16));
+    }
     let mut picked = None;
     for (i, (name, cell)) in names.iter().zip(&cells).enumerate() {
         let color = if i == sel {
-            ui.c.fill_rrect(*cell, inner_h / 2.0, Color::white(0.16));
             palette::TEXT
         } else {
             let resp = ui.button(wid_n(id, i as u64), Rect::new(cell.x, y, cell.w, h));
@@ -702,17 +706,31 @@ fn switch_row_on(ui: &mut Ui, id: u64, r: Rect, label: &str, on: Option<bool>, a
     }
     let sw = Rect::new(r.right() - SWITCH_W, r.center().y - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
     ui.c.text(label, Rect::new(r.x, r.y, (sw.x - 10.0 - r.x).max(0.0), r.h), &TextStyle::body());
+    let k = super::entrance::glide_k(ui, id, if on == Some(true) { 1.0 } else { 0.0 });
     let alpha = if on.is_some() { 1.0 } else { 0.5 };
-    ui.c.with_alpha(alpha, |c| draw_switch(c, sw, on == Some(true), accent));
+    ui.c.with_alpha(alpha, |c| draw_switch_k(c, sw, k, accent));
     resp.clicked
 }
 
-/// A switch's track and knob (also the Add-ons page's).
-pub(crate) fn draw_switch(c: &mut crate::gfx::Canvas, r: Rect, on: bool, accent: Color) {
-    c.fill_rrect(r, r.h / 2.0, if on { accent } else { palette::TRACK });
+/// A switch's track and knob (also the Add-ons and AI pages'): the knob
+/// slides across and the track takes the accent as it's switched
+/// (`entrance::glide`, keyed by `id`).
+pub(crate) fn draw_switch(ui: &mut Ui, id: u64, r: Rect, on: bool, accent: Color) {
+    let k = super::entrance::glide_k(ui, id, if on { 1.0 } else { 0.0 });
+    draw_switch_k(ui.c, r, k, accent);
+}
+
+/// A switch `k` of the way on (0 off, 1 on), as the Settings window draws its own.
+fn draw_switch_k(c: &mut crate::gfx::Canvas, r: Rect, k: f32, accent: Color) {
+    let k = k.clamp(0.0, 1.0);
+    c.fill_rrect(r, r.h / 2.0, palette::TRACK.mul_alpha(1.0 - k));
+    if k > 0.0 {
+        c.fill_rrect(r, r.h / 2.0, accent.mul_alpha(k));
+    }
     let d = r.h - 2.0 * KNOB_INSET;
-    let x = if on { r.right() - KNOB_INSET - d / 2.0 } else { r.x + KNOB_INSET + d / 2.0 };
-    c.fill_circle(Point::new(x, r.center().y), d / 2.0, palette::ON_ACCENT);
+    let x0 = r.x + KNOB_INSET + d / 2.0;
+    let x1 = r.right() - KNOB_INSET - d / 2.0;
+    c.fill_circle(Point::new(x0 + (x1 - x0) * k, r.center().y), d / 2.0, palette::ON_ACCENT);
 }
 
 // ---------------------------------------------------------------- the About sheet

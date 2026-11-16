@@ -135,6 +135,93 @@ pub fn shine(ui: &mut Ui, e: Entrance, r: Rect, radius: f32, delay: f32) {
     ui.c.unclip();
 }
 
+/// How long a shared control's glide takes (a switch's knob, a picker's lift, a row's wash).
+pub const GLIDE_S: f64 = 0.2;
+/// A control not drawn for this long starts again where it's going.
+const GLIDE_STALE: f64 = 1.0;
+
+/// One control's glide: where from, where to, since when, last drawn.
+#[derive(Clone, Copy)]
+struct Glide {
+    from: Rect,
+    to: Rect,
+    t0: f64,
+    drawn: f64,
+}
+
+thread_local! {
+    /// Motion is off this frame ([`still`]), for the shared controls that
+    /// get no `AppState` (set by `pages::draw_pages`).
+    static STILL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static GLIDES: std::cell::RefCell<std::collections::HashMap<WidgetId, Glide>> = std::cell::RefCell::default();
+}
+
+/// Whether motion is off for this frame's shared controls ([`glide`]).
+pub fn set_still(still: bool) {
+    STILL.with(|s| s.set(still));
+}
+
+/// `id`'s rect this frame on its way to `to` over [`GLIDE_S`], easing out;
+/// asks for frames while it moves. A control first drawn (or not drawn for
+/// a second) starts where it's going, so a page never opens mid-glide; with
+/// motion off it's there at once. Only an answer to the person moves it.
+pub fn glide(ui: &mut Ui, id: WidgetId, to: Rect) -> Rect {
+    let still = STILL.with(std::cell::Cell::get);
+    let (shown, moving) = GLIDES.with(|g| glide_step(&mut g.borrow_mut(), id, to, ui.now, still));
+    if moving {
+        ui.request_anim();
+    }
+    shown
+}
+
+/// [`glide`]'s step: `id`'s rect at `now` and whether it still moves.
+fn glide_step(g: &mut std::collections::HashMap<WidgetId, Glide>, id: WidgetId, to: Rect, now: f64, still: bool) -> (Rect, bool) {
+    // Controls of pages long closed go (a few hundred at most stay).
+    if g.len() > 256 {
+        g.retain(|_, v| now - v.drawn < GLIDE_STALE);
+    }
+    let rest = Glide { from: to, to, t0: f64::NEG_INFINITY, drawn: now };
+    let e = g.entry(id).or_insert(rest);
+    if still || now - e.drawn > GLIDE_STALE {
+        *e = rest;
+        return (to, false);
+    }
+    let k = super::ease_out_cubic(((now - e.t0) / GLIDE_S) as f32);
+    let shown = Rect::lerp(e.from, e.to, k);
+    if e.to != to {
+        *e = Glide { from: shown, to, t0: now, drawn: now };
+        return (shown, true);
+    }
+    e.drawn = now;
+    (shown, k < 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_control_glides_only_after_a_change_and_never_with_motion_off() {
+        let mut g = std::collections::HashMap::new();
+        let (a, b) = (Rect::new(0.0, 0.0, 10.0, 10.0), Rect::new(30.0, 0.0, 10.0, 10.0));
+        // First drawn: where it's going, at rest.
+        assert_eq!(glide_step(&mut g, 1, a, 10.0, false), (a, false));
+        // Picked elsewhere: it leaves from where it was, gets there by GLIDE_S, then rests.
+        assert_eq!(glide_step(&mut g, 1, b, 10.02, false), (a, true));
+        let (mid, moving) = glide_step(&mut g, 1, b, 10.02 + GLIDE_S / 2.0, false);
+        assert!(moving && mid.x > 15.0 && mid.x < 30.0, "{mid:?}");
+        assert_eq!(glide_step(&mut g, 1, b, 10.02 + GLIDE_S, false), (b, false));
+        // Motion off, or not drawn for a while: there at once.
+        assert_eq!(glide_step(&mut g, 1, a, 10.5, true), (a, false));
+        assert_eq!(glide_step(&mut g, 1, b, 20.0, false), (b, false));
+    }
+}
+
+/// [`glide`] for one number (a switch 0 off to 1 on, a hover's wash).
+pub fn glide_k(ui: &mut Ui, id: WidgetId, to: f32) -> f32 {
+    glide(ui, id, Rect::new(to, 0.0, 0.0, 0.0)).x
+}
+
 /// Draw `f` faded and [`RISE`] low at `k` 0, in place at 1.
 pub fn rise<R>(ui: &mut Ui, k: f32, f: impl FnOnce(&mut Ui) -> R) -> R {
     if k >= 1.0 {
