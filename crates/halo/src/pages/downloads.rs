@@ -8,9 +8,12 @@
 //! remove; a finished file also drags out of its row, as from the Shelf.
 //! yt-dlp does the work (`services::downloader`); nothing runs at
 //! rest, and the page moves by itself only while its list glides to where
-//! the wheel sent it, and as it opens (`pages::entrance`), its badges popping.
+//! the wheel sent it, and as it opens (`pages::entrance`): Paste, the mode
+//! and Download pop, the rows rise in one after another, their badges
+//! popping and their bars drawing to how far they've come, and Clear
+//! finished pops. A finished download's badge is green with a tick.
 
-use super::entrance::{scaled, Entrance};
+use super::entrance::{rise, scaled, Entrance};
 use super::PageKind;
 use crate::commands::{Command, DownloadCmd};
 use crate::gfx::{TextStyle, Weight};
@@ -136,6 +139,7 @@ fn link_row(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let paste = Rect::new(mode_x - PILL_GAP - paste_w, y, paste_w, PILL_SMALL);
     let field = Rect::new(r.x, r.y, (paste.x - PILL_GAP - r.x).max(0.0), r.h);
 
+    let e = Entrance::of(ui, st, PageKind::Downloads);
     let s = &mut st.ui.downloads;
     let typed = ui.text_input_row(wid("downloads.link"), field, &mut s.link, "Paste a link", LINK_MAX, accent, Some(Icon::Plus));
     let sel = if s.mode == Mode::Audio { 1 } else { 0 };
@@ -144,12 +148,12 @@ fn link_row(ui: &mut Ui, st: &mut AppState, r: Rect) {
     }
     let url = downloads::link_in(&s.link);
     let go_clicked = if url.is_some() {
-        ui.pill(wid("downloads.go"), go, "Download", Some(Icon::Download), PillStyle::Primary(accent)).clicked
+        scaled(ui, go.center(), e.pop(0.1), |ui| ui.pill(wid("downloads.go"), go, "Download", Some(Icon::Download), PillStyle::Primary(accent))).clicked
     } else {
-        disabled_pill(ui, go, "Download", Icon::Download);
+        scaled(ui, go.center(), e.pop(0.1), |ui| disabled_pill(ui, go, "Download", Icon::Download));
         false
     };
-    if ui.pill(wid("downloads.paste"), paste, "Paste", Some(Icon::Clipboard), PillStyle::Utility).clicked {
+    if scaled(ui, paste.center(), e.pop(0.04), |ui| ui.pill(wid("downloads.paste"), paste, "Paste", Some(Icon::Clipboard), PillStyle::Utility)).clicked {
         st.cmd(Command::Download(DownloadCmd::PasteLink));
     }
     // The new row comes in at the top of the list. The app empties the field
@@ -198,8 +202,15 @@ fn list(ui: &mut Ui, st: &mut AppState, r: Rect) {
     for (i, job) in jobs.iter().enumerate() {
         let row = Rect::new(view.x, view.y + i as f32 * ROW_H - scroll, view.w, ROW_H);
         if row.bottom() > view.y && row.y < view.bottom() {
-            let v = RowView { job, bar: downloads.progress(job.id), accent, k: e.pop(0.05 * i.min(6) as f32) };
-            draw_row(ui, v, row, view, &mut s.dragging, &mut cmds);
+            let at = 0.12 + 0.05 * i.min(6) as f32;
+            let bar = downloads.progress(job.id).map(|p| p * e.draw(at + 0.08, 0.5));
+            let v = RowView { job, bar, accent, k: e.pop(at) };
+            // A hairline between rows, drawn along as the row comes in.
+            if i > 0 {
+                let w = (row.w - TEXT_X) * e.draw(at, 0.5);
+                ui.c.fill_rect(Rect::new(row.x + TEXT_X, row.y, w, 0.5), Color::white(0.06));
+            }
+            rise(ui, v.k, |ui| draw_row(ui, v, row, view, &mut s.dragging, &mut cmds));
         }
     }
     if scroll > 0.5 {
@@ -212,7 +223,8 @@ fn list(ui: &mut Ui, st: &mut AppState, r: Rect) {
 
     if finished {
         let w = ui.pill_width("Clear finished", false, true);
-        if ui.pill(wid("downloads.clear"), Rect::new(foot.right() - w, foot.y, w, PILL_SMALL), "Clear finished", None, PillStyle::Utility).clicked {
+        let clear = Rect::new(foot.right() - w, foot.y, w, PILL_SMALL);
+        if scaled(ui, clear.center(), e.pop(0.3), |ui| ui.pill(wid("downloads.clear"), clear, "Clear finished", None, PillStyle::Utility)).clicked {
             cmds.push(Command::Download(DownloadCmd::ClearDone));
         }
     }
@@ -275,10 +287,20 @@ fn draw_row(ui: &mut Ui, v: RowView, r: Rect, view: Rect, dragging: &mut bool, c
     let RowView { job, bar, accent, k } = v;
     let cy = r.center().y;
     let c = Point::new(r.x + BADGE / 2.0, cy);
-    scaled(ui, c, k, |ui| ui.c.fill_circle(c, BADGE / 2.0, accent.with_alpha(0.18)));
+    // Done: the badge goes green, with a tick on its corner.
+    let done = matches!(job.state, State::Done { .. });
+    let tint = if done { palette::GREEN } else { accent };
+    scaled(ui, c, k, |ui| ui.c.fill_circle(c, BADGE / 2.0, tint.with_alpha(0.18)));
     match badge_letter(job) {
-        Some(l) => ui.c.text(&l, Rect::from_center(c, BADGE, BADGE), &TextStyle::headline().color(accent).center()),
-        None => scaled(ui, c, k, |ui| ui.c.icon(Icon::Download, Rect::from_center(c, 18.0, 18.0), accent)),
+        Some(l) => ui.c.text(&l, Rect::from_center(c, BADGE, BADGE), &TextStyle::headline().color(tint).center()),
+        None => scaled(ui, c, k, |ui| ui.c.icon(Icon::Download, Rect::from_center(c, 18.0, 18.0), tint)),
+    }
+    if done {
+        let t = Point::new(c.x + BADGE / 2.0 - 3.0, c.y + BADGE / 2.0 - 3.0);
+        scaled(ui, t, k, |ui| {
+            ui.c.fill_circle(t, 6.5, palette::ISLAND);
+            ui.c.icon(Icon::CheckCircle, Rect::from_center(t, 12.0, 12.0), palette::GREEN);
+        });
     }
 
     // A finished file drags out of its row, as from the Shelf (the buttons,
