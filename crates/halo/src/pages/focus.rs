@@ -9,9 +9,13 @@
 //! The countdown repaints once per second through the app's wake timer; the
 //! only continuous animations here are a short ring "rewind" when the phase is
 //! reset, skipped or switched, the segmented control's selection gliding,
-//! and the page's entrance as it opens (`pages::entrance`).
+//! and the page's entrance as it opens (`pages::entrance`): the ring draws to
+//! where the phase is with a dot riding its tip, the picker rises, the
+//! buttons pop one after another and the cycle dots pop. While a session
+//! runs, a halo of the phase colour breathes round the ring for a few
+//! seconds after the page opens (`entrance::alive`), then rests.
 
-use super::entrance::Entrance;
+use super::entrance::{alive, hover, rise, scaled, Entrance};
 use super::PageKind;
 use crate::gfx::{ts, TextStyle, Weight};
 use crate::icons::Icon;
@@ -185,7 +189,26 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         ui.request_anim();
     }
     let arc_color = if paused { ring_color.mul_alpha(0.55) } else { ring_color };
-    ui.c.ring(rc, RING_R, RING_W, progress * e.draw(0.05, 0.7), RING_TRACK, arc_color);
+    // A faint disc of the phase colour inside the ring, and while running a
+    // halo round it that breathes for a few seconds after the page opens.
+    rise(ui, e.pop(0.0), |ui| ui.c.fill_circle(rc, RING_R - RING_W, ring_color.with_alpha(0.06)));
+    if running {
+        if let Some((t, k)) = alive(ui, st, PageKind::Focus) {
+            let b = 0.5 - 0.5 * (t * 2.2).cos();
+            ui.c.stroke_circle(rc, RING_R + RING_W / 2.0 + 2.0 + 2.0 * b, ring_color.with_alpha(0.18 * b * k), 2.0);
+        }
+    }
+    let drawn = progress * e.draw(0.05, 0.7);
+    ui.c.ring(rc, RING_R, RING_W, drawn, RING_TRACK, arc_color);
+    // A dot riding the arc's tip, in the island's colour so the arc reads as a hand.
+    if drawn > 0.01 && drawn < 0.995 {
+        let a = drawn * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+        let tip = Point::new(rc.x + RING_R * a.cos(), rc.y + RING_R * a.sin());
+        scaled(ui, tip, e.pop(0.5), |ui| {
+            ui.c.fill_circle(tip, RING_W / 2.0 + 1.0, arc_color);
+            ui.c.fill_circle(tip, RING_W / 2.0 - 1.5, palette::ISLAND.with_alpha(0.85));
+        });
+    }
 
     let remaining = st.pomodoro.remaining(now);
     let countdown = fmt_countdown(remaining);
@@ -219,7 +242,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let style = TextStyle::body().weight(Weight::Semibold).color(palette::TEXT_DIM);
         ui.c.text(&status, Rect::new(x0, chips_y, col_w, CHIP_H), &style);
     } else {
-        draw_segments(ui, st, x0, chips_y);
+        draw_segments(ui, st, x0, chips_y, e);
     }
 
     let (toggle_label, toggle_icon) = if running {
@@ -241,19 +264,19 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         skip_w = (skip_w * k).floor();
     }
     let toggle_r = Rect::new(x0, buttons_y, toggle_w, BUTTON_H);
-    if ui.pill(wid("focus.toggle"), toggle_r, toggle_label, Some(toggle_icon), PillStyle::Primary(color)).clicked {
+    if scaled(ui, toggle_r.center(), e.pop(0.16), |ui| ui.pill(wid("focus.toggle"), toggle_r, toggle_label, Some(toggle_icon), PillStyle::Primary(color))).clicked {
         st.pomodoro.toggle(now);
     }
     let reset_r = Rect::new(toggle_r.right() + PILL_GAP, buttons_y, reset_w, BUTTON_H);
     if active {
-        if ui.pill(wid("focus.reset"), reset_r, "Reset", Some(Icon::Reset), PillStyle::Neutral).clicked {
+        if scaled(ui, reset_r.center(), e.pop(0.21), |ui| ui.pill(wid("focus.reset"), reset_r, "Reset", Some(Icon::Reset), PillStyle::Neutral)).clicked {
             st.pomodoro.reset();
         }
     } else {
-        disabled_pill(ui, reset_r, "Reset", Icon::Reset);
+        scaled(ui, reset_r.center(), e.pop(0.21), |ui| disabled_pill(ui, reset_r, "Reset", Icon::Reset));
     }
     let skip_r = Rect::new(reset_r.right() + PILL_GAP, buttons_y, skip_w, BUTTON_H);
-    if ui.pill(wid("focus.skip"), skip_r, "Skip", Some(Icon::Next), PillStyle::Neutral).clicked {
+    if scaled(ui, skip_r.center(), e.pop(0.26), |ui| ui.pill(wid("focus.skip"), skip_r, "Skip", Some(Icon::Next), PillStyle::Neutral)).clicked {
         // A skipped phase is not a completed session, so no stats or notice.
         let _ = st.pomodoro.skip(now);
     }
@@ -285,8 +308,9 @@ fn end_clock(st: &AppState, remaining: f64) -> String {
 
 /// Focus / Short / Long as a neutral segmented control (idle only): one
 /// track, the selected segment lifted in white, no phase colour (the
-/// Start capsule is the page's only tinted control).
-fn draw_segments(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) {
+/// Start capsule is the page's only tinted control). It rises in as the
+/// page opens; a segment's hover fades in.
+fn draw_segments(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32, e: Entrance) {
     let cfg = &st.settings.pomodoro;
     let segs = [
         (Phase::Focus, "Focus", cfg.focus_min),
@@ -313,30 +337,31 @@ fn draw_segments(ui: &mut Ui, st: &mut AppState, x0: f32, y: f32) {
         x += w;
     }
     let track = Rect::new(x0, y, x + SEG_INSET - x0, CHIP_H);
-    ui.c.fill_rrect(track, CHIP_H / 2.0, palette::SURFACE);
-
     let sel = segs.iter().position(|(ph, _, _)| *ph == st.pomodoro.phase).unwrap_or(0);
     let ((sx, sw), gliding) = seg_state(st.now, (cells[sel].0.x, cells[sel].0.w));
     if gliding {
         ui.request_anim();
     }
-    ui.c.fill_rrect(Rect::new(sx, y + SEG_INSET, sw, inner_h), inner_h / 2.0, Color::white(0.16));
+    rise(ui, e.pop(0.08), |ui| {
+        ui.c.fill_rrect(track, CHIP_H / 2.0, palette::SURFACE);
+        ui.c.fill_rrect(Rect::new(sx, y + SEG_INSET, sw, inner_h), inner_h / 2.0, Color::white(0.16));
+    });
 
     let mut picked = None;
     for (i, ((ph, name, _), (r, nw, num))) in segs.iter().zip(cells.iter()).enumerate() {
         let (name_c, num_c) = if i == sel {
             (palette::TEXT, palette::TEXT_DIM)
         } else {
-            let resp = ui.button(wid_n("focus.chip", i as u64), Rect::new(r.x, y, r.w, CHIP_H));
+            let id = wid_n("focus.chip", i as u64);
+            let resp = ui.button(id, Rect::new(r.x, y, r.w, CHIP_H));
             if resp.clicked {
                 picked = Some(*ph);
             }
-            if resp.pressed || resp.hovered {
-                ui.c.fill_rrect(*r, inner_h / 2.0, Color::white(if resp.pressed { 0.10 } else { 0.06 }));
-                (palette::TEXT, palette::TEXT_DIM)
-            } else {
-                (palette::TEXT_DIM, palette::TEXT_DIM)
+            let h = hover(ui, st, id, resp.hovered || resp.pressed);
+            if h > 0.0 {
+                ui.c.fill_rrect(*r, inner_h / 2.0, Color::white(if resp.pressed { 0.10 } else { 0.06 * h }));
             }
+            (Color::lerp(palette::TEXT_DIM, palette::TEXT, h), palette::TEXT_DIM)
         };
         let tx = r.x + SEG_PAD;
         ui.c.text(name, Rect::new(tx, y, nw + 2.0, CHIP_H), &name_st.color(name_c));

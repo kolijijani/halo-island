@@ -12,9 +12,11 @@
 //! in and the checkbox pops. All of it is event-driven: nothing animates
 //! while idle. Done tasks sit on a faint green band. As the
 //! page opens (`pages::entrance`) the bands rise in and the checkboxes pop,
-//! row by row, and the footer's ring draws; the words stay put.
+//! row by row, the footer's ring draws and its pill pops; the words stay put.
+//! A row's hover fades in and its delete button pops in; checking off the
+//! day's last task sends a green ripple out of the footer's ring.
 
-use super::entrance::{rise, Entrance};
+use super::entrance::{hover, rise, scaled, Entrance};
 use super::PageKind;
 use crate::gfx::TextStyle;
 use crate::icons::Icon;
@@ -211,7 +213,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             // A row on the move glides between pixels; at rest it sits on whole pixels.
             let snap_was = ui.c.set_text_snap(!(scrolling || m || appear < 1.0));
             let k = e.pop(0.06 + 0.05 * i.min(6) as f32);
-            let action = draw_row(ui, row, hit, view, *id, *done, text, pop, k);
+            let action = draw_row(ui, st, row, hit, view, *id, *done, text, pop, k);
             ui.c.set_text_snap(snap_was);
             ui.c.set_alpha(prev_alpha);
             match action {
@@ -344,19 +346,23 @@ enum RowAction {
 }
 
 /// One task row. `hit` is the part of `row` inside the list viewport `view`.
-#[allow(clippy::too_many_arguments)]
 /// `k` is the page's entrance for this row: its band rises in and its
-/// checkbox pops (1 at rest).
-fn draw_row(ui: &mut Ui, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, text: &str, pop: Option<f32>, k: f32) -> RowAction {
+/// checkbox pops (1 at rest). Its hover fades in (`entrance::hover`).
+#[allow(clippy::too_many_arguments)]
+fn draw_row(ui: &mut Ui, st: &mut AppState, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, text: &str, pop: Option<f32>, k: f32) -> RowAction {
     let mut action = RowAction::None;
-    let resp = ui.button(wid_n("tasks.row", id), hit);
+    let row_id = wid_n("tasks.row", id);
+    let resp = ui.button(row_id, hit);
+    let h = hover(ui, st, row_id, resp.hovered);
     let band = row.inset(2.0, 2.0);
     if resp.pressed {
         ui.c.fill_rrect(band, 9.0, palette::SURFACE_HOVER);
-    } else if resp.hovered {
-        ui.c.fill_rrect(band, 9.0, palette::SURFACE);
-    } else if done {
-        rise(ui, k, |ui| ui.c.fill_rrect(band, 9.0, palette::GREEN.with_alpha(0.10)));
+    } else {
+        let rest = if done { palette::GREEN.with_alpha(0.10) } else { Color::white(0.0) };
+        let fill = Color::lerp(rest, palette::SURFACE, h);
+        if fill.a > 0.0 {
+            rise(ui, k, |ui| ui.c.fill_rrect(band, 9.0, fill));
+        }
     }
     if resp.clicked {
         action = RowAction::Toggle;
@@ -393,7 +399,7 @@ fn draw_row(ui: &mut Ui, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, 
     let del = Rect::new(row.right() - 32.0, cy - 13.0, 26.0, 26.0);
     if resp.hovered && del.y >= view.y && del.bottom() <= view.bottom() {
         let color = if ui.hovered(del) { palette::RED } else { palette::TEXT_DIM };
-        if ui.icon_button(wid_n("tasks.del", id), del, Icon::Trash, color, 14.0).clicked {
+        if scaled(ui, del.center(), h, |ui| ui.icon_button(wid_n("tasks.del", id), del, Icon::Trash, color, 14.0)).clicked {
             action = RowAction::Delete;
         }
     }
@@ -436,7 +442,16 @@ fn draw_footer(ui: &mut Ui, st: &mut AppState, r: Rect, day_start: i64, full: bo
     let (done, total) = st.store.tasks.today_progress(day_start);
     let cy = r.center().y;
     let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 } * e.draw(0.15, 0.6);
-    ui.c.ring(Point::new(r.x + MARK_X, cy), 6.0, 2.2, frac, RING_TRACK, palette::GREEN);
+    let ring_c = Point::new(r.x + MARK_X, cy);
+    ui.c.ring(ring_c, 6.0, 2.2, frac, RING_TRACK, palette::GREEN);
+    // The day's last task just checked off: a ripple out of the ring (its
+    // frames are the checkbox pop's, asked for by `draw`).
+    if let Some((_, t0)) = anim.toggled.filter(|_| total > 0 && done == total) {
+        let t = ((st.now - t0) / POP_S).clamp(0.0, 1.0) as f32;
+        if t < 1.0 {
+            ui.c.stroke_circle(ring_c, 7.0 + 10.0 * ease_out_cubic(t), palette::GREEN.with_alpha(0.5 * (1.0 - t)), 1.5);
+        }
+    }
 
     let show_clear = done > 0;
     let mut text_right = r.right();
@@ -446,7 +461,7 @@ fn draw_footer(ui: &mut Ui, st: &mut AppState, r: Rect, day_start: i64, full: bo
         let w = ui.pill_width("Clear done", false, true);
         let pr = Rect::new(r.right() - w, r.y, w, r.h);
         text_right = pr.x - 12.0;
-        if ui.pill(wid("tasks.clear"), pr, "Clear done", None, PillStyle::Utility).clicked {
+        if scaled(ui, pr.center(), e.pop(0.2), |ui| ui.pill(wid("tasks.clear"), pr, "Clear done", None, PillStyle::Utility)).clicked {
             let removed: Vec<Task> = st.store.tasks.tasks.iter().filter(|t| t.done).cloned().collect();
             if st.store.tasks.clear_done() > 0 {
                 // The scroll offset is clamped to the shorter list on the next frame.
