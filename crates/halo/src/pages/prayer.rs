@@ -20,7 +20,7 @@
 //! Times come from `halo_core::prayer`; the place from `settings.prayer`,
 //! found by Windows' or macOS's location (the app) or picked here.
 
-use super::entrance::{scaled, Entrance};
+use super::entrance::{hover, rise, scaled, Entrance};
 use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{TextStyle, Weight};
@@ -144,7 +144,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         super::empty_state(ui, area, Icon::Moon, "No place yet", "Pick your city to see its times", e);
         let w = ui.pill_width("Pick a place", false, true);
         let r = Rect::new(area.center().x - w / 2.0, area.bottom() - PILL_SMALL, w, PILL_SMALL);
-        if ui.pill(wid("prayer.pick"), r, "Pick a place", None, PillStyle::Utility).clicked {
+        if scaled(ui, r.center(), e.pop(0.15), |ui| ui.pill(wid("prayer.pick"), r, "Pick a place", None, PillStyle::Utility)).clicked {
             st.prayer.picking = true;
         }
         return;
@@ -176,7 +176,11 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             let gone = waited(last.at, n.at, now) * e.draw(0.10, 0.55);
             ui.c.fill_rrect(bar, BAR_H / 2.0, Color::white(0.12));
             if gone > 0.0 {
-                ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * gone).max(BAR_H), BAR_H), BAR_H / 2.0, accent);
+                let w = (bar.w * gone).max(BAR_H);
+                ui.c.fill_rrect(Rect::new(bar.x, bar.y, w, BAR_H), BAR_H / 2.0, accent);
+                // A glow at its tip: where the wait is now.
+                let tip = Point::new(bar.x + w - BAR_H / 2.0, bar.center().y);
+                scaled(ui, tip, e.pop(0.5), |ui| ui.c.fill_circle(tip, BAR_H + 1.5, accent.with_alpha(0.25)));
             }
         }
     }
@@ -222,12 +226,15 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let fy = area.y + FOOT_Y;
     let py = fy + (FOOT_H - PILL_SMALL) / 2.0;
     let change_w = ui.pill_width("Change place", false, true);
-    if ui.pill(wid("prayer.change"), Rect::new(x, py, change_w, PILL_SMALL), "Change place", None, PillStyle::Utility).clicked {
+    // As the page opens the footer's pills pop one after another.
+    let change_r = Rect::new(x, py, change_w, PILL_SMALL);
+    if scaled(ui, change_r.center(), e.pop(0.3), |ui| ui.pill(wid("prayer.change"), change_r, "Change place", None, PillStyle::Utility)).clicked {
         st.prayer.picking = true;
         st.prayer.query.clear();
     }
     let read_w = ui.pill_width("Read Quran", true, true);
-    if ui.pill(wid("prayer.quran"), Rect::new(x + change_w + 8.0, py, read_w, PILL_SMALL), "Read Quran", Some(Icon::Open), PillStyle::Utility).clicked {
+    let read_r = Rect::new(x + change_w + 8.0, py, read_w, PILL_SMALL);
+    if scaled(ui, read_r.center(), e.pop(0.35), |ui| ui.pill(wid("prayer.quran"), read_r, "Read Quran", Some(Icon::Open), PillStyle::Utility)).clicked {
         if !QURAN.is_empty() { st.cmd(Command::OpenUrl(QURAN.into())); }
     }
 
@@ -520,12 +527,17 @@ fn picker(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // The bottom row's hover wash meets the Pill card's rounded corners.
     let card = super::card::pill_card(st, area);
     let mut clicked = None;
-    for (i, place) in st.prayer.found.iter().flat_map(|f| f.1.iter()).enumerate() {
+    let places: Vec<Place> = st.prayer.found.iter().flat_map(|f| f.1.iter().cloned()).collect();
+    for (i, place) in places.iter().enumerate() {
         let (label, prov) = (&place.label, &place.prov);
         let r = Rect::new(area.x + (i / 4) as f32 * (col_w + 16.0), top + (i % 4) as f32 * RESULT_H, col_w, RESULT_H);
-        let b = ui.button(wid_n("prayer.result", i as u64), Rect::new(r.x - 8.0, r.y, r.w + 8.0, r.h));
-        if b.hovered || b.pressed {
-            super::card::fill_box(ui, card, Rect::new(r.x - 8.0, r.y, r.w + 8.0, r.h), 8.0, Color::white(if b.pressed { 0.10 } else { 0.06 }));
+        let id = wid_n("prayer.result", i as u64);
+        let b = ui.button(id, Rect::new(r.x - 8.0, r.y, r.w + 8.0, r.h));
+        let h = hover(ui, st, id, b.hovered || b.pressed);
+        if h > 0.0 {
+            super::card::fill_box(ui, card, Rect::new(r.x - 8.0, r.y, r.w + 8.0, r.h), 8.0, Color::white(if b.pressed { 0.10 } else { 0.06 * h }));
+            // An accent tick at the row's left under the pointer.
+            rise(ui, h, |ui| ui.c.fill_rrect(Rect::new(r.x - 6.0, r.y + 7.0, 2.0, r.h - 14.0), 1.0, accent));
         }
         let lw = ui.c.measure(label, &TextStyle::body(), 400.0).0.ceil();
         ui.c.text(label, Rect::new(r.x, r.y, lw.min(r.w) + 2.0, r.h), &TextStyle::body());
