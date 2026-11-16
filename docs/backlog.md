@@ -169,7 +169,7 @@ dah siap / tak perlu — tiada dalam skop.
    - Popup baru: Num/Scroll Lock, headphone plug/unplug, monitor connect/disconnect, mic in-use, camera in-use, Focus/DND, airplane mode (C3)
 3. **Animasi menyeluruh** — semak semua bahagian, buat animasi untuk tempat yang boleh (gabung `R2`–`R4`).
 4. **Buang** — menu "every setting" (`C1`).
-5. **Bina** — menu FPS dalam advance setting (`C4`).
+5. **Bina** — menu FPS dalam advance setting (`C4`). DONE 0.2.53: tab Games sendiri (`pages/games.rs`) dengan suis FPS, suhu GPU, CPU dan refresh rate.
 6. **Kurangkan** — menu tray hidden-icon; sesetengah menu dah ada dalam advance setting, kekalkan yang perlu sahaja (`C5`).
 7. **Baiki** — butang Settings di notch tersorok bila banyak menu atasnya (`C6`).
 8. **License** — L1 uninstall padam license + install id; L2 revoke tak sampai ke app; R1 view license key admin portal.

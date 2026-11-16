@@ -71,6 +71,9 @@ pub enum MonitorChoice {
 /// Bumped when defaults change in a way existing files should pick up.
 pub const SETTINGS_VERSION: u32 = 6;
 
+/// The Games page's refresh rates (`Settings::game_hz`), 0 = Auto.
+pub const GAME_HZ: [u16; 8] = [0, 60, 75, 120, 144, 165, 240, 360];
+
 fn version_zero() -> u32 {
     0
 }
@@ -156,6 +159,16 @@ pub struct Settings {
     /// front. Its own name: the corner test build wrote `game_readout`
     /// ("peek" as its default) into the files of the people who tried it.
     pub game_peek: bool,
+    /// What the readout over games shows beside the GPU's load (the Games
+    /// page's switches): the frame rate, the GPU's temperature, the CPU's
+    /// load. All on by default.
+    pub game_fps: bool,
+    pub game_temp: bool,
+    pub game_cpu: bool,
+    /// The game screen's refresh rate in Hz, one of [`GAME_HZ`]: the top of
+    /// the Games page's frame-rate chart and ring. 0 = Auto, the nearest
+    /// common rate above the minute's peak.
+    pub game_hz: u16,
     /// The AI tab's choices (its readers are the `studio-usage` crate).
     pub usage: UsageSettings,
     /// The Record page's choices (Halo Island Recorder).
@@ -370,6 +383,10 @@ impl Default for Settings {
             caffeine: crate::caffeine::Prefs::default(),
             game_stats: false,
             game_peek: false,
+            game_fps: true,
+            game_temp: true,
+            game_cpu: true,
+            game_hz: 0,
             usage: UsageSettings::default(),
             record: RecordSettings::default(),
             notifications: crate::notifications::NotificationSettings::default(),
@@ -532,6 +549,9 @@ impl Settings {
         // Show over games needs the island on top of full-screen apps.
         if self.game_stats {
             self.hide_in_fullscreen = false;
+        }
+        if !GAME_HZ.contains(&self.game_hz) {
+            self.game_hz = 0;
         }
         self.hover_delay_ms = self.hover_delay_ms.min(2000);
         self.lyrics_offset_ms = self.lyrics_offset_ms.clamp(-5000, 5000);
@@ -783,6 +803,12 @@ mod tests {
         }
         let s: Settings = serde_json::from_str(r#"{"game_stats":true,"game_peek":true}"#).unwrap();
         assert!(s.game_peek);
+        // Older files show all three, on Auto; a rate not offered goes back to Auto.
+        assert!(s.game_fps && s.game_temp && s.game_cpu && s.game_hz == 0);
+        let s: Settings = serde_json::from_str(r#"{"game_hz":144}"#).unwrap();
+        assert_eq!(s.sanitized().game_hz, 144);
+        let s: Settings = serde_json::from_str(r#"{"game_hz":59}"#).unwrap();
+        assert_eq!(s.sanitized().game_hz, 0);
     }
 
     #[test]

@@ -18,9 +18,8 @@
 //! the right. On a Mac without a battery it's the whole Mac's draw from its
 //! own sensor, which macOS doesn't split by part.
 //!
-//! The last module, Games (Windows only), holds Show over games: its switch,
-//! whether the readout stays or peeks, whether Windows lets Halo read frames
-//! (with the one-time OK), the frame rate's last minute and what's in front.
+//! Show over games has its own tab, Games (`pages::games`), which draws
+//! with this page's rings, charts and rows.
 //!
 //! As the page opens (`pages::entrance`) the rings, gauges and the
 //! battery's charge draw to their readings; the numbers show at once.
@@ -30,9 +29,8 @@ use super::PageKind;
 use crate::commands::Command;
 use crate::gfx::{Image, ImageData, TextStyle, Weight};
 use crate::icons::Icon;
-use crate::state::{AppState, FpsAccess};
-use crate::ui::{wid, wid_n, PillStyle, Ui, PILL_SMALL};
-use halo_core::frames::{fmt_fps, fmt_frame_ms};
+use crate::state::AppState;
+use crate::ui::{wid_n, Ui};
 use halo_core::geom::{palette, Color, Point, Rect};
 use halo_core::power::{fmt_w, watts_ceiling, PowerReading, REST_W};
 use halo_core::svgpath::Seg;
@@ -51,6 +49,11 @@ thread_local! {
 
 fn sweep() -> f32 {
     SWEEP.with(std::cell::Cell::get)
+}
+
+/// How far the rings and gauges draw this frame (the Games page sets its own).
+pub(super) fn set_sweep(k: f32) {
+    SWEEP.with(|s| s.set(k));
 }
 /// The module strip, and the gap under it.
 const STRIP_H: f32 = 40.0;
@@ -130,21 +133,18 @@ fn modules(st: &AppState) -> Vec<Module> {
         Some(r) => (r.battery.is_some(), r.gpu.is_some()),
         None => (st.power.has_battery, st.ui.system_gpu),
     };
-    // Games is Windows' (it reads Windows' frame log).
-    let games = cfg!(windows);
     // The watts are Halo Pro's.
     let power = st.ui.system_power && !battery && st.settings.pro;
     Module::ALL
         .into_iter()
-        .filter(|m| (*m != Module::Battery || battery) && (*m != Module::Gpu || gpu) && (*m != Module::Games || games) && (*m != Module::Power || power))
+        .filter(|m| (*m != Module::Battery || battery) && (*m != Module::Gpu || gpu) && (*m != Module::Power || power))
         .collect()
 }
 
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // Fixed layout height: the island's spring may still be opening.
     let area = Rect::new(area.x, area.y, area.w, HEIGHT);
-    let k = Entrance::of(ui, st, PageKind::System).draw(0.08, 0.7);
-    SWEEP.with(|s| s.set(k));
+    set_sweep(Entrance::of(ui, st, PageKind::System).draw(0.08, 0.7));
     if let Some(r) = &st.system.latest {
         st.ui.system_gpu = r.gpu.is_some();
         // Only the page's own (full) readings, the ones with app lists, say
@@ -159,10 +159,6 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let module = if mods.contains(&st.ui.system_module) { st.ui.system_module } else { Module::Cpu };
     draw_strip(ui, st, &mods, module, Rect::new(area.x, area.y, area.w, STRIP_H));
     let body = Rect::new(area.x, area.y + STRIP_H + STRIP_GAP, area.w, HEIGHT - STRIP_H - STRIP_GAP);
-    if module == Module::Games {
-        draw_games(ui, st, &Cols::new(body));
-        return;
-    }
     let Some(r) = st.system.latest.clone() else {
         ui.c.text("Reading…", body, &TextStyle::footnote().color(palette::TEXT_FAINT).center());
         return;
@@ -184,7 +180,6 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             }
             Some(())
         }
-        Module::Games => None,
     };
     if shown.is_none() {
         ui.c.text(UNREPORTED, body, &TextStyle::footnote().color(palette::TEXT_FAINT).center());
@@ -192,14 +187,14 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
 }
 
 /// The three columns under the strip.
-struct Cols {
-    dash: Rect,
-    mid: Rect,
-    top: Rect,
+pub(super) struct Cols {
+    pub(super) dash: Rect,
+    pub(super) mid: Rect,
+    pub(super) top: Rect,
 }
 
 impl Cols {
-    fn new(r: Rect) -> Cols {
+    pub(super) fn new(r: Rect) -> Cols {
         let k = (r.w / FULL_W).min(1.0);
         let dash = Rect::new(r.x, r.y, DASH_W * k, r.h);
         let top = Rect::new(r.right() - TOP_W * k, r.y, TOP_W * k, r.h);
@@ -218,8 +213,6 @@ enum Spark {
     Rate(Series),
     /// A level (the battery's charge).
     Level(f32, Color),
-    /// Frames per second, against the nearest common refresh rate above the minute's peak.
-    Fps(Series),
     /// Watts, against a round top above the minute's peak.
     Watts(Series),
 }
@@ -229,7 +222,6 @@ enum Spark {
 fn widest_value(m: Module) -> &'static str {
     match m {
         Module::Drives | Module::Network => "999 MB/s",
-        Module::Games => "999 fps",
         Module::Power => "1888 W",
         _ => "100%",
     }
@@ -283,7 +275,6 @@ fn draw_strip(ui: &mut Ui, st: &mut AppState, mods: &[Module], module: Module, r
         match spark {
             Some(Spark::Share(s)) => plot(ui, &s, 1.0, accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
             Some(Spark::Rate(s)) => plot(ui, &s, nice_ceiling(s.max()), accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
-            Some(Spark::Fps(s)) => plot(ui, &s, fps_ceiling(s.max()), accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
             Some(Spark::Watts(s)) => plot(ui, &s, watts_ceiling(s.max()), accent.with_alpha(if selected { 0.9 } else { 0.55 }), band, Fill::Faint),
             Some(Spark::Level(f, c)) => {
                 let bar = Rect::new(chip.x + 10.0, chip.bottom() - 9.0, chip.w - 20.0, 3.0);
@@ -299,13 +290,6 @@ fn draw_strip(ui: &mut Ui, st: &mut AppState, mods: &[Module], module: Module, r
 }
 
 fn chip_value(st: &AppState, m: Module) -> (String, Option<Spark>) {
-    if m == Module::Games {
-        return match (st.settings.game_stats, st.game.active, st.game.rate) {
-            (false, ..) => ("Off".into(), None),
-            (true, true, Some(r)) => (format!("{} fps", fmt_fps(r.fps)), Some(Spark::Fps(st.game.history.clone()))),
-            (true, ..) => ("On".into(), None),
-        };
-    }
     let Some(r) = &st.system.latest else { return (PLACEHOLDER.into(), None) };
     let h = &st.system.history;
     let v = match m {
@@ -322,7 +306,6 @@ fn chip_value(st: &AppState, m: Module) -> (String, Option<Spark>) {
         }),
         Module::Battery => r.battery.as_ref().map(|b| (format!("{}%", b.percent.min(100)), Some(Spark::Level(f32::from(b.percent.min(100)) / 100.0, battery_color(b))))),
         Module::Power => r.power.as_ref().map(|p| (fmt_w(p.total_w), Some(Spark::Watts(h.power.clone())))),
-        Module::Games => None,
     };
     v.unwrap_or_else(|| (PLACEHOLDER.into(), None))
 }
@@ -866,147 +849,24 @@ fn fmt_volts(v: f32) -> String {
     }
 }
 
-// ------------------------------------------------------------------ games
-
-/// Frame rate charts top out at the nearest common refresh rate above the peak.
-const FPS_TOPS: [f32; 8] = [30.0, 60.0, 75.0, 120.0, 144.0, 165.0, 240.0, 360.0];
-
-/// The readout's two ways over a game, and the `game_peek` each one sets.
-const GAME_READOUT: [(bool, &str); 2] = [(false, "Stays"), (true, "Peeks")];
-
-fn fps_ceiling(peak: f32) -> f32 {
-    FPS_TOPS.into_iter().find(|t| peak <= *t).unwrap_or_else(|| (peak / 120.0).ceil().max(1.0) * 120.0)
-}
-
-/// Show over games: the switch and whether Windows lets Halo read frames on
-/// the left, the frame rate's minute in the middle, what's in front on the
-/// right.
-fn draw_games(ui: &mut Ui, st: &mut AppState, cols: &Cols) {
-    let accent = st.accent;
-    let note = TextStyle::caption().color(palette::TEXT_DIM).wrap().top().line_spacing(1.2);
-
-    // The switch, and the frames' access with its one button.
-    let (head, rest) = cols.dash.split_top(SEP_H);
-    separator(ui, head, "OVER GAMES");
-    let (row, rest) = rest.split_top(28.0);
-    let on = st.settings.game_stats;
-    let label = if st.settings.pro { "Show over games" } else { "Show over games (Halo Pro)" };
-    if crate::pages::settings::switch_row(ui, wid("system.games.switch"), row, label, Some(on), accent) && st.settings.pro {
-        st.settings.game_stats = !on;
-        st.cmd(Command::SaveSettings);
-    }
-    // The readout stays over the game, or peeks for a few seconds at a time
-    // (between them nothing covers the game: no added delay).
-    let (row, rest) = rest.split_top(28.0);
-    let names = GAME_READOUT.map(|r| r.1);
-    let x = row.right() - crate::pages::settings::picker_width(ui, &names);
-    ui.c.text("Readout", Rect::new(row.x, row.y, (x - 10.0 - row.x).max(0.0), row.h), &TextStyle::body());
-    let sel = GAME_READOUT.iter().position(|r| r.0 == st.settings.game_peek).unwrap_or(0);
-    if let Some(i) = crate::pages::settings::picker(ui, "system.games.readout", x, row.center().y - 12.0, 24.0, &names, sel) {
-        st.settings.game_peek = GAME_READOUT[i].0;
-        st.cmd(Command::SaveSettings);
-    }
-    let (about, rest) = rest.split_top(40.0);
-    let about_text = if st.settings.game_peek {
-        "A few seconds as a game starts, when FPS drops and on Alt+Shift+F. No added delay in between."
-    } else {
-        "Stays over the game, which adds about a frame of delay. Alt+Shift+F hides it."
-    };
-    ui.c.text(about_text, about.inset(0.0, 3.0), &note);
-    let (head, rest) = rest.split_top(SEP_H);
-    separator(ui, head, "FPS");
-    if st.game.access == FpsAccess::Unknown {
-        st.cmd(Command::CheckFps);
-    }
-    let (text, action) = match &st.game.access {
-        FpsAccess::Unknown | FpsAccess::Checking => ("Checking with Windows\u{2026}".to_string(), None),
-        FpsAccess::Ready => ("Ready. Counted from Windows' own log of each frame; nothing loads into the game.".to_string(), None),
-        FpsAccess::NeedsOk => ("Needs a one-time OK from Windows, as Xbox Game Bar does.".to_string(), Some(("Allow FPS", Command::AllowFps))),
-        FpsAccess::Asking => ("Answer Windows' prompt to allow it.".to_string(), None),
-        FpsAccess::SignOut => ("Allowed. Sign out of Windows and back in, and FPS shows.".to_string(), None),
-        // Why goes to halo.log; the page says it plainly.
-        FpsAccess::Failed(_) => ("Windows didn't allow it this time.".to_string(), Some(("Check again", Command::CheckFps))),
-    };
-    let (text_r, rest) = rest.split_top(44.0);
-    ui.c.text(&text, text_r.inset(0.0, 3.0), &note);
-    if let Some((label, cmd)) = action {
-        let w = ui.pill_width(label, false, true);
-        let r = Rect::new(rest.x, rest.y + 2.0, w, PILL_SMALL);
-        if ui.pill(wid("system.games.fps"), r, label, None, PillStyle::Primary(accent)).clicked {
-            st.cmd(cmd);
-        }
-    }
-
-    // The frame rate's last minute, and the frame times under it.
-    let (chart, sub) = history_column(ui, cols.mid, "FRAMES PER SECOND", "FRAME TIME");
-    chart_box(ui, chart);
-    let h = st.game.history.clone();
-    if h.values().any(f32::is_finite) {
-        let top = fps_ceiling(h.max());
-        plot(ui, &h, top, accent, chart.inset(1.0, 1.0), Fill::Gradient);
-        let scale = TextStyle::caption().tabular().color(palette::TEXT_FAINT);
-        ui.c.text(&format!("{top:.0}"), Rect::new(chart.x + 7.0, chart.y + 3.0, 40.0, 14.0), &scale);
-    } else {
-        let waiting = if !on {
-            "Off"
-        } else if st.game.active {
-            "No frames yet"
-        } else {
-            "Start a game in borderless full screen"
-        };
-        ui.c.text(waiting, chart.inset(8.0, 0.0), &TextStyle::caption().color(palette::TEXT_FAINT).center());
-    }
-    let rate = st.game.rate.filter(|_| st.game.active);
-    let times = [
-        Row::plain("Average", rate.map_or_else(|| PLACEHOLDER.into(), |r| fmt_frame_ms(r.frame_ms))),
-        Row::plain("Slowest in the last second", rate.map_or_else(|| PLACEHOLDER.into(), |r| fmt_frame_ms(r.worst_ms))),
-    ];
-    for (row, rect) in times.iter().zip(stack(sub, DETAIL_H)) {
-        row.draw(ui, rect);
-    }
-
-    // What's in front, and the island's numbers for it.
-    let (head, rest) = cols.top.split_top(SEP_H);
-    separator(ui, head, "IN FRONT");
-    let (name_r, rest) = rest.split_top(36.0);
-    let (name, ink) = match (st.game.active, &st.game.app) {
-        (true, Some(app)) => (app.clone(), palette::TEXT),
-        (true, None) => ("A full-screen app".to_string(), palette::TEXT),
-        (false, _) => ("No game in front".to_string(), palette::TEXT_FAINT),
-    };
-    ui.c.text(&name, name_r.inset(0.0, 2.0), &TextStyle::footnote().weight(Weight::Semibold).wrap().top().line_spacing(1.25).color(ink));
-    let reading = st.system.latest.as_ref().filter(|_| st.game.active);
-    let gpu = reading.and_then(|r| r.gpu.as_ref());
-    let rows = [
-        Row::plain("FPS", rate.map_or_else(|| PLACEHOLDER.into(), |r| fmt_fps(r.fps))),
-        Row::plain("GPU", gpu.map_or_else(|| PLACEHOLDER.into(), |g| fmt_pct(g.util))),
-        Row::plain("GPU temperature", gpu.and_then(|g| g.temp_c).map_or_else(|| PLACEHOLDER.into(), |t| format!("{t:.0}\u{b0}C"))),
-        Row::plain("Video memory", gpu.map_or_else(|| PLACEHOLDER.into(), |g| fmt_bytes(g.mem_used))),
-        Row::plain("CPU", reading.and_then(|r| r.cpu.as_ref()).map_or_else(|| PLACEHOLDER.into(), |c| fmt_pct(c.load))),
-    ];
-    for (row, rect) in rows.iter().zip(stack(rest, DETAIL_H)) {
-        row.draw(ui, rect);
-    }
-}
-
 // ------------------------------------------------------------------ dashboard
 
 /// One of the smaller rings beside the centre one: how full, the value
 /// inside, what it is under it.
-struct Gauge {
-    frac: Option<f32>,
-    value: String,
-    label: &'static str,
-    color: Color,
+pub(super) struct Gauge {
+    pub(super) frac: Option<f32>,
+    pub(super) value: String,
+    pub(super) label: &'static str,
+    pub(super) color: Color,
 }
 
 impl Gauge {
-    fn unknown(label: &'static str) -> Gauge {
+    pub(super) fn unknown(label: &'static str) -> Gauge {
         Gauge { frac: None, value: PLACEHOLDER.into(), label, color: palette::TRACK }
     }
 }
 
-fn temperature(t: f32) -> Gauge {
+pub(super) fn temperature(t: f32) -> Gauge {
     Gauge { frac: Some((t - 20.0) / 80.0), value: format!("{t:.0}°C"), label: "Temperature", color: heat_color(t) }
 }
 
@@ -1016,9 +876,9 @@ fn ghz(mhz: u32) -> String {
 }
 
 /// Stats' pie chart: parts in turn from twelve o'clock, the value inside.
-struct Ring {
-    parts: Vec<(f32, Color)>,
-    value: String,
+pub(super) struct Ring {
+    pub(super) parts: Vec<(f32, Color)>,
+    pub(super) value: String,
 }
 
 /// The centre ring's and side rings' diameters for a dashboard in `r`.
@@ -1027,7 +887,7 @@ fn dashboard_sizes(r: Rect) -> (f32, f32) {
     (d, (GAUGE * d / RING).min((r.w - d) / 2.0 - 6.0))
 }
 
-fn dashboard(ui: &mut Ui, r: Rect, left: &Gauge, ring: &Ring, right: &Gauge) {
+pub(super) fn dashboard(ui: &mut Ui, r: Rect, left: &Gauge, ring: &Ring, right: &Gauge) {
     let (d, g) = dashboard_sizes(r);
     let c = r.center();
     draw_ring(ui, c, d, ring);
@@ -1036,7 +896,7 @@ fn dashboard(ui: &mut Ui, r: Rect, left: &Gauge, ring: &Ring, right: &Gauge) {
     draw_gauge(ui, Point::new(r.right() - g / 2.0 - 2.0, gy), g, right);
 }
 
-fn draw_ring(ui: &mut Ui, c: Point, d: f32, ring: &Ring) {
+pub(super) fn draw_ring(ui: &mut Ui, c: Point, d: f32, ring: &Ring) {
     let radius = d / 2.0 - RING_W / 2.0;
     ui.c.stroke_circle(c, radius, palette::TRACK, RING_W);
     let mut start = 0.0f32;
@@ -1052,7 +912,7 @@ fn draw_ring(ui: &mut Ui, c: Point, d: f32, ring: &Ring) {
     ui.c.text(&ring.value, Rect::from_center(c, d - 2.0 * RING_W - 2.0, size + 6.0), &TextStyle::new(size).weight(Weight::Semibold).tabular().center());
 }
 
-fn draw_gauge(ui: &mut Ui, c: Point, d: f32, g: &Gauge) {
+pub(super) fn draw_gauge(ui: &mut Ui, c: Point, d: f32, g: &Gauge) {
     if d < 20.0 {
         return;
     }
@@ -1074,7 +934,7 @@ fn draw_gauge(ui: &mut Ui, c: Point, d: f32, g: &Gauge) {
     gauge_label(ui, c, d, g.label, palette::TEXT_DIM);
 }
 
-fn gauge_label(ui: &mut Ui, c: Point, d: f32, label: &str, color: Color) {
+pub(super) fn gauge_label(ui: &mut Ui, c: Point, d: f32, label: &str, color: Color) {
     let r = Rect::new(c.x - d / 2.0 - 14.0, c.y + d / 2.0 + 1.0, d + 28.0, 13.0);
     ui.c.text(label, r, &TextStyle::new(10.0).color(color).center());
 }
@@ -1104,22 +964,22 @@ fn pressure_gauge(ui: &mut Ui, c: Point, d: f32, p: f32) {
 
 /// One line of details: an optional dot naming a part's colour, the label
 /// and the value at the right.
-struct Row {
+pub(super) struct Row {
     dot: Option<Color>,
     label: &'static str,
     value: String,
 }
 
 impl Row {
-    fn dot(c: Color, label: &'static str, value: String) -> Row {
+    pub(super) fn dot(c: Color, label: &'static str, value: String) -> Row {
         Row { dot: Some(c), label, value }
     }
 
-    fn plain(label: &'static str, value: String) -> Row {
+    pub(super) fn plain(label: &'static str, value: String) -> Row {
         Row { dot: None, label, value }
     }
 
-    fn draw(&self, ui: &mut Ui, r: Rect) {
+    pub(super) fn draw(&self, ui: &mut Ui, r: Rect) {
         let mut x = r.x;
         if let Some(c) = self.dot {
             ui.c.fill_rrect(Rect::new(r.x, r.center().y - 4.0, 8.0, 8.0), 2.0, c);
@@ -1141,13 +1001,13 @@ fn details(ui: &mut Ui, r: Rect, title: &str, rows: &[Row]) {
 }
 
 /// Rows of height `h` down `r`, as many as fit.
-fn stack(r: Rect, h: f32) -> Vec<Rect> {
+pub(super) fn stack(r: Rect, h: f32) -> Vec<Rect> {
     let n = ((r.h + 0.5) / h).floor().max(0.0) as usize;
     (0..n).map(|i| Rect::new(r.x, r.y + i as f32 * h, r.w, h)).collect()
 }
 
 /// Stats' section title: small capitals between two hairlines.
-fn separator(ui: &mut Ui, r: Rect, title: &str) {
+pub(super) fn separator(ui: &mut Ui, r: Rect, title: &str) {
     let st = TextStyle::new(10.0).weight(Weight::Semibold).color(palette::TEXT_FAINT).center();
     let tw = ui.c.measure(title, &st, r.w).0;
     let px = 1.0 / ui.c.scale().max(0.5);
@@ -1161,7 +1021,7 @@ fn separator(ui: &mut Ui, r: Rect, title: &str) {
 }
 
 /// The middle column: a titled usage chart, and a titled second chart under it.
-fn history_column(ui: &mut Ui, r: Rect, title: &str, sub_title: &str) -> (Rect, Rect) {
+pub(super) fn history_column(ui: &mut Ui, r: Rect, title: &str, sub_title: &str) -> (Rect, Rect) {
     let (head, rest) = r.split_top(SEP_H);
     separator(ui, head, title);
     let (chart, rest) = rest.split_top((rest.h - SEP_H - SUB_H - 4.0).max(0.0));
@@ -1231,7 +1091,7 @@ fn legend_row(ui: &mut Ui, r: Rect, items: &[(Option<Color>, String)]) {
 
 // ------------------------------------------------------------------ charts
 
-fn chart_box(ui: &mut Ui, r: Rect) {
+pub(super) fn chart_box(ui: &mut Ui, r: Rect) {
     ui.c.fill_rrect(r, BOX_R, BOX_C);
     for i in 1..4 {
         let y = (r.y + r.h * i as f32 / 4.0).round();
@@ -1241,7 +1101,7 @@ fn chart_box(ui: &mut Ui, r: Rect) {
 
 /// How a plotted line fills down to its baseline.
 #[derive(Clone, Copy, PartialEq)]
-enum Fill {
+pub(super) enum Fill {
     /// Stats' gradient: strongest at the top of the chart, clear at the bottom.
     Gradient,
     /// One faint wash (the strip's sparklines).
@@ -1250,7 +1110,7 @@ enum Fill {
 
 /// One series rising from the bottom of `r`, newest at the right edge; gaps
 /// (NaN) split the line.
-fn plot(ui: &mut Ui, s: &Series, top: f32, color: Color, r: Rect, fill: Fill) {
+pub(super) fn plot(ui: &mut Ui, s: &Series, top: f32, color: Color, r: Rect, fill: Fill) {
     plot_from(ui, s, top, color, r, fill, false);
 }
 
@@ -1405,7 +1265,7 @@ fn compact_bytes(b: u64) -> String {
     }
 }
 
-fn heat_color(c: f32) -> Color {
+pub(super) fn heat_color(c: f32) -> Color {
     if c >= 85.0 {
         palette::RED
     } else if c >= 70.0 {

@@ -989,9 +989,10 @@ enum Scene {
     GameStats,
     /// ...before the one-time OK: the frame rate waits, the rest shows.
     GameStatsAllow,
-    /// System page, Games: a game in front, its frame rate's minute.
+    /// The Games page: a game in front, its frame rate's minute (the name
+    /// says System: the website's pictures keep theirs).
     SystemGames,
-    /// System page, Games, before the one-time OK.
+    /// The Games page, before the one-time OK.
     SystemGamesAllow,
     /// Music: a Japanese song whose kanji went unread, offering Japanese readings.
     JaOffer,
@@ -1520,10 +1521,9 @@ impl Scene {
             | Scene::SystemBattery
             | Scene::SystemWaiting
             | Scene::SystemGpu
-            | Scene::SystemGames
-            | Scene::SystemGamesAllow
             | Scene::SystemPower
             | Scene::SystemPowerEstimate => Some(PageKind::System),
+            Scene::SystemGames | Scene::SystemGamesAllow => Some(PageKind::Games),
             Scene::ShelfPairing | Scene::ShelfPaired | Scene::ShelfPairedPhones => Some(PageKind::Shelf),
             Scene::AddonsDownloading | Scene::AddonsOn | Scene::AddonsOffline | Scene::AddonsFailed => Some(PageKind::Addons),
             Scene::JaOffer | Scene::JaGetting => Some(PageKind::Media),
@@ -3182,7 +3182,8 @@ impl SelfTest {
         let script = scene.page() == Some(PageKind::Script);
         st.addons.insert(SCRIPT_READER.id, if script { AddonStatus::Ready } else { AddonStatus::Off });
         // System (an add-on, off by default): on for its own pages' scenes only.
-        let system = scene.page() == Some(PageKind::System);
+        // Games comes with it.
+        let system = matches!(scene.page(), Some(PageKind::System | PageKind::Games));
         let stocks = scene.page() == Some(PageKind::Stocks);
         // Notifications (on by default, but only in the Store copy: the self-test
         // runs the download): as the Store copy for its page, its notices and
@@ -3235,7 +3236,6 @@ impl SelfTest {
             Scene::SystemNetwork => Module::Network,
             Scene::SystemBattery => Module::Battery,
             Scene::SystemGpu => Module::Gpu,
-            Scene::SystemGames | Scene::SystemGamesAllow => Module::Games,
             Scene::SystemPower | Scene::SystemPowerEstimate => Module::Power,
             _ => Module::Cpu,
         };

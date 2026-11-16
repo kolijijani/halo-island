@@ -296,7 +296,7 @@ pub fn geom(m: &Mode, st: &AppState) -> Geom {
         }
         Mode::Activity(Activity::MediaTimer) => Geom::new(132.0, 32.0, 15.0),
         Mode::Activity(Activity::Prayer) => Geom::new(PRAYER_W, 32.0, 15.0),
-        Mode::Activity(Activity::Game) => Geom::new(if game_temp(st).is_some() { GAME_W } else { GAME_NO_TEMP_W }, 32.0, 15.0),
+        Mode::Activity(Activity::Game) => Geom::new(game_w(st), 32.0, 15.0),
         Mode::Activity(Activity::Recording) => Geom::new(recording_w(st), 32.0, 15.0),
         Mode::Activity(Activity::Download) => Geom::new(if download_many(st) { DOWNLOAD_MANY_W } else { DOWNLOAD_W }, 32.0, 15.0),
         Mode::Hud(HudTag::Volume) => Geom::new(316.0, 40.0, 19.0),
@@ -846,7 +846,14 @@ fn arrow_down(ui: &mut Ui, c: Point, color: Color) {
 
 /// The GPU's temperature for the readout, when its driver reports one.
 fn game_temp(st: &AppState) -> Option<f32> {
-    st.system.latest.as_ref()?.gpu.as_ref()?.temp_c
+    st.system.latest.as_ref()?.gpu.as_ref()?.temp_c.filter(|_| st.settings.game_temp)
+}
+
+/// The readout's width: less what the Games page switched off (the frame
+/// rate's group, the CPU's), each about 70 DIPs with its divider.
+fn game_w(st: &AppState) -> f32 {
+    let w = if game_temp(st).is_some() { GAME_W } else { GAME_NO_TEMP_W };
+    w - if st.settings.game_fps { 0.0 } else { 70.0 } - if st.settings.game_cpu { 0.0 } else { 70.0 }
 }
 
 /// "144 fps | GPU 97% · 71° | CPU 38%", centred. The frame rate is a dim
@@ -865,14 +872,22 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
         (None, _) => [(dash(), big.color(palette::DISABLED)), (" fps".into(), label.color(palette::DISABLED))],
     };
     let gpu = match reading.and_then(|r| r.gpu.as_ref()) {
-        Some(g) => match g.temp_c {
+        Some(g) => match g.temp_c.filter(|_| st.settings.game_temp) {
             Some(t) => format!("{} \u{b7} {t:.0}\u{b0}", fmt_pct(g.util)),
             None => fmt_pct(g.util),
         },
         None => dash(),
     };
     let cpu = reading.and_then(|r| r.cpu.as_ref()).map_or_else(dash, |c| fmt_pct(c.load));
-    let groups = [fps, [("GPU ".into(), label), (gpu, value)], [("CPU ".into(), label), (cpu, value)]];
+    // The Games page's switches leave out the frame rate and the CPU.
+    let mut groups = Vec::new();
+    if st.settings.game_fps {
+        groups.push(fps);
+    }
+    groups.push([("GPU ".into(), label), (gpu, value)]);
+    if st.settings.game_cpu {
+        groups.push([("CPU ".into(), label), (cpu, value)]);
+    }
 
     const GAP: f32 = 11.0;
     let widths: Vec<[f32; 2]> = groups.iter().map(|g| g.each_ref().map(|(t, ts)| ui.c.measure(t, ts, 200.0).0)).collect();

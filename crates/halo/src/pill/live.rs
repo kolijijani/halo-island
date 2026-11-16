@@ -318,17 +318,26 @@ fn draw_prayer(ui: &mut Ui, st: &AppState, body: Rect) {
 /// GPU's temperature (when its driver reports one) at 100 degrees or more.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GameKey {
+    /// The frame rate and the CPU's load show (the Games page's switches).
+    fps: bool,
+    cpu: bool,
     fps4: bool,
     temp: Option<bool>,
 }
 
-/// The GPU's temperature for the readout, when its driver reports one.
+/// The GPU's temperature for the readout, when its driver reports one and
+/// the Games page leaves it on.
 fn game_temp(st: &AppState) -> Option<f32> {
-    st.system.latest.as_ref()?.gpu.as_ref()?.temp_c
+    st.system.latest.as_ref()?.gpu.as_ref()?.temp_c.filter(|_| st.settings.game_temp)
 }
 
 fn game_key(st: &AppState) -> GameKey {
-    GameKey { fps4: st.game.rate.is_some_and(|r| r.fps.round() >= 1000.0), temp: game_temp(st).map(|t| t.round() >= 100.0) }
+    GameKey {
+        fps: st.settings.game_fps,
+        cpu: st.settings.game_cpu,
+        fps4: st.game.rate.is_some_and(|r| r.fps.round() >= 1000.0),
+        temp: game_temp(st).map(|t| t.round() >= 100.0),
+    }
 }
 
 fn game_w(st: &AppState) -> f32 {
@@ -340,12 +349,18 @@ fn game_w(st: &AppState) -> f32 {
     }
     // Before the first frame, roughly Segoe UI Variable's widths: the frame
     // rate's slot, the rest of the run, the dot and the temperature.
-    let fps = if key.fps4 { 34.0 } else { 25.0 };
+    // The GPU's group is about 60 of the 175 the three groups take; the
+    // frame rate's about 55 with its divider, the CPU's about 60.
+    let fps = match (key.fps, key.fps4) {
+        (false, _) => -55.0,
+        (true, four) => if four { 34.0 } else { 25.0 },
+    };
+    let cpu = if key.cpu { 0.0 } else { -60.0 };
     let temp = match key.temp {
         Some(hot) => if hot { 36.0 } else { 28.0 },
         None => 0.0,
     };
-    (2.0 * TEXT_INSET + fps + 175.0 + temp).ceil()
+    (2.0 * TEXT_INSET + fps + 175.0 + cpu + temp).ceil()
 }
 
 /// One piece of the readout. A number sits right-aligned in the slot of its
@@ -407,7 +422,14 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
     if let Some(t) = temp {
         gpu_group.extend([Piece::Dot, t]);
     }
-    let groups = [vec![fps, word("fps", fps_label)], gpu_group, vec![word("CPU", label), cpu_pct]];
+    let mut groups = Vec::new();
+    if key.fps {
+        groups.push(vec![fps, word("fps", fps_label)]);
+    }
+    groups.push(gpu_group);
+    if key.cpu {
+        groups.push(vec![word("CPU", label), cpu_pct]);
+    }
 
     let run = |room: bool| {
         groups.iter().map(|g| g.iter().map(|p| p.width(room)).sum::<f32>() + (g.len() - 1) as f32 * LABEL_GAP).sum::<f32>()

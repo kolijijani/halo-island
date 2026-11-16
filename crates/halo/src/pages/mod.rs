@@ -16,6 +16,7 @@ pub mod downloads;
 pub mod downloads_offer;
 pub mod entrance;
 pub mod focus;
+pub mod games;
 pub mod media;
 pub mod notifications;
 pub mod prayer;
@@ -65,6 +66,8 @@ pub enum PageKind {
     Ai,
     /// The System add-on's page, while it is on ([`tabs`]).
     System,
+    /// Show over games and its frame rate: Windows' only, with System ([`tabs`]).
+    Games,
     /// The teleprompter: a script read under the webcam.
     Script,
     /// Screen recording with Halo Island Recorder, while its add-on is on
@@ -93,7 +96,7 @@ pub enum PageKind {
 impl PageKind {
     /// The tab row's order: the island's own pages, then the add-ons'
     /// pages and the "+".
-    pub const ALL: [PageKind; 17] = [
+    pub const ALL: [PageKind; 18] = [
         PageKind::Media,
         PageKind::Widgets,
         PageKind::Today,
@@ -102,6 +105,7 @@ impl PageKind {
         PageKind::Focus,
         PageKind::Ai,
         PageKind::System,
+        PageKind::Games,
         PageKind::Script,
         PageKind::Record,
         PageKind::Prayer,
@@ -122,6 +126,7 @@ impl PageKind {
             PageKind::Tasks => "tasks",
             PageKind::Today => "today",
             PageKind::System => "system",
+            PageKind::Games => "games",
             PageKind::Script => "script",
             PageKind::Record => "record",
             PageKind::Prayer => "prayer",
@@ -150,6 +155,7 @@ impl PageKind {
             PageKind::Tasks => "Tasks",
             PageKind::Today => "Today",
             PageKind::System => "System",
+            PageKind::Games => "Games",
             PageKind::Script => "Script",
             PageKind::Record => "Record",
             PageKind::Prayer => "Prayer",
@@ -172,6 +178,7 @@ impl PageKind {
             PageKind::Tasks => Icon::ListChecks,
             PageKind::Today => Icon::Calendar,
             PageKind::System => Icon::Gauge,
+            PageKind::Games => Icon::Gamepad,
             PageKind::Script => Icon::Script,
             PageKind::Record => Icon::Recorder,
             PageKind::Prayer => Icon::Moon,
@@ -212,7 +219,7 @@ impl PageKind {
 }
 
 /// The tabs in the header: every page but Settings, AI only with Studio Pro,
-/// and System, Script, Record, Prayer and Stocks only while their
+/// and System (with Games on Windows), Script, Record, Prayer and Stocks only while their
 /// add-ons are on.
 /// Music, Today, Shelf, Tasks and Focus unless Settings took them off the
 /// row; one of those still shows while its page is open (a file dropped on
@@ -248,6 +255,7 @@ fn row(st: &AppState, open: Option<PageKind>) -> Vec<PageKind> {
         .filter(|&p| match p {
             PageKind::Ai => st.ai_usage_on(),
             PageKind::System => st.system_on(),
+            PageKind::Games => st.games_on(),
             PageKind::Prayer => st.prayer_on(),
             PageKind::Script => st.script_on(),
             PageKind::Stocks => st.stocks_on(),
@@ -278,6 +286,7 @@ pub fn content_height(p: PageKind, st: &AppState) -> f32 {
         PageKind::Tasks => tasks::height(st),
         PageKind::Today => today::height(st),
         PageKind::System => system::height(st),
+        PageKind::Games => games::height(st),
         PageKind::Script => script::height(st),
         PageKind::Record => record::height(st),
         PageKind::Prayer => prayer::height(st),
@@ -416,6 +425,7 @@ pub(crate) fn draw_page(ui: &mut Ui, st: &mut AppState, area: Rect, page: PageKi
         PageKind::Tasks => tasks::draw(ui, st, area),
         PageKind::Today => today::draw(ui, st, area),
         PageKind::System => system::draw(ui, st, area),
+        PageKind::Games => games::draw(ui, st, area),
         PageKind::Script => script::draw(ui, st, area),
         PageKind::Record => record::draw(ui, st, area),
         PageKind::Prayer => prayer::draw(ui, st, area),
@@ -720,7 +730,12 @@ mod tests {
         for id in ["system", "script"] {
             st.addons.insert(id, halo_core::addons::Status::Ready);
         }
-        assert_eq!(&tabs(&st)[7..], [System, Script, Addons]);
+        // Games comes with System, on Windows only.
+        if cfg!(windows) {
+            assert_eq!(&tabs(&st)[7..], [System, Games, Script, Addons]);
+        } else {
+            assert_eq!(&tabs(&st)[7..], [System, Script, Addons]);
+        }
         // The Halo, IELTS, Notes and Health pages left the app: an island last open there opens on Music.
         for key in ["halo", "ielts", "notes", "health", "water"] {
             assert_eq!(PageKind::from_key(key), Media);

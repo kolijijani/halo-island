@@ -53,6 +53,7 @@ Susun atur (kad 230×52 sama, supaya Clipboard tak hilang satu baris):
 | Caffeine | medan titik draw kiri→kanan 0.05 s / 0.7 s; titik minuman pop, stagger | sama |
 | Widgets (tile) | tile rise stagger 0.06·i s; bulan pop | sama |
 | System | ring, gauge, cas bateri draw 0.08 s / 0.7 s | sama |
+| Games (0.2.53, tab sendiri) | gelang FPS + gauge GPU/suhu draw 0.08 s / 0.7 s; carta FPS draw kiri→kanan (clip) 0.15 s / 0.7 s | tetapan kiri, carta tengah, game di depan kanan |
 | AI usage | kad rise stagger; bar had draw 0.12 s / 0.6 s | sama |
 | Add-ons, Downloads, Notifications, Settings, Record | lencana/ikon pop, stagger per baris; trek Record rise; titik merah rakaman pop | sama |
 | Keadaan kosong (`pages::empty_state`, 5 paparan) | ikon pop 0.05 s | sama |

@@ -3486,6 +3486,7 @@ impl App {
         let gone = match self.st.page {
             PageKind::Prayer => !self.st.prayer_on(),
             PageKind::System => !self.st.system_on(),
+            PageKind::Games => !self.st.games_on(),
             PageKind::Stocks => !self.st.stocks_on(),
             PageKind::Caffeine => !self.st.caffeine_on(),
             PageKind::Record => !self.st.record_on(),

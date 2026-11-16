@@ -70,6 +70,8 @@ pub enum Icon {
     Gear,
     /// The System tab: a dial with its needle.
     Gauge,
+    /// The Games tab: a gamepad with its cross and two buttons.
+    Gamepad,
     /// An app whose own icon isn't known.
     App,
     /// The Windows mark, for Windows' own processes in the System page's lists.
@@ -309,6 +311,13 @@ pub fn parts(icon: Icon) -> &'static [Part] {
             s("M4 4l16 16"),
         ],
         Gauge => p![s("M4.6 18.5A8.5 8.5 0 1 1 19.4 18.5"), s("M12 14.5l3.8-4.3"), f("M10.6 14.5a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0")],
+        Gamepad => p![
+            s("M7.5 7h9a4.5 4.5 0 0 1 4.4 3.6l0.9 4.6a2.4 2.4 0 0 1-4.1 2.1L15.5 15h-7l-2.2 2.3a2.4 2.4 0 0 1-4.1-2.1l0.9-4.6A4.5 4.5 0 0 1 7.5 7z"),
+            s("M8 9.5v3"),
+            s("M6.5 11h3"),
+            f("M14.6 10.2a0.9 0.9 0 1 0 1.8 0a0.9 0.9 0 1 0-1.8 0"),
+            f("M16.6 12.2a0.9 0.9 0 1 0 1.8 0a0.9 0.9 0 1 0-1.8 0"),
+        ],
         App => p![
             s("M6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11A2.5 2.5 0 0 1 6.5 4z"),
             s("M4 8.5h16"),
@@ -465,7 +474,7 @@ mod tests {
         Icon::Pin, Icon::PinFill, Icon::Folder, Icon::File, Icon::Trash, Icon::Undo, Icon::Reset,
         Icon::Sliders, Icon::Open, Icon::Phone, Icon::Eye, Icon::MoneyIn, Icon::MoneyOut, Icon::Card, Icon::Wallet,
         Icon::Unlink, Icon::Gear,
-        Icon::Gauge, Icon::App, Icon::Windows, Icon::Addons, Icon::Moon, Icon::Stop, Icon::Script, Icon::Record, Icon::Download,
+        Icon::Gauge, Icon::Gamepad, Icon::App, Icon::Windows, Icon::Addons, Icon::Moon, Icon::Stop, Icon::Script, Icon::Record, Icon::Download,
         Icon::Stocks, Icon::Search,
         Icon::Recorder, Icon::Screen, Icon::AppWindow, Icon::Area, Icon::Camera, Icon::Mic, Icon::Bell, Icon::Message,
         Icon::Ai, Icon::OpenAi, Icon::Claude, Icon::OpenCode, Icon::Gemini, Icon::Antigravity, Icon::Cursor, Icon::Copilot, Icon::Kimi, Icon::Zai,

@@ -440,7 +440,7 @@ pub enum FpsAccess {
 }
 
 /// Show over games: the readout in the island over a full-screen app
-/// (`activities::Activity::Game`) and the System page's Games view.
+/// (`activities::Activity::Game`) and the Games page.
 #[derive(Clone, Debug, Default)]
 pub struct GameState {
     /// The readout is on screen: Show over games is on and a full-screen
@@ -925,6 +925,7 @@ impl AppState {
         let off = match st.page {
             PageKind::Script => !st.script_on(),
             PageKind::System => !st.system_on(),
+            PageKind::Games => !st.games_on(),
             PageKind::Stocks => !st.stocks_on(),
             PageKind::Caffeine => !st.caffeine_on(),
             PageKind::Downloads => !st.downloader_on(),
@@ -985,6 +986,12 @@ impl AppState {
     /// The System add-on is on: the System tab shows.
     pub fn system_on(&self) -> bool {
         self.addon(halo_core::addons::SYSTEM.id) == AddonStatus::Ready
+    }
+
+    /// The Games tab shows: Windows' (it reads Windows' frame log), with
+    /// the System add-on, whose readers it draws from.
+    pub fn games_on(&self) -> bool {
+        cfg!(windows) && self.system_on()
     }
 
     /// The Stocks add-on is on: the Stocks tab shows (its prices are asked

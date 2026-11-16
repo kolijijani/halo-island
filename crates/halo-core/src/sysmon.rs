@@ -28,12 +28,10 @@ pub enum Module {
     /// or an estimate from the parts that report their own.
     Power,
     Battery,
-    /// Show over games: the frame rate and load while a game is in front.
-    Games,
 }
 
 impl Module {
-    pub const ALL: [Module; 8] = [Module::Cpu, Module::Gpu, Module::Memory, Module::Drives, Module::Network, Module::Power, Module::Battery, Module::Games];
+    pub const ALL: [Module; 7] = [Module::Cpu, Module::Gpu, Module::Memory, Module::Drives, Module::Network, Module::Power, Module::Battery];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -44,7 +42,6 @@ impl Module {
             Module::Network => "Network",
             Module::Power => "Power",
             Module::Battery => "Battery",
-            Module::Games => "Games",
         }
     }
 }
