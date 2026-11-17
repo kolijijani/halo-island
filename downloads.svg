@@ -13,9 +13,9 @@
 <path d="M87.0,139.0H494.6A4.0,4.0 0 0 1 498.6,143.0V153.0A4.0,4.0 0 0 1 494.6,157.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,171.0H494.6A4.0,4.0 0 0 1 498.6,175.0V185.0A4.0,4.0 0 0 1 494.6,189.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,203.0H769.0A4.0,4.0 0 0 1 773.0,207.0V217.0A4.0,4.0 0 0 1 769.0,221.0H87.0Z" fill="#D9661C"/>
-<path d="M158.3,460.0V426.5A4.0,4.0 0 0 1 162.3,422.5H178.3A4.0,4.0 0 0 1 182.3,426.5V460.0Z" fill="#D9661C"/>
-<path d="M407.0,460.0V314.0A4.0,4.0 0 0 1 411.0,310.0H427.0A4.0,4.0 0 0 1 431.0,314.0V460.0Z" fill="#D9661C"/>
-<path d="M655.7,460.0V314.0A4.0,4.0 0 0 1 659.7,310.0H675.7A4.0,4.0 0 0 1 679.7,314.0V460.0Z" fill="#D9661C"/>
+<path d="M127.2,460.0V426.5A4.0,4.0 0 0 1 131.2,422.5H147.2A4.0,4.0 0 0 1 151.2,426.5V460.0Z" fill="#D9661C"/>
+<path d="M313.8,460.0V314.0A4.0,4.0 0 0 1 317.8,310.0H333.8A4.0,4.0 0 0 1 337.8,314.0V460.0Z" fill="#D9661C"/>
+<path d="M500.2,460.0V314.0A4.0,4.0 0 0 1 504.2,310.0H520.2A4.0,4.0 0 0 1 524.2,314.0V460.0Z" fill="#D9661C"/>
 <text x="28.0" y="44.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per release</text>
 <text x="77.0" y="88.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.53</text>
 <text x="643.8" y="88.5" font-size="14" fill="#2B1B10" font-weight="600">4</text>
@@ -28,12 +28,13 @@
 <text x="77.0" y="216.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.40</text>
 <text x="781.0" y="216.5" font-size="14" fill="#2B1B10" font-weight="600">5</text>
 <text x="28.0" y="272.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per day</text>
-<text x="667.7" y="303.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">8</text>
+<text x="698.8" y="453.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">0</text>
+<text x="512.2" y="303.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">8</text>
 <text x="36.0" y="464.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">0</text>
 <text x="36.0" y="426.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">2</text>
 <text x="36.0" y="389.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">4</text>
 <text x="36.0" y="352.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">6</text>
 <text x="36.0" y="314.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">8</text>
-<text x="667.7" y="480.0" font-size="12" fill="#7A6450" text-anchor="middle">16 Nov</text>
+<text x="698.8" y="480.0" font-size="12" fill="#7A6450" text-anchor="middle">17 Nov</text>
 </g>
 </svg>

@@ -1,6 +1,6 @@
 {
   "repo": "kolijijani/halo-island",
-  "checked_at": "2026-11-16T22:34:25Z",
+  "checked_at": "2026-11-17T04:49:30Z",
   "since": "2026-11-14",
   "downloads": 18,
   "github_count": 18,
@@ -88,6 +88,10 @@
     {
       "date": "2026-11-16",
       "downloads": 8
+    },
+    {
+      "date": "2026-11-17",
+      "downloads": 0
     }
   ]
 }
