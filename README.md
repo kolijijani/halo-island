@@ -1,27 +1,27 @@
 <p align="center"><img src="art/halo-peek.webp" width="260" alt="Halo peeking over a playing island"></p>
 
-<h1 align="center">18 downloads</h1>
+<h1 align="center">20 downloads</h1>
 
-<p align="center">of Halo Island for Windows, from GitHub since 14 Nov 2026<br>Latest release, 0.2.53: <b>4</b> · Last 7 days: <b>18</b> · <b>0</b> stars on GitHub</p>
+<p align="center">of Halo Island for Windows, from GitHub since 14 Nov 2026<br>Latest release, 0.2.53: <b>6</b> · Last 7 days: <b>20</b> · <b>0</b> stars on GitHub</p>
 
-<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.53 4, 0.2.52 3, 0.2.51 3, 0.2.50 3, 0.2.40 5; and per day, for the last 4 days"></p>
+<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.53 6, 0.2.52 3, 0.2.51 3, 0.2.50 3, 0.2.40 5; and per day, for the last 4 days"></p>
 
 ## Per release
 
 | Release | Published | Download button | Versioned installer | Portable zip | Total |
 | --- | --- | --: | --: | --: | --: |
-| [0.2.53](https://github.com/kolijijani/halo-island/releases/tag/v0.2.53) | 16 Nov 2026 | 1 | 2 | 1 | 4 |
+| [0.2.53](https://github.com/kolijijani/halo-island/releases/tag/v0.2.53) | 16 Nov 2026 | 3 | 2 | 1 | 6 |
 | [0.2.52](https://github.com/kolijijani/halo-island/releases/tag/v0.2.52) | 16 Nov 2026 | 1 | 1 | 1 | 3 |
 | [0.2.51](https://github.com/kolijijani/halo-island/releases/tag/v0.2.51) | 15 Nov 2026 | 0 | 2 | 1 | 3 |
 | [0.2.50](https://github.com/kolijijani/halo-island/releases/tag/v0.2.50) | 15 Nov 2026 | 0 | 2 | 1 | 3 |
 | [0.2.40](https://github.com/kolijijani/halo-island/releases/tag/v0.2.40) | 14 Nov 2026 | 3 | 1 | 1 | 5 |
-| **All releases** | | **5** | **8** | **5** | **18** |
+| **All releases** | | **7** | **8** | **5** | **20** |
 
 ## Per day
 
 | Day | Downloads |
 | --- | --: |
-| Today | 0 |
+| Today | 2 |
 | 16 Nov 2026 | 8 |
 | 15 Nov 2026 | 8 |
 | 14 Nov 2026 | 2 |
@@ -42,4 +42,4 @@
 
 </details>
 
-<sub>Updated 17 Nov 2026, 04:49 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
+<sub>Updated 17 Nov 2026, 14:56 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
