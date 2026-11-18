@@ -1,19 +1,31 @@
 {
   "repo": "kolijijani/halo-island",
-  "checked_at": "2026-11-18T04:44:30Z",
+  "checked_at": "2026-11-18T13:30:47Z",
   "since": "2026-11-14",
-  "downloads": 20,
-  "github_count": 20,
+  "downloads": 22,
+  "github_count": 22,
   "ci_count": 0,
-  "last_7_days": 20,
+  "last_7_days": 22,
   "latest": {
-    "release": "v0.2.53",
-    "downloads": 6
+    "release": "v0.2.54",
+    "downloads": 2
   },
   "stars": 0,
   "forks": 0,
   "watchers": 0,
   "releases": [
+    {
+      "release": "v0.2.54",
+      "published": "2026-11-18T09:56:25Z",
+      "downloads": 2,
+      "github_count": 2,
+      "ci_count": 0,
+      "files": {
+        "Halo-Island-0.2.54-portable.zip": 1,
+        "Halo-Island-Setup-0.2.54.exe": 1,
+        "Halo-Island-Setup.exe": 0
+      }
+    },
     {
       "release": "v0.2.53",
       "published": "2026-11-16T10:02:50Z",
@@ -95,7 +107,7 @@
     },
     {
       "date": "2026-11-18",
-      "downloads": 0
+      "downloads": 2
     }
   ]
 }
