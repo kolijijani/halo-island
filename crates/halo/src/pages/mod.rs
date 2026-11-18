@@ -89,7 +89,8 @@ pub enum PageKind {
     Addons,
     /// Behind the gear on the right of the header, never in the tab row.
     Settings,
-    /// Halo Island: the widget slots, water and the clipboard (`widgets`).
+    /// Halo Island: the widget slots, water and the clipboard (`widgets`),
+    /// while the Widgets add-on is on ([`tabs`]).
     Widgets,
 }
 
@@ -260,6 +261,7 @@ fn row(st: &AppState, open: Option<PageKind>) -> Vec<PageKind> {
             PageKind::Script => st.script_on(),
             PageKind::Stocks => st.stocks_on(),
             PageKind::Caffeine => st.caffeine_on(),
+            PageKind::Widgets => st.widgets_on(),
             PageKind::Downloads => st.downloader_on(),
             PageKind::Record => st.record_on(),
             PageKind::Notifications => st.notifications_on(),
@@ -489,6 +491,60 @@ pub(crate) const TIP_FILL: Color = Color::rgba(0.16, 0.16, 0.16, 1.0);
 /// `tab_hover` slots of the pin and Settings buttons (tabs use their place in the row).
 const PIN_SLOT: usize = PageKind::ALL.len();
 const GEAR_SLOT: usize = PIN_SLOT + 1;
+const MORE_SLOT: usize = GEAR_SLOT + 1;
+/// Crowded tabs narrow to this, then the rest go behind "…", as wide.
+const TAB_MIN_W: f32 = 24.0;
+/// Tabs end at least this far before the pin.
+const PIN_CLEAR: f32 = 8.0;
+
+/// What the header row keeps when the tabs crowd it. They give way in the
+/// owner's order (0.3.00 Q7.4): Halo's face, the date, the open tab's label,
+/// full-width tabs, and last the tabs past the room go behind "…". The pin
+/// and Settings always keep their place: nothing pushes them out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Fit {
+    face: bool,
+    date: bool,
+    label: bool,
+    tab_w: f32,
+    /// Tabs in the row; the rest are behind "…".
+    shown: usize,
+}
+
+/// `room`: from the row's left to [`PIN_CLEAR`] before the pin with no date.
+/// `label_w`: the open tab's label; `date_w`: the date (0: none); `face`:
+/// the theme shows Halo's face.
+fn fit(room: f32, n: usize, label_w: f32, date_w: f32, face: bool) -> Fit {
+    let row = |k: usize, w: f32, label: bool| {
+        let label_extra = if label { TAB_LABEL_X + label_w + TAB_LABEL_END + 1.0 - w } else { 0.0 };
+        k as f32 * w + k.saturating_sub(1) as f32 * TAB_GAP + label_extra
+    };
+    let date_cost = if date_w > 0.0 { DATE_GAP + date_w } else { 0.0 };
+    // The face sits between the tabs and the pin, 12 DIP clear of the tabs.
+    let face_cost = if face { HALO_GAP + HALO_W + 4.0 } else { 0.0 };
+    let steps = [(true, true, true, TAB_W), (false, true, true, TAB_W), (false, false, true, TAB_W), (false, false, false, TAB_W), (false, false, false, TAB_MIN_W)];
+    for (f, d, label, w) in steps {
+        if row(n, w, label) + if d { date_cost } else { 0.0 } + if f { face_cost } else { 0.0 } <= room {
+            return Fit { face: f && face, date: d && date_w > 0.0, label, tab_w: w, shown: n };
+        }
+    }
+    let shown = (1..n).rev().find(|&k| row(k, TAB_MIN_W, false) + TAB_GAP + TAB_MIN_W <= room).unwrap_or(1);
+    Fit { face: false, date: false, label: false, tab_w: TAB_MIN_W, shown }
+}
+
+/// The first `shown` tabs, with the open page among them (in the last
+/// place when it falls past them), and the ones behind "…".
+fn split_row(row: Vec<PageKind>, shown: usize, page: PageKind) -> (Vec<PageKind>, Vec<PageKind>) {
+    if shown >= row.len() {
+        return (row, Vec::new());
+    }
+    let mut keep: Vec<PageKind> = row[..shown].to_vec();
+    if !keep.contains(&page) && row.contains(&page) {
+        keep[shown - 1] = page;
+    }
+    let rest = row.into_iter().filter(|p| !keep.contains(p)).collect();
+    (keep, rest)
+}
 /// The Settings button's widget id (the self-test clicks it).
 pub const GEAR_ID: &str = "header.gear";
 
@@ -499,12 +555,12 @@ pub(crate) struct Tip {
     pub(crate) alpha: f32,
 }
 
-/// Tab slots (x, width) of `tabs`, with `active` showing its label.
-fn tab_layout(ui: &mut Ui, x0: f32, tabs: &[PageKind], active: PageKind, label_st: &TextStyle, scale: f32) -> Vec<(f32, f32)> {
+/// Tab slots (x, width) of `tabs`, `tab_w` wide, with `active` showing its label when `label`.
+fn tab_layout(ui: &mut Ui, x0: f32, tabs: &[PageKind], active: PageKind, label_st: &TextStyle, scale: f32, tab_w: f32, label: bool) -> Vec<(f32, f32)> {
     let mut x = x0;
     tabs.iter()
         .map(|&p| {
-            let w = if p == active { snap(TAB_LABEL_X + ui.c.measure(p.title(), label_st, 200.0).0 + TAB_LABEL_END, scale) } else { TAB_W };
+            let w = if p == active && label { snap(TAB_LABEL_X + ui.c.measure(p.title(), label_st, 200.0).0 + TAB_LABEL_END, scale) } else { tab_w };
             let slot = (snap(x, scale), w);
             x += w + TAB_GAP;
             slot
@@ -521,9 +577,27 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     let label_st = TextStyle::body().weight(Weight::Semibold);
     let from = tr.map_or(page, |t| t.from);
     let e = tr.map_or(1.0, |t| ease_out_cubic(t.t / TABS_END));
-    let row = self::tabs(st);
-    let lay_from = tab_layout(ui, r.x, &row, from, &label_st, scale);
-    let lay_to = if from == page { lay_from.clone() } else { tab_layout(ui, r.x, &row, page, &label_st, scale) };
+
+    // The right side first: the clock ends on the content column's right
+    // edge (where every page's trailing control ends), then the date, the
+    // Settings button and the pin. Today already shows the date large, so
+    // the header leaves it out there. The tabs get what is left.
+    let right = r.right() - 6.0;
+    let time = fmt_clock(&st.local, st.settings.use_24h);
+    let time_st = TextStyle::body().weight(Weight::Semibold).tabular().right();
+    let tw = ui.c.measure(&time, &time_st, 200.0).0;
+    let date = fmt_date_short(&st.local);
+    let date_st = TextStyle::footnote().color(palette::TEXT_DIM).right();
+    let dw = ui.c.measure(&date, &date_st, 200.0).0;
+    let pin_x = |left: f32| snap(snap(left - PIN_GAP - GEAR, scale) - GEAR_GAP - PIN, scale);
+    let label_w = ui.c.measure(page.title(), &label_st, 200.0).0.max(ui.c.measure(from.title(), &label_st, 200.0).0);
+    let all = self::tabs(st);
+    // The date's room is kept while it fades in or out too.
+    let date_w = if page == PageKind::Today && from == PageKind::Today { 0.0 } else { dw };
+    let fits = fit(pin_x(right - tw) - PIN_CLEAR - r.x, all.len(), label_w, date_w, crate::face::on(st.settings.theme));
+    let (row, more) = split_row(all, fits.shown, page);
+    let lay_from = tab_layout(ui, r.x, &row, from, &label_st, scale, fits.tab_w, fits.label);
+    let lay_to = if from == page { lay_from.clone() } else { tab_layout(ui, r.x, &row, page, &label_st, scale, fits.tab_w, fits.label) };
     let tabs: Vec<Rect> =
         (0..row.len()).map(|i| Rect::new(lerp(lay_from[i].0, lay_to[i].0, e), cy - TAB_H / 2.0, lerp(lay_from[i].1, lay_to[i].1, e), TAB_H)).collect();
     // A page that isn't in the row counts as the first tab.
@@ -553,45 +627,50 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         }
         let k = if active { e } else if from.tabbed() && i == fi { 1.0 - e } else { 0.0 };
         let ic = if resp.hovered { palette::TEXT } else { Color::lerp(palette::TEXT_FAINT, palette::TEXT, k) };
-        let ix = snap(tr.x + (TAB_W - TAB_ICON) / 2.0, scale);
+        let ix = snap(tr.x + (fits.tab_w.min(tr.w) - TAB_ICON) / 2.0, scale);
         ui.c.icon(p.icon(), Rect::new(ix, snap(cy - TAB_ICON / 2.0, scale), TAB_ICON, TAB_ICON), ic);
         if resp.clicked && !active {
             st.cmd(Command::SetPage(p));
         }
     }
-    if from.tabbed() && (fi != pi || !page.tabbed()) {
+    if fits.label && from.tabbed() && (fi != pi || !page.tabbed()) {
         draw_tab_label(ui, from, tabs[fi], &label_st, 1.0 - e);
     }
-    if page.tabbed() {
+    if fits.label && page.tabbed() {
         draw_tab_label(ui, page, tabs[pi], &label_st, e);
     }
+    // The tabs past the room: "…" lists them in a menu of Windows' own.
+    let more_r = Rect::new(snap(tabs_end + TAB_GAP, scale), cy - TAB_H / 2.0, TAB_MIN_W, TAB_H);
+    if !more.is_empty() {
+        let resp = ui.button(wid("header.more"), more_r);
+        if resp.hovered {
+            ui.c.fill_rrect(more_r, TAB_H / 2.0, palette::SURFACE);
+            hover = Some((MORE_SLOT, more_r));
+        }
+        let dot = if resp.hovered { palette::TEXT } else { palette::TEXT_FAINT };
+        for i in -1..=1 {
+            ui.c.fill_circle(Point::new(more_r.center().x + i as f32 * 5.0, cy), 1.6, dot);
+        }
+        if resp.clicked {
+            st.cmd(Command::TabMenu(more.clone()));
+        }
+    }
 
-    // Right side: the clock ends on the content column's right edge (where
-    // every page's trailing control ends). Today already shows the date
-    // large, so the header leaves it out there.
-    let right = r.right() - 6.0;
-    let time = fmt_clock(&st.local, st.settings.use_24h);
-    let time_st = TextStyle::body().weight(Weight::Semibold).tabular().right();
-    let tw = ui.c.measure(&time, &time_st, 200.0).0;
     ui.c.text(&time, Rect::new(right - tw - 4.0, r.y, tw + 4.0, r.h), &time_st);
     let mut left = right - tw;
-
     let shows_date = |p: PageKind| if p == PageKind::Today { 0.0 } else { 1.0 };
-    let date_k = lerp(shows_date(from), shows_date(page), e);
-    let date = fmt_date_short(&st.local);
-    let date_st = TextStyle::footnote().color(palette::TEXT_DIM).right();
-    let dw = ui.c.measure(&date, &date_st, 200.0).0;
-    let date_left = left - DATE_GAP - dw;
-    if date_k > 0.0 && date_left > tabs_end + 40.0 {
+    let date_k = if fits.date { lerp(shows_date(from), shows_date(page), e) } else { 0.0 };
+    if date_k > 0.0 {
+        let date_left = left - DATE_GAP - dw;
         let date_r = Rect::new(date_left - 2.0, r.y, dw + 2.0, r.h);
         ui.c.with_alpha(date_k, |c| c.text(&date, date_r, &date_st));
         left = lerp(left, date_left, date_k);
     }
 
     let gear_r = Rect::new(snap(left - PIN_GAP - GEAR, scale), cy - GEAR / 2.0, GEAR, GEAR);
-    let pin_r = Rect::new(snap(gear_r.x - GEAR_GAP - PIN, scale), cy - PIN / 2.0, PIN, PIN);
+    let pin_r = Rect::new(pin_x(left), cy - PIN / 2.0, PIN, PIN);
     let halo_cx = pin_r.x - HALO_GAP - HALO_W / 2.0;
-    if crate::face::on(st.settings.theme) && halo_cx - HALO_W / 2.0 > tabs_end + 12.0 {
+    if fits.face {
         // Eyes on the cursor while it is over the island; asleep at night.
         let look = ui.input.mouse.map(|p| ((p.x - r.center().x) / (r.w / 2.0)).clamp(-1.0, 1.0));
         let (frame, moving) = crate::face::rest(st.now, st.local.hour < 5, look);
@@ -600,7 +679,8 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         }
         crate::face::peek(ui.c, &frame, halo_cx, cy + 9.0, HALO_W, r.y);
     }
-    if pin_r.x > tabs_end + 8.0 {
+    // The pin and Settings always show: `fit` left them their room.
+    {
         let pinned = st.pinned;
         let (icon, color) = if pinned { (Icon::PinFill, st.accent) } else { (Icon::Pin, palette::TEXT_FAINT) };
         let resp = ui.icon_button(wid("pin"), pin_r, icon, color, 15.0);
@@ -615,7 +695,7 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     // and a second press goes back to the page it was pressed on. The page
     // has the everyday settings; its last row opens Advanced settings, the
     // window with every setting.
-    if gear_r.x > tabs_end + 8.0 {
+    {
         if gear_k > 0.0 {
             ui.c.with_alpha(gear_k, |c| c.fill_rrect(gear_r, GEAR / 2.0, Color::white(0.14)));
         }
@@ -626,7 +706,7 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         }
         if resp.clicked {
             if page == PageKind::Settings {
-                let back = st.ui.before_settings.take().filter(|p| row.contains(p)).unwrap_or(row[0]);
+                let back = st.ui.before_settings.take().filter(|p| row.contains(p) || more.contains(p)).unwrap_or(row[0]);
                 st.cmd(Command::SetPage(back));
             } else {
                 st.ui.before_settings = Some(page);
@@ -655,6 +735,7 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         Some(p) => p.title(),
         None if slot == GEAR_SLOT && page == PageKind::Settings => "Close settings",
         None if slot == GEAR_SLOT => "Settings",
+        None if slot == MORE_SLOT => "More tabs",
         None if st.pinned => "Unpin",
         None => "Keep open",
     };
@@ -723,7 +804,9 @@ mod tests {
         // with Studio Pro.
         use PageKind::*;
         let mut st = state();
-        // Halo's Widgets sits beside Music.
+        // Widgets is an add-on, off until switched on; then it sits beside Music.
+        assert_eq!(tabs(&st), [Media, Today, Shelf, Tasks, Focus, Addons]);
+        st.addons.insert("widgets", halo_core::addons::Status::Ready);
         assert_eq!(tabs(&st), [Media, Widgets, Today, Shelf, Tasks, Focus, Addons]);
         st.halo_account.link = HaloLink::Connected { account: "a•••@example.com".into() };
         assert_eq!(tabs(&st), [Media, Widgets, Today, Shelf, Tasks, Focus, Addons]);
@@ -751,6 +834,7 @@ mod tests {
     fn hidden_tabs_leave_the_row_but_not_while_their_page_is_open() {
         use PageKind::*;
         let mut st = state();
+        st.addons.insert("widgets", halo_core::addons::Status::Ready);
         st.settings.hidden_tabs = vec!["today".into(), "tasks".into(), "halo".into(), "addons".into()];
         st.page = Focus;
         // The "+" can't be hidden.
@@ -774,7 +858,11 @@ mod tests {
         settings.start_page = "today".into();
         settings.remember_page = false;
         settings.hidden_tabs = vec!["media".into(), "today".into()];
-        assert_eq!(AppState::new(settings, Store::default()).page, Widgets);
+        settings.set_addon(halo_core::addons::WIDGETS.id, true);
+        assert_eq!(AppState::new(settings.clone(), Store::default()).page, Widgets);
+        // Widgets off as well: the next of the island's own pages.
+        settings.set_addon(halo_core::addons::WIDGETS.id, false);
+        assert_eq!(AppState::new(settings, Store::default()).page, Shelf);
     }
 
     #[test]
@@ -795,6 +883,64 @@ mod tests {
     fn settings_keeps_its_key_and_slides_in_from_the_right() {
         assert_eq!(PageKind::from_key("settings"), PageKind::Settings);
         assert!(PageKind::ALL.iter().all(|p| p.tab_index() <= PageKind::Settings.tab_index()));
+    }
+
+    /// The header row as `draw_header` lays it out at an island `width`
+    /// wide (Settings › Width when open, 480 to 900), the clock `clock_w`
+    /// wide: tabs, "…" and the pin's left edge.
+    fn header_at(width: f32, n: usize, label_w: f32, date_w: f32, face: bool, clock_w: f32) -> (Fit, f32, f32) {
+        let r = header_rect(Rect::new(0.0, 0.0, width, 300.0));
+        let right = r.right() - 6.0 - clock_w;
+        let pin_x = right - PIN_GAP - GEAR - GEAR_GAP - PIN;
+        let f = fit(pin_x - PIN_CLEAR - r.x, n, label_w, date_w, face);
+        let label = if f.label { TAB_LABEL_X + label_w + TAB_LABEL_END + 1.0 - f.tab_w } else { 0.0 };
+        let tabs_end = r.x + f.shown as f32 * (f.tab_w + TAB_GAP) - TAB_GAP + label;
+        let end = if f.shown < n { tabs_end + TAB_GAP + TAB_MIN_W } else { tabs_end };
+        let pin = if f.date { pin_x - DATE_GAP - date_w } else { pin_x };
+        (f, end, pin)
+    }
+
+    #[test]
+    fn the_pin_and_settings_always_show_however_many_tabs() {
+        // Every width the island opens at, every tab count up to all 17
+        // (every add-on on), the longest label ("Notifications"), a 24-hour
+        // and a 12-hour clock, with and without the date and Halo's face.
+        let all = PageKind::ALL.len() - 1;
+        for width in (480..=900).step_by(10).map(|w| w as f32) {
+            for n in 1..=all {
+                for (label_w, date_w, face, clock_w) in [(92.0, 70.0, true, 66.0), (40.0, 0.0, false, 40.0), (92.0, 70.0, false, 40.0)] {
+                    let (f, end, pin) = header_at(width, n, label_w, date_w, face, clock_w);
+                    // Nothing runs into the pin, so the pin and Settings never hide.
+                    assert!(end + PIN_CLEAR <= pin + 0.01, "{width} wide, {n} tabs: tabs end at {end}, pin at {pin} ({f:?})");
+                    // Every tab is a click away: in the row, or behind "…".
+                    assert!(f.shown >= 1 && f.shown <= n, "{f:?}");
+                    assert!(f.tab_w >= TAB_MIN_W, "{f:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn crowded_tabs_give_way_in_the_owners_order() {
+        // Room for everything: nothing gives.
+        let f = fit(1000.0, 7, 60.0, 70.0, true);
+        assert_eq!(f, Fit { face: true, date: true, label: true, tab_w: TAB_W, shown: 7 });
+        // Less and less room: the face goes first, then the date, the label,
+        // full-width tabs, and last tabs go behind "…".
+        let order: Vec<Fit> = (100..=600).rev().step_by(5).map(|room| fit(room as f32, 12, 60.0, 70.0, true)).collect();
+        let rank = |f: &Fit| [f.face, f.date, f.label, f.tab_w == TAB_W, f.shown == 12].iter().filter(|b| **b).count();
+        assert!(order.windows(2).all(|w| rank(&w[1]) <= rank(&w[0])), "{order:?}");
+        assert!(order.iter().any(|f| !f.face && f.date), "the face goes before the date");
+        assert!(order.iter().any(|f| !f.date && f.label), "the date goes before the label");
+        assert!(order.iter().any(|f| !f.label && f.tab_w == TAB_W), "the label goes before the tabs narrow");
+        assert!(order.iter().any(|f| f.tab_w == TAB_MIN_W && f.shown == 12), "the tabs narrow before any hides");
+        assert!(order.last().is_some_and(|f| f.shown < 12), "{:?}", order.last());
+        // The open page stays in the row, last, when it falls past the room.
+        use PageKind::*;
+        let row = vec![Media, Widgets, Today, Shelf, Tasks, Addons];
+        assert_eq!(split_row(row.clone(), 3, Tasks), (vec![Media, Widgets, Tasks], vec![Today, Shelf, Addons]));
+        assert_eq!(split_row(row.clone(), 3, Widgets), (vec![Media, Widgets, Today], vec![Shelf, Tasks, Addons]));
+        assert_eq!(split_row(row.clone(), 6, Media), (row, vec![]));
     }
 
     #[test]
@@ -836,11 +982,12 @@ mod tests {
     }
 
     #[test]
-    fn system_stocks_and_caffeine_have_a_tab_only_while_their_add_ons_are_on() {
+    fn system_stocks_caffeine_and_widgets_have_a_tab_only_while_their_add_ons_are_on() {
         for (page, addon) in [
             (PageKind::System, halo_core::addons::SYSTEM),
             (PageKind::Stocks, halo_core::addons::STOCKS),
             (PageKind::Caffeine, halo_core::addons::CAFFEINE),
+            (PageKind::Widgets, halo_core::addons::WIDGETS),
         ] {
             let mut st = state();
             assert!(!tabs(&st).contains(&page), "{} is off for everyone until switched on", addon.id);
@@ -944,6 +1091,37 @@ mod tests {
         let row = tabs(&st);
         let at = |p| row.iter().position(|t| *t == p).unwrap();
         assert_eq!(at(PageKind::Record), at(PageKind::Script) + 1, "beside the Script page");
+    }
+
+    /// Widgets switched on, off and removed: its tab follows, the other tabs
+    /// stay, and what it kept goes; its choices wait in settings.
+    #[test]
+    fn widgets_on_off_and_removed_leaves_the_island_s_own_tabs_alone() {
+        use halo_core::addons::{Status, WIDGETS};
+        let mut st = state();
+        let core = tabs(&st);
+        assert!(!core.contains(&PageKind::Widgets) && !st.widgets_on());
+        // On: its tab, beside Music, and every other tab as it was.
+        st.settings.set_addon(WIDGETS.id, true);
+        st.addons.insert(WIDGETS.id, Status::Ready);
+        assert_eq!(tabs(&st)[..2], [PageKind::Media, PageKind::Widgets]);
+        assert_eq!(tabs(&st).into_iter().filter(|p| *p != PageKind::Widgets).collect::<Vec<_>>(), core);
+        st.clips.push("copied", 5);
+        st.store.weather_last = Some((halo_core::halo::Weather { temp_c: 30.0, code: 1 }, 1));
+        st.weather.last = st.store.weather_last;
+        st.settings.water_every_min = 60;
+        // Off (the switch) and removed (its state cleared): the row is the core's again.
+        st.settings.set_addon(WIDGETS.id, false);
+        st.addons.insert(WIDGETS.id, Status::Off);
+        st.widgets_off();
+        assert_eq!(tabs(&st), core);
+        assert!(st.clips.items.is_empty() && st.weather.last.is_none() && st.store.weather_last.is_none());
+        assert!(st.cmds.contains(&crate::commands::Command::SaveStore), "the last reading leaves data.json");
+        assert_eq!(st.settings.water_every_min, 60, "its choices stay for next time");
+        // Its page open as it went: Settings' start pages no longer offer it.
+        let store = Store { last_page: "widgets".into(), ..Store::default() };
+        let settings = Settings { remember_page: true, ..Settings::default() };
+        assert_eq!(AppState::new(settings, store).page, PageKind::ALL[0]);
     }
 
     #[test]

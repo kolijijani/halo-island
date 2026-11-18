@@ -63,7 +63,7 @@ use crate::state::{
     HaloState, PhoneAsk, PairedPhone, PhoneDrop, PhoneTransfer, PhoneView, PowerState, PrayerState, VolumeState,
 };
 use crate::ui::wid;
-use halo_core::addons::{Status as AddonStatus, CAFFEINE, DOWNLOADER, JAPANESE_READINGS, PRAYER_TIMES, SCRIPT_READER, STOCKS, SYSTEM};
+use halo_core::addons::{Status as AddonStatus, CAFFEINE, DOWNLOADER, JAPANESE_READINGS, PRAYER_TIMES, SCRIPT_READER, STOCKS, SYSTEM, WIDGETS};
 use halo_core::notifications::NotificationSettings;
 use halo_core::datetime::{days_from_civil, LocalDateTime};
 use halo_core::geom::{palette, Color, Point, Rect};
@@ -3190,7 +3190,10 @@ impl SelfTest {
         // the Settings scene with its chip.
         st.notify_can = scene.page() == Some(PageKind::Notifications) || matches!(scene, Scene::MessageNotice | Scene::MessageHidden | Scene::SettingsTabsStore);
         let caffeine = scene.page() == Some(PageKind::Caffeine);
-        for (id, on) in [(SYSTEM.id, system), (STOCKS.id, stocks), (CAFFEINE.id, caffeine)] {
+        // Widgets (an add-on, off by default): on for its page, and for the
+        // gear clicked there.
+        let widgets = scene.page() == Some(PageKind::Widgets) || scene == Scene::GearClick;
+        for (id, on) in [(SYSTEM.id, system), (STOCKS.id, stocks), (CAFFEINE.id, caffeine), (WIDGETS.id, widgets)] {
             st.settings.set_addon(id, on);
             st.addons.insert(id, if on { AddonStatus::Ready } else { AddonStatus::Off });
         }

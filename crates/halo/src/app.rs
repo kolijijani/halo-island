@@ -106,6 +106,8 @@ thread_local! {
 pub enum Deferred {
     DragOut(Vec<String>),
     Menu(POINT),
+    /// The header's "…": the tabs that didn't fit, at the pointer.
+    TabMenu(Vec<PageKind>),
 }
 
 pub fn main_entry() -> i32 {
@@ -363,6 +365,27 @@ fn run_deferred(d: Deferred) {
                 app.menu_closed();
                 if let Some(cmd) = cmd {
                     app.on_menu(cmd);
+                }
+            });
+        }
+        Deferred::TabMenu(tabs) => {
+            let Some(helper) = with_app(|app| {
+                app.menu_open = true;
+                app.helper
+            }) else {
+                return;
+            };
+            let mut pt = POINT::default();
+            unsafe {
+                let _ = GetCursorPos(&mut pt);
+            }
+            let names: Vec<&str> = tabs.iter().map(|p| p.title()).collect();
+            let picked = tray::pick(helper, pt, &names);
+            with_app(|app| {
+                app.menu_closed();
+                if let Some(p) = picked.and_then(|i| tabs.get(i)) {
+                    app.set_page(*p);
+                    app.request_frame();
                 }
             });
         }
@@ -2236,6 +2259,10 @@ impl App {
         if !before.prayer.follow_location && self.st.settings.prayer.follow_location && self.st.prayer_on() {
             self.locate();
         }
+        // Widgets off: what it kept in memory and the last weather go.
+        if before.widgets_on() && !self.st.settings.widgets_on() {
+            self.st.widgets_off();
+        }
         // A Pro key activated or removed: the Pro add-ons follow (`pro_on`).
         if (before.pro || self.st.studio_pro() == Some(true)) != self.st.pro_on() {
             self.pro_changed();
@@ -3548,6 +3575,7 @@ impl App {
             PageKind::Games => !self.st.games_on(),
             PageKind::Stocks => !self.st.stocks_on(),
             PageKind::Caffeine => !self.st.caffeine_on(),
+            PageKind::Widgets => !self.st.widgets_on(),
             PageKind::Downloads => !self.st.downloader_on(),
             PageKind::Notifications => !self.st.notifications_on(),
             PageKind::Ai => !self.st.ai_usage_on(),
@@ -4325,7 +4353,8 @@ impl App {
 
     /// Ask Windows where the PC is (the answer: `AppEvent::Located`).
     pub(super) fn locate(&mut self) {
-        if self.st.prayer.locate == Locate::Asking || self.selftest.is_some() {
+        // `in_selftest`: `selftest` is taken out while a step runs.
+        if self.st.prayer.locate == Locate::Asking || self.in_selftest {
             return;
         }
         self.st.prayer.locate = Locate::Asking;
@@ -4341,19 +4370,23 @@ impl App {
         if let Located::At(lat, lng) = found {
             let first = self.st.weather_at.is_none();
             self.st.weather_at = Some((lat, lng));
-            if first && self.st.weather.due(self.st.unix, halo_core::halo::WEATHER_FRESH_S) && self.selftest.is_none() {
+            if first && self.st.settings.widgets_on() && self.st.weather.due(self.st.unix, halo_core::halo::WEATHER_FRESH_S) && !self.in_selftest {
                 self.st.weather.asked();
                 services::weather::fetch(lat, lng, self.sink.clone());
             }
         }
         // Windows can't say: the Weather widget asks the internet address
         // instead, while its tab is open.
-        if !matches!(found, Located::At(..)) && self.mode == Mode::Expanded(PageKind::Widgets) && self.st.settings.widgets.contains(&halo_core::halo::Widget::Weather) && self.st.weather_place().is_none() {
+        if !matches!(found, Located::At(..)) && self.mode == Mode::Expanded(PageKind::Widgets) && !self.in_selftest && self.st.settings.widgets.contains(&halo_core::halo::Widget::Weather) && self.st.weather_place().is_none() {
             self.weather_by_ip();
         }
         match found {
             Located::Denied => self.st.prayer.locate = Locate::Denied,
             Located::Unknown => self.st.prayer.locate = Locate::Unknown,
+            Located::TimedOut => self.st.prayer.locate = Locate::TimedOut,
+            // Asked for the Weather widget alone (no Prayer places): the ask is
+            // over, so a later "Use my location" asks again.
+            Located::At(..) if self.st.prayer.places.is_none() => self.st.prayer.locate = Locate::Idle,
             // Kemenag's places, or the world's cities around it (looked up online).
             Located::At(lat, lng) => pages::prayer::located(&mut self.st, lat, lng),
         }
@@ -4525,6 +4558,7 @@ impl App {
                 Command::OpenPath(p) => shell::open(&p),
                 Command::RevealPath(p) => shell::reveal(&p),
                 Command::DragOut(paths) => deferred.push(Deferred::DragOut(paths)),
+                Command::TabMenu(tabs) => deferred.push(Deferred::TabMenu(tabs)),
                 Command::LoadThumb(p) => {
                     if !self.st.shelf_thumbs.contains_key(&p) {
                         self.st.shelf_thumbs.insert(p.clone(), None);
@@ -4626,6 +4660,11 @@ impl App {
                     if self.selftest.is_none() {
                         services::cities::fetch(file, self.sink.clone());
                     }
+                }
+                Command::Locate => {
+                    // A press asks again; an internet-address guess from before is asked again too.
+                    self.st.weather_ip = None;
+                    self.locate();
                 }
                 Command::Download(c) => self.download_cmd(c),
                 Command::Notify(c) => self.notify_cmd(c),

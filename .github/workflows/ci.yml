@@ -18,7 +18,7 @@ concurrency:
 
 env:
   # Keep in sync with Cargo.toml's workspace version, installer/halo.nsi and installer/halo.iss.
-  HALO_VERSION: "0.2.53"
+  HALO_VERSION: "0.2.54"
 
 jobs:
   core:
@@ -108,6 +108,13 @@ jobs:
       # halo.trade answering badly only warns.
       - name: Stocks from the live halo.trade
         run: cargo test -p halo --release the_live_market_comes_in -- --ignored --nocapture
+
+      # The Weather widget's reading through Windows' own HTTP stack, as the
+      # app asks it. Open-Meteo answers Windows' default Accept-Encoding with
+      # a deflate body Windows can refuse (WinINet 12175), which showed as
+      # "Can't reach it" while Edge read the same URL fine (0.2.54).
+      - name: Weather from the live Open-Meteo
+        run: cargo test -p halo --release the_live_weather_comes_in -- --ignored --nocapture
 
       # Windows reads the Bluetooth watchers' filters only when they start,
       # and one it refused would mean no Bluetooth pop-ups at all. The runner

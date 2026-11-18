@@ -1,6 +1,6 @@
 //! Add-ons page, the "+" at the end of the tab row: features only the people
 //! who switch them on get (`halo_core::addons`). Most download then; Script
-//! reader, System and Stocks are already in the app and only show
+//! reader, System, Stocks, Caffeine and Widgets are already in the app and only show
 //! their pages (System's readings and Stocks' prices also
 //! run only while they are on).
 //!
@@ -138,6 +138,7 @@ fn icon(a: &Addon) -> Icon {
         "system" => Icon::Gauge,
         "stocks" => Icon::Stocks,
         "caffeine" => Icon::Coffee,
+        "widgets" => Icon::App,
         "notifications" => Icon::Bell,
         "recorder" => Icon::Recorder,
         "downloader" => Icon::Download,
@@ -238,7 +239,7 @@ fn addon_row(ui: &mut Ui, st: &AppState, r: Rect, i: usize, a: &Addon, card: Opt
     // eight are a line each.
     let one_line = r.h < TWO_LINES;
     let (badge, dy) = if one_line {
-        // Eleven rows are 20 DIPs: the badge keeps a DIP clear above and below.
+        // Twelve rows are 19 DIPs: the badge keeps a DIP clear above and below.
         (BADGE_ONE_LINE.min(r.h - 2.0), 0.0)
     } else if r.h < ROW_H {
         (BADGE_COMPACT, ((r.h - ROW_H) / 2.0).round())

@@ -520,6 +520,8 @@ pub enum Locate {
     Denied,
     /// Windows couldn't tell where the PC is.
     Unknown,
+    /// Windows gave no answer in time (no fix yet, or its question unanswered).
+    TimedOut,
 }
 
 /// One of Prayer times' online city files, while it's wanted.
@@ -935,6 +937,7 @@ impl AppState {
             PageKind::Games => !st.games_on(),
             PageKind::Stocks => !st.stocks_on(),
             PageKind::Caffeine => !st.caffeine_on(),
+            PageKind::Widgets => !st.widgets_on(),
             PageKind::Downloads => !st.downloader_on(),
             PageKind::Record => !st.record_on(),
             PageKind::Notifications => !st.notifications_on(),
@@ -1011,6 +1014,27 @@ impl AppState {
     /// reminds of the day's last call.
     pub fn caffeine_on(&self) -> bool {
         self.addon(halo_core::addons::CAFFEINE.id) == AddonStatus::Ready
+    }
+
+    /// The Widgets add-on is on: the Widgets tab shows, and Drink water,
+    /// the clipboard list and the Weather widget may run.
+    pub fn widgets_on(&self) -> bool {
+        self.addon(halo_core::addons::WIDGETS.id) == AddonStatus::Ready
+    }
+
+    /// Widgets switched off: the clipboard list, the city picker and the
+    /// weather (the last reading in data.json too) go. Its choices in
+    /// settings (slots, water, Clipboard) and the water count stay.
+    pub fn widgets_off(&mut self) {
+        self.clips = Default::default();
+        self.ui.clip_query.clear();
+        self.ui.weather_pick = None;
+        self.ui.weather_found = None;
+        self.weather = Default::default();
+        self.weather_at = None;
+        if self.store.weather_last.take().is_some() {
+            self.save();
+        }
     }
 
     /// The Downloader add-on is on, with its tools in place, with Pro on

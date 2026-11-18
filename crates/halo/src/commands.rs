@@ -175,6 +175,11 @@ pub enum Command {
     /// Get one of Prayer times' online city files ("ed", "near/55_-5"; the
     /// answer: `AppEvent::Cities`).
     GetCities(String),
+    /// "…" at the end of a crowded tab row: these tabs, in a menu.
+    TabMenu(Vec<PageKind>),
+    /// "Use my location" pressed: ask Windows (or macOS) where the PC is now,
+    /// whatever the last answer was (`AppEvent::Located`).
+    Locate,
     /// Notifications.
     Notify(NotifyCmd),
     Usage(UsageCmd),

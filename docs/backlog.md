@@ -174,3 +174,34 @@ dah siap / tak perlu — tiada dalam skop.
 7. **Baiki** — butang Settings di notch tersorok bila banyak menu atasnya (`C6`).
 8. **License** — L1 uninstall padam license + install id; L2 revoke tak sampai ke app; R1 view license key admin portal.
 
+---
+
+## Skop 0.2.54 (pemilik, 17 Nov 2026)
+
+Dikeluarkan sebagai **0.2.54** (18 Nov 2026, arahan pemilik): release notes `docs/release-notes/v0.2.54.md`, version, website. Halaman Phone drop baharu (Direction B) ikut sekali.
+
+1. **Lokasi tak auto-detect, butang manual pun tak jalan.** DIBAIKI.
+   - Punca 1: `Geolocator::RequestAccessAsync` dipanggil di worker thread. Microsoft: mesti dari UI thread, kalau tidak ia gagal (dan soalan izin Windows 11 24H2 tak keluar). Ralat itu jadi `Unknown`. Sekarang ia dipanggil di UI thread (`services/location.rs` `locate`); hanya tunggu jawapan di worker. Ralat lain selain "denied" tak lagi menghentikan: kedudukan tetap ditanya.
+   - Punca 2: "Use my location" (Prayer dan Weather) hanya set `follow_location = true`, yang memang sudah `true` secara default, jadi tiada apa ditanya semula. Sekarang ia hantar `Command::Locate`, yang tanya Windows semula.
+   - Punca 3: bila Prayer times tak dipasang, `prayer.locate` kekal `Asking` selepas jawapan datang, jadi `locate()` tak pernah tanya lagi. Sekarang ia kembali `Idle`.
+   - Baru: `Located::TimedOut` / `Locate::TimedOut` (30 s tanpa jawapan) dibezakan daripada `Unknown`.
+   - Guard self-test guna `in_selftest` (bukan `selftest.is_some()`, yang `None` semasa step). Self-test tak lagi panggil network/lokasi sebenar.
+2. **Weather "Can't reach it".** DIBAIKI (punca paling mungkin, belum disahkan di PC sebenar).
+   - Bukti: Edge pemilik buka URL Open-Meteo dengan betul (GRILL-0.3.00-answers-r2 Q1.5), jadi rangkaian OK. `HttpBaseProtocolFilter` Windows hantar `Accept-Encoding: gzip, deflate`; Open-Meteo jawab `Content-Encoding: deflate` (diuji: zlib-wrapped). WinINet 12175 = `ERROR_INTERNET_DECODING_FAILED`, yang `classify` letak sebagai `Network` jadi `Unreachable`. ipwho.is (berfungsi) jawab tanpa encoding.
+   - Fix: `Client::uncompressed` (AutomaticDecompression off + `Accept-Encoding: identity`) untuk weather. Ralat sebenar masuk log (`weather: Open-Meteo: …`).
+   - Tile: Offline, Timed out, Location off, Location timed out, Location unknown, dan bacaan. Test: `pages::widgets::tests::the_weather_tile_says_why_it_has_no_reading`.
+   - Test live baru dalam CI Windows: `the_live_weather_comes_in` (ignored di local, jalan di CI).
+3. **Pin + Settings sentiasa nampak.** DIBAIKI.
+   - `pages/mod.rs` `fit`: pin dan Settings dapat ruang dulu. Bila sesak, ikut turutan Q7.4: muka Halo, date, label tab, tab mengecil ke 24 DIP, akhir sekali tab lebih masuk "…" (menu native Windows, Q7.5). Tab halaman yang terbuka kekal dalam baris.
+   - Test: `the_pin_and_settings_always_show_however_many_tabs` (lebar 480–900, 1–17 tab, label paling panjang, jam 12/24 jam, dengan/tanpa date dan muka) dan `crowded_tabs_give_way_in_the_owners_order`. Test pertama gagal dengan layout lama (disahkan).
+   - Mac: "…" buka tab pertama yang tersorok (ponytail, tiada NSMenu lagi).
+
+4. **Widgets jadi add-on (pemilik, 18 Nov 2026).** SIAP dalam working tree.
+   - `halo_core::addons::WIDGETS` (id `widgets`, built-in macam Stocks/Caffeine: tiada fail untuk download). Default off. Baris dalam Add-ons, ikon `App`.
+   - Off: tiada tab Widgets, tiada timer Drink water, tiada clipboard listener, tiada bacaan cuaca (termasuk selepas lokasi dijumpai), tiada baris Halo/Widgets tab dalam Settings › General.
+   - Switch off = remove: `AppState::widgets_off` buang senarai clipboard, picker bandar, bacaan cuaca dan `weather_last` dalam data.json. Pilihan (slot, water, Clipboard) dan kiraan air kekal untuk bila dihidupkan semula.
+   - Migrasi settings v7: fail lama yang Drink water atau Clipboard hidup dapat Widgets on; yang lain off. Yang dimatikan sendiri kekal off.
+   - Test: `settings::tests::widgets_is_an_add_on_off_until_switched_on`, `pages::tests::widgets_on_off_and_removed_leaves_the_island_s_own_tabs_alone`, `pages::tests::system_stocks_caffeine_and_widgets_have_a_tab_only_while_their_add_ons_are_on`, dan test tab/Settings sedia ada dikemas kini.
+
+**Pending:** semak di PC Windows sebenar (soalan izin lokasi, bacaan Open-Meteo, "…" menu; Widgets on/off dari Add-ons, restart, timer air dan clipboard berhenti bila off).
+

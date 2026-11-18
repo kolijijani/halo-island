@@ -69,7 +69,7 @@ pub enum MonitorChoice {
 }
 
 /// Bumped when defaults change in a way existing files should pick up.
-pub const SETTINGS_VERSION: u32 = 6;
+pub const SETTINGS_VERSION: u32 = 7;
 
 /// The Games page's refresh rates (`Settings::game_hz`), 0 = Auto.
 pub const GAME_HZ: [u16; 8] = [0, 60, 75, 120, 144, 165, 240, 360];
@@ -453,6 +453,12 @@ impl Settings {
         self.addon_on(crate::addons::SYSTEM.id)
     }
 
+    /// The Widgets add-on is on: the Widgets tab, Drink water and the
+    /// clipboard list. Off, none of them runs; their choices are kept.
+    pub fn widgets_on(&self) -> bool {
+        self.addon_on(crate::addons::WIDGETS.id)
+    }
+
     /// The System page's readings go on while it's closed: its history
     /// switch, and only while System itself is on.
     /// The long history is Halo Pro's.
@@ -536,6 +542,11 @@ impl Settings {
         // upstream had forced Step aside off in every file since 0.2.6.
         if self.settings_version < 6 {
             self.step_aside = true;
+        }
+        // v7: Widgets became an add-on, off by default. A file whose drink
+        // water reminder or clipboard list was on keeps them, Widgets on.
+        if self.settings_version < 7 && (self.water_every_min > 0 || self.clips) && self.addon_unset(crate::addons::WIDGETS.id) {
+            self.set_addon(crate::addons::WIDGETS.id, true);
         }
         self.settings_version = self.settings_version.max(SETTINGS_VERSION);
         // Halo Island brings Step aside back as the mini handle over
@@ -744,6 +755,27 @@ mod tests {
         // Files from before have no System switch: off.
         let old: Settings = serde_json::from_str(r#"{"settings_version":4,"system_history":true}"#).unwrap();
         assert!(!old.sanitized().system_on());
+    }
+
+    #[test]
+    fn widgets_is_an_add_on_off_until_switched_on() {
+        // Default off; on and off by its switch, through a save.
+        let mut s = Settings::default();
+        assert!(!s.widgets_on());
+        s.set_addon(crate::addons::WIDGETS.id, true);
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(back.sanitized().widgets_on(), "on survives a restart");
+        s.set_addon(crate::addons::WIDGETS.id, false);
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(!back.sanitized().widgets_on(), "off survives a restart");
+        // A file from before: on only where the water reminder or clipboard was.
+        let old = |j: &str| serde_json::from_str::<Settings>(j).unwrap().sanitized().widgets_on();
+        assert!(!old(r#"{"settings_version":6}"#));
+        assert!(old(r#"{"settings_version":6,"water_every_min":60}"#));
+        assert!(old(r#"{"settings_version":6,"clips":true}"#));
+        // Switched off by hand, or a current file: as it is.
+        assert!(!old(r#"{"settings_version":6,"clips":true,"addons":{"widgets":false}}"#));
+        assert!(!old(r#"{"settings_version":7,"clips":true}"#));
     }
 
     #[test]

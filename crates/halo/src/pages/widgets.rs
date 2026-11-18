@@ -242,6 +242,9 @@ fn tile_text(st: &AppState, w: Widget) -> (String, String) {
                 // instead of "can't reach it", and what to do.
                 _ if placed || locating || st.weather.last.is_some() => halo::weather_tile(&st.weather, st.unix, locating),
                 Locate::Denied => ("—".into(), "Location off · click to pick a city".into()),
+                // The internet-address guess couldn't go out either.
+                _ if st.weather_ip == Some(Err(halo_core::net::Failure::Offline)) => ("—".into(), "Offline".into()),
+                Locate::TimedOut => ("—".into(), "Location timed out · click to pick a city".into()),
                 _ if st.weather_ip.is_some() => ("—".into(), "Location unknown · click to pick a city".into()),
                 _ => halo::weather_tile(&st.weather, st.unix, locating),
             }
@@ -339,6 +342,11 @@ fn draw_city_picker(ui: &mut Ui, st: &mut AppState, r: Rect) {
         // Another place: a new reading, asked at once (the old one stays kept on disk).
         st.weather = Default::default();
         st.cmd(Command::SaveSettings);
+        if follow {
+            // Where the PC is now, asked again whatever Windows said before.
+            st.weather_at = None;
+            st.cmd(Command::Locate);
+        }
         close = true;
     }
     if close {
@@ -526,5 +534,48 @@ fn draw_clips(ui: &mut Ui, st: &mut AppState, r: Rect) {
         if resp.clicked {
             st.cmd(Command::ClipBack(t.clone()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::Locate;
+    use halo_core::net::Failure;
+    use halo_core::settings::Settings;
+    use halo_core::store::Store;
+
+    fn weather(st: &AppState) -> (String, String) {
+        tile_text(st, Widget::Weather)
+    }
+
+    #[test]
+    fn the_weather_tile_says_why_it_has_no_reading() {
+        let mut st = AppState::new(Settings::default(), Store::default());
+        // Still asking Windows.
+        st.prayer.locate = Locate::Asking;
+        assert_eq!(weather(&st).1, "Reading…");
+        // Windows said no: the permission, not the network.
+        st.prayer.locate = Locate::Denied;
+        assert_eq!(weather(&st).1, "Location off · click to pick a city");
+        // No answer in time.
+        st.prayer.locate = Locate::TimedOut;
+        assert_eq!(weather(&st).1, "Location timed out · click to pick a city");
+        // Windows couldn't tell, and the internet address couldn't either.
+        st.prayer.locate = Locate::Unknown;
+        st.weather_ip = Some(Err(Failure::Unreachable));
+        assert_eq!(weather(&st).1, "Location unknown · click to pick a city");
+        // ...because there is no internet: that, not "unknown".
+        st.weather_ip = Some(Err(Failure::Offline));
+        assert_eq!(weather(&st), ("—".into(), "Offline".into()));
+        // A place: Open-Meteo's own failures and its reading.
+        st.weather_at = Some((3.14, 101.69));
+        st.weather.came(Err(Failure::Timeout), 0, 30, 600);
+        assert_eq!(weather(&st), ("—".into(), "Timed out".into()));
+        st.weather.came(Err(Failure::Unreachable), 30, 30, 600);
+        assert_eq!(weather(&st).1, "Can't reach it");
+        st.weather.came(Ok(halo::Weather { temp_c: 27.4, code: 2 }), 60, 30, 600);
+        st.unix = 60;
+        assert_eq!(weather(&st), ("27°C".into(), "Cloudy".into()));
     }
 }

@@ -271,6 +271,22 @@ pub const CAFFEINE: Addon = Addon {
     pro: false,
 };
 
+/// Widgets: the Widgets page (Weather, Calendar, World clock, Moon,
+/// Countdown), Drink water and the clipboard list. A tab for everyone up to
+/// 0.2.53; an add-on, off, in the versions after it. Its code is in the app,
+/// so there is nothing to download. Off, there is no Widgets tab, no water
+/// reminder, no clipboard listener and no weather read; its choices (slots,
+/// water, Clipboard) stay in settings for when it comes back on.
+pub const WIDGETS: Addon = Addon {
+    id: "widgets",
+    title: "Widgets",
+    blurb: "Weather, calendar, clocks and more, with drink water reminders and your clipboard.",
+    mac_blurb: None,
+    tag: "",
+    files: &[],
+    pro: false,
+};
+
 /// Screen recorder: the Record page and the recording pill, the face of
 /// Halo Island Recorder (its own install, about 120 MB). Its code is in the
 /// island, so there is nothing to download. It shows on the Add-ons page once
@@ -381,7 +397,7 @@ pub const AI_USAGE: Addon = Addon {
 /// Health (steps from a phone) left after 0.2.30: Halo Island has no phone or
 /// watch connection to read them from. A settings file that still has it on
 /// is left as it is; no add-on answers to that id.
-pub const ALL: [&Addon; 9] = [&PRAYER_TIMES, &JAPANESE_READINGS, &SCRIPT_READER, &SYSTEM, &STOCKS, &CAFFEINE, &SCREEN_RECORDER, &AI_USAGE, &DOWNLOADER];
+pub const ALL: [&Addon; 10] = [&PRAYER_TIMES, &JAPANESE_READINGS, &SCRIPT_READER, &SYSTEM, &STOCKS, &CAFFEINE, &WIDGETS, &SCREEN_RECORDER, &AI_USAGE, &DOWNLOADER];
 
 /// The adzan voices besides the add-on's own (`adzan.m4a`): each its own
 /// file on `addon-sholat-4`, downloaded only once someone picks it in
@@ -610,7 +626,7 @@ mod tests {
 
     #[test]
     fn built_in_add_ons_are_off_until_switched_on() {
-        for a in [&SYSTEM, &STOCKS, &CAFFEINE] {
+        for a in [&SYSTEM, &STOCKS, &CAFFEINE, &WIDGETS] {
             assert!(!a.downloads() && a.size() == 0, "{}", a.id);
             assert_eq!(Addon::find(a.id), Some(a));
             assert_eq!(Status::Ready.line(a, false), "On");
@@ -806,7 +822,7 @@ mod tests {
     fn add_ons_are_listed_in_order_each_with_its_own_id() {
         // The Add-ons page's order: the free ones, then Studio Pro's.
         let ids: Vec<&str> = ALL.iter().map(|a| a.id).collect();
-        assert_eq!(ids, ["sholat", "ja", "script", "system", "stocks", "caffeine", "recorder", "ai", "downloader"]);
+        assert_eq!(ids, ["sholat", "ja", "script", "system", "stocks", "caffeine", "widgets", "recorder", "ai", "downloader"]);
         // Health left the app.
         assert_eq!(Addon::find("health"), None);
         for (i, a) in ALL.iter().enumerate() {

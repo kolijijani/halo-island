@@ -1022,6 +1022,10 @@ impl App {
         if !before.prayer.follow_location && self.st.settings.prayer.follow_location && self.st.prayer_on() {
             self.locate();
         }
+        // Widgets off: what it kept in memory and the last weather go.
+        if before.widgets_on() && !self.st.settings.widgets_on() {
+            self.st.widgets_off();
+        }
         // A Pro key activated or removed: the Pro add-ons follow (`pro_on`).
         if (before.pro || self.st.studio_pro() == Some(true)) != self.st.pro_on() {
             self.pro_changed();
@@ -2941,6 +2945,13 @@ impl App {
                 // shows no Pair a phone yet).
                 Command::Pair(_) => {}
                 Command::GetCities(file) => services::cities::fetch(file, self.sink.clone()),
+                Command::Locate => self.locate(),
+                // ponytail: the first hidden tab, no menu yet; an NSMenu like the right-click one when the Mac gets this work.
+                Command::TabMenu(tabs) => {
+                    if let Some(p) = tabs.first() {
+                        self.set_page(*p);
+                    }
+                }
                 Command::Download(c) => self.download_cmd(c),
                 // Notifications is a Windows add-on: a Mac can't read other apps' notifications.
                 Command::Notify(_) => {}
@@ -3489,6 +3500,7 @@ impl App {
             PageKind::Games => !self.st.games_on(),
             PageKind::Stocks => !self.st.stocks_on(),
             PageKind::Caffeine => !self.st.caffeine_on(),
+            PageKind::Widgets => !self.st.widgets_on(),
             PageKind::Record => !self.st.record_on(),
             PageKind::Downloads => !self.st.downloader_on(),
             PageKind::Ai => !self.st.ai_usage_on(),

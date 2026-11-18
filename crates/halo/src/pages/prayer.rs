@@ -484,6 +484,8 @@ fn picker(ui: &mut Ui, st: &mut AppState, area: Rect) {
     if ui.pill(wid("prayer.locate"), loc, loc_label, None, PillStyle::UtilityAccent(accent)).clicked {
         st.settings.prayer.follow_location = true;
         st.cmd(Command::SaveSettings);
+        // Already following (the default): only a new ask finds the place.
+        st.cmd(Command::Locate);
         close(st);
         return;
     }
@@ -497,6 +499,7 @@ fn picker(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let hint = match st.prayer.locate {
             Locate::Denied => DENIED_HINT.to_string(),
             Locate::Unknown => UNKNOWN_HINT.to_string(),
+            Locate::TimedOut => "Finding your location took too long. Press Use my location to try again, or type your city.".to_string(),
             Locate::Far { .. } => "No city in the list is near you. Type the nearest one.".to_string(),
             Locate::Offline(halo_core::net::Failure::Offline) => "No internet, so the cities near you couldn't be looked up. Type yours.".to_string(),
             Locate::Offline(f) => format!("The world's city list didn't answer ({}). Type yours, or try again.", f.short().to_lowercase()),

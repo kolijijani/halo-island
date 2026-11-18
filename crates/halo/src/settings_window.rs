@@ -536,7 +536,10 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 rows.push(switch(Key::SystemHistory, "Keep System page history", Some("Halo Pro: the charts go on while the page is closed"), s.system_history));
             }
             let mut blocks = vec![Block::Version, Block::Group(None, rows)];
-            blocks.extend(halo_free(s));
+            // Water, the clipboard and the slots: the Widgets add-on's.
+            if st.widgets_on() {
+                blocks.extend(halo_free(s));
+            }
             blocks
         }
         Section::Appearance => {
@@ -2352,8 +2355,14 @@ mod tests {
     #[test]
     fn add_fills_every_promised_widget_slot_and_then_goes() {
         use halo_core::halo::{widget_slots, Widget};
+        // Without the Widgets add-on there are no slots, water or clipboard rows.
+        let mut st = state();
+        assert!(row(Section::General, &st, Key::AddWidget).is_none() && row(Section::General, &st, Key::Clips).is_none());
+        st.addons.insert(halo_core::addons::WIDGETS.id, halo_core::addons::Status::Ready);
+        assert!(row(Section::General, &st, Key::Clips).is_some());
         for pro in [false, true] {
             let mut st = state();
+            st.addons.insert(halo_core::addons::WIDGETS.id, halo_core::addons::Status::Ready);
             st.settings.pro = pro;
             st.settings.widgets.clear();
             while row(Section::General, &st, Key::AddWidget).is_some() {
@@ -2369,6 +2378,7 @@ mod tests {
             assert_eq!(back.widgets, st.settings.widgets);
         }
         let mut st = state();
+        st.addons.insert(halo_core::addons::WIDGETS.id, halo_core::addons::Status::Ready);
         st.settings.pro = true;
         st.settings.widgets = Widget::ALL[..4].to_vec();
         assert_eq!(row(Section::General, &st, Key::AddWidget).and_then(|i| i.sub), Some("Up to 5, one of each widget".into()));

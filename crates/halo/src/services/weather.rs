@@ -52,9 +52,34 @@ pub fn locate_by_ip(sink: EventSink) {
     }
 }
 
+/// Asked uncompressed: Open-Meteo answers `gzip, deflate` with a `deflate`
+/// body that Windows' decoder can refuse, which read as "Can't reach it".
 fn read(lat: f64, lng: f64) -> Result<halo_core::halo::Weather, Failure> {
-    let client = Client::new(USER_AGENT).map_err(|_| Failure::Unreachable)?;
-    let r = client.get(&halo_core::halo::weather_url(lat, lng), TIMEOUT).map_err(|e| crate::services::net::failure(&e))?;
+    let client = Client::uncompressed(USER_AGENT).map_err(|e| {
+        crate::pwarn!("weather: no HTTP client ({e})");
+        Failure::Unreachable
+    })?;
+    let r = client.get(&halo_core::halo::weather_url(lat, lng), TIMEOUT).map_err(|e| {
+        // What Windows said (DNS, TLS, decoding…): the log tells them apart, the tile stays short.
+        crate::pwarn!("weather: Open-Meteo: {e}");
+        crate::services::net::failure(&e)
+    })?;
     halo_core::net::answered(r.status)?;
     halo_core::halo::parse_weather(&r.body).ok_or(Failure::Malformed)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Open-Meteo itself, through Windows' HTTP stack as the widget asks it.
+    /// It answered `Content-Encoding: deflate` to Windows' default
+    /// `Accept-Encoding`; the reading must come back as a reading.
+    #[test]
+    #[ignore = "asks the live Open-Meteo"]
+    fn the_live_weather_comes_in() {
+        let _com = crate::services::http::MtaGuard::new();
+        match super::read(3.14, 101.69) {
+            Ok(w) => assert!((-90.0..=60.0).contains(&w.temp_c), "{w:?}"),
+            Err(f) => panic!("no reading from Open-Meteo: {f:?}"),
+        }
+    }
 }

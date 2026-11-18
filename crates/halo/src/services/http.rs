@@ -149,6 +149,23 @@ impl Client {
         Self::with(http, user_agent)
     }
 
+    /// A client that asks for answers as they are, not compressed. Windows'
+    /// filter offers `gzip, deflate`, and a server's zlib-wrapped `deflate`
+    /// (Open-Meteo's) can fail Windows' decoding (WinINet 12175), which
+    /// looked like the server being unreachable. For small answers only.
+    pub fn uncompressed(user_agent: &str) -> Result<Self, FetchError> {
+        let filter = HttpBaseProtocolFilter::new().map_err(|e| other("could not create an HTTP filter", &e))?;
+        filter.SetAutomaticDecompression(false).map_err(|e| other("could not set up the HTTP filter", &e))?;
+        let http = HttpClient::Create(&filter).map_err(|e| other("could not create an HTTP client", &e))?;
+        let client = Self::with(http, user_agent)?;
+        // Said outright too, so no compressed answer comes back undecoded.
+        let headers = client.http.DefaultRequestHeaders().map_err(|e| other("could not set request headers", &e))?;
+        if !headers.TryAppendWithoutValidation(h!("Accept-Encoding"), h!("identity")).unwrap_or(false) {
+            crate::pwarn!("http: could not set the Accept-Encoding header");
+        }
+        Ok(client)
+    }
+
     fn with(http: HttpClient, user_agent: &str) -> Result<Self, FetchError> {
         let headers = http.DefaultRequestHeaders().map_err(|e| other("could not set request headers", &e))?;
         let ua = HSTRING::from(user_agent);
@@ -468,7 +485,9 @@ mod pure {
             12030 => "connection aborted",
             12031 => "connection reset",
             12152 => "invalid server response",
-            12157 | 12175 => "secure connection failed",
+            12157 => "secure connection failed",
+            // WinINet's ERROR_INTERNET_DECODING_FAILED (WinHTTP's own 12175 is a TLS failure).
+            12175 => "couldn't decode the answer, or secure connection failed",
             12037 | 12038 | 12044 | 12045 => "certificate problem",
             _ => "network error",
         }

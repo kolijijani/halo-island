@@ -2,6 +2,9 @@
 //! water reminder, the clipboard list, cloud sync, the Weather widget's
 //! reading and the Today page's news. A child of `app`, so it reaches the app's state.
 //!
+//! All of it but Pro, cloud sync and the news is the Widgets add-on's
+//! (`addons::WIDGETS`): off, none of it runs.
+//!
 //! What runs at rest, each only while the person switched it on:
 //! * Drink water: one `SetTimer` one-shot per reminder (45-90 min apart).
 //! * Clipboard: Windows' own `WM_CLIPBOARDUPDATE` (no poll), read once per copy.
@@ -44,7 +47,7 @@ impl App {
     pub(super) fn sync_water(&mut self) {
         let every = self.st.settings.water_every_min;
         unsafe {
-            if every == 0 || self.selftest.is_some() {
+            if every == 0 || !self.st.settings.widgets_on() || self.selftest.is_some() {
                 let _ = KillTimer(self.hwnd, TIMER_WATER);
             } else {
                 SetTimer(self.hwnd, TIMER_WATER, every * 60_000, None);
@@ -71,7 +74,7 @@ impl App {
     // ------------------------------------------------------------ clipboard
 
     pub(super) fn sync_clips(&mut self) {
-        let on = self.st.settings.clips && self.selftest.is_none();
+        let on = self.st.settings.clips && self.st.settings.widgets_on() && self.selftest.is_none();
         if on == self.clips_listening {
             return;
         }
@@ -86,7 +89,7 @@ impl App {
 
     /// Something was copied (`WM_CLIPBOARDUPDATE`, the helper window's).
     pub(super) fn clip_copied(&mut self) {
-        if !self.st.settings.clips {
+        if !self.st.settings.clips || !self.st.settings.widgets_on() {
             return;
         }
         if let Some(t) = crate::services::clipboard::read_text(self.helper) {
@@ -161,7 +164,8 @@ impl App {
     /// tab opens (not again on every frame after a refusal); when Windows
     /// says no or can't tell, the internet address is asked, once a run.
     pub(super) fn widgets_shown(&mut self, opened: bool) {
-        if self.selftest.is_some() || !self.st.settings.widgets.contains(&halo::Widget::Weather) || !self.st.weather.due(self.st.unix, halo::WEATHER_FRESH_S) {
+        // `in_selftest`: `selftest` is taken out while a step runs.
+        if self.in_selftest || !self.st.widgets_on() || !self.st.settings.widgets.contains(&halo::Widget::Weather) || !self.st.weather.due(self.st.unix, halo::WEATHER_FRESH_S) {
             return;
         }
         match self.st.weather_place() {
@@ -170,7 +174,7 @@ impl App {
                 crate::services::weather::fetch(lat, lng, self.sink.clone());
             }
             None if self.st.prayer.locate == crate::state::Locate::Asking => {}
-            None if matches!(self.st.prayer.locate, crate::state::Locate::Denied | crate::state::Locate::Unknown) => self.weather_by_ip(),
+            None if matches!(self.st.prayer.locate, crate::state::Locate::Denied | crate::state::Locate::Unknown | crate::state::Locate::TimedOut) => self.weather_by_ip(),
             None if opened => self.locate(),
             None => {}
         }
@@ -180,7 +184,7 @@ impl App {
     /// a failure that may mend, the next time the tab opens).
     pub(super) fn weather_by_ip(&mut self) {
         let retry = matches!(self.st.weather_ip, Some(Err(f)) if f.retries());
-        if self.st.weather_ip_asking || (self.st.weather_ip.is_some() && !retry) || self.selftest.is_some() {
+        if self.st.weather_ip_asking || (self.st.weather_ip.is_some() && !retry) || self.in_selftest {
             return;
         }
         self.st.weather_ip_asking = true;

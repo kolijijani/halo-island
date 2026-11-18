@@ -179,6 +179,22 @@ fn build(menu: HMENU, items: &[MenuItem], cmds: &mut Vec<MenuCmd>) {
     }
 }
 
+/// A menu of `labels` at `pt` (screen pixels); returns the one picked.
+pub fn pick(owner: HWND, pt: POINT, labels: &[&str]) -> Option<usize> {
+    unsafe {
+        let menu = CreatePopupMenu().ok()?;
+        for (i, label) in labels.iter().enumerate() {
+            let w: Vec<u16> = label.encode_utf16().chain(Some(0)).collect();
+            let _ = AppendMenuW(menu, MF_STRING, i + 1, PCWSTR(w.as_ptr()));
+        }
+        let _ = SetForegroundWindow(owner);
+        let chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, owner, None);
+        let _ = PostMessageW(owner, WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        (chosen.0 as usize).checked_sub(1)
+    }
+}
+
 /// Show the menu at `pt` (screen pixels); returns the chosen command.
 pub fn show_menu(owner: HWND, pt: POINT, items: &[MenuItem]) -> Option<MenuCmd> {
     unsafe {
