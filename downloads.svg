@@ -3,8 +3,7 @@
 <rect width="820" height="538" rx="16" fill="#FFF1DE"/>
 <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif">
 <path d="M86.5,68.0L86.5,256.0" stroke="#D8BF9C" stroke-width="1"/>
-<path d="M46.0,454.5L718.7,454.5" stroke="#EAD7BC" stroke-width="1"/>
-<path d="M741.0,454.5L792.0,454.5" stroke="#EAD7BC" stroke-width="1"/>
+<path d="M46.0,454.5L792.0,454.5" stroke="#EAD7BC" stroke-width="1"/>
 <path d="M46.0,417.5L792.0,417.5" stroke="#EAD7BC" stroke-width="1"/>
 <path d="M46.0,380.5L792.0,380.5" stroke="#EAD7BC" stroke-width="1"/>
 <path d="M46.0,342.5L792.0,342.5" stroke="#EAD7BC" stroke-width="1"/>
@@ -15,12 +14,12 @@
 <path d="M87.0,171.0H426.0A4.0,4.0 0 0 1 430.0,175.0V185.0A4.0,4.0 0 0 1 426.0,189.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,203.0H426.0A4.0,4.0 0 0 1 430.0,207.0V217.0A4.0,4.0 0 0 1 426.0,221.0H87.0Z" fill="#D9661C"/>
 <path d="M87.0,235.0H654.7A4.0,4.0 0 0 1 658.7,239.0V249.0A4.0,4.0 0 0 1 654.7,253.0H87.0Z" fill="#D9661C"/>
-<path d="M96.2,492.0V458.5A4.0,4.0 0 0 1 100.2,454.5H116.2A4.0,4.0 0 0 1 120.2,458.5V492.0Z" fill="#D9661C"/>
-<path d="M220.5,492.0V346.0A4.0,4.0 0 0 1 224.5,342.0H240.5A4.0,4.0 0 0 1 244.5,346.0V492.0Z" fill="#D9661C"/>
-<path d="M344.8,492.0V346.0A4.0,4.0 0 0 1 348.8,342.0H364.8A4.0,4.0 0 0 1 368.8,346.0V492.0Z" fill="#D9661C"/>
-<path d="M469.2,492.0V458.5A4.0,4.0 0 0 1 473.2,454.5H489.2A4.0,4.0 0 0 1 493.2,458.5V492.0Z" fill="#D9661C"/>
-<path d="M593.5,492.0V458.5A4.0,4.0 0 0 1 597.5,454.5H613.5A4.0,4.0 0 0 1 617.5,458.5V492.0Z" fill="#D9661C"/>
-<path d="M717.8,492.0V477.2A4.0,4.0 0 0 1 721.8,473.2H737.8A4.0,4.0 0 0 1 741.8,477.2V492.0Z" fill="#D9661C"/>
+<path d="M87.3,492.0V458.5A4.0,4.0 0 0 1 91.3,454.5H107.3A4.0,4.0 0 0 1 111.3,458.5V492.0Z" fill="#D9661C"/>
+<path d="M193.9,492.0V346.0A4.0,4.0 0 0 1 197.9,342.0H213.9A4.0,4.0 0 0 1 217.9,346.0V492.0Z" fill="#D9661C"/>
+<path d="M300.4,492.0V346.0A4.0,4.0 0 0 1 304.4,342.0H320.4A4.0,4.0 0 0 1 324.4,346.0V492.0Z" fill="#D9661C"/>
+<path d="M407.0,492.0V458.5A4.0,4.0 0 0 1 411.0,454.5H427.0A4.0,4.0 0 0 1 431.0,458.5V492.0Z" fill="#D9661C"/>
+<path d="M513.6,492.0V458.5A4.0,4.0 0 0 1 517.6,454.5H533.6A4.0,4.0 0 0 1 537.6,458.5V492.0Z" fill="#D9661C"/>
+<path d="M620.1,492.0V477.2A4.0,4.0 0 0 1 624.1,473.2H640.1A4.0,4.0 0 0 1 644.1,477.2V492.0Z" fill="#D9661C"/>
 <text x="28.0" y="44.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per release</text>
 <text x="77.0" y="88.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.54</text>
 <text x="438.0" y="88.5" font-size="14" fill="#2B1B10" font-weight="600">3</text>
@@ -35,13 +34,13 @@
 <text x="77.0" y="248.0" font-size="14" fill="#6B5442" text-anchor="end" style="font-variant-numeric: tabular-nums">0.2.40</text>
 <text x="666.7" y="248.5" font-size="14" fill="#2B1B10" font-weight="600">5</text>
 <text x="28.0" y="304.0" font-size="16" fill="#2B1B10" font-weight="600">Downloads per day</text>
-<text x="729.8" y="466.2" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">1</text>
-<text x="356.8" y="335.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">8</text>
+<text x="738.7" y="485.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">0</text>
+<text x="312.4" y="335.0" font-size="13" fill="#2B1B10" font-weight="600" text-anchor="middle">8</text>
 <text x="36.0" y="496.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">0</text>
 <text x="36.0" y="458.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">2</text>
 <text x="36.0" y="421.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">4</text>
 <text x="36.0" y="384.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">6</text>
 <text x="36.0" y="346.5" font-size="12" fill="#7A6450" text-anchor="end" style="font-variant-numeric: tabular-nums">8</text>
-<text x="729.8" y="512.0" font-size="12" fill="#7A6450" text-anchor="middle">19 Nov</text>
+<text x="738.7" y="512.0" font-size="12" fill="#7A6450" text-anchor="middle">20 Nov</text>
 </g>
 </svg>
