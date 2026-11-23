@@ -10,3 +10,27 @@
 {"id": "C4", "ev": "open", "title": "Add an FPS menu under advanced settings", "owner": "", "who": "owner", "ref": "C4", "note": "from docs/backlog.md — confirm still open before starting", "ts": 1795403196}
 {"id": "C5", "ev": "open", "title": "Trim and tidy the hidden-icon taskbar menu", "owner": "", "who": "owner", "ref": "C5", "note": "from docs/backlog.md — confirm still open before starting", "ts": 1795403196}
 {"id": "C6", "ev": "open", "title": "Settings button on the notch gets hidden when many menus above it", "owner": "", "who": "owner", "ref": "C6", "note": "from docs/backlog.md — confirm still open before starting", "ts": 1795403196}
+{"id": "L1", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "L1", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "L2", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "L2", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R1", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R1", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R2", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R2", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R3", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403847}
+{"id": "R3", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "R5", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "R5", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C1", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C1", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C2", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C2", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C3", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C3", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C4", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C4", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C5", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C5", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C6", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "C6", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
