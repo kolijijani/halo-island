@@ -90,6 +90,7 @@ def find(token, jobs):
 
 
 def cmd_add(a, jobs):
+    a["who"] = a["who"] or who_default()
     title = " ".join(a["args"]).strip()
     if not title:
         sys.exit("usage: add <title> [--who W] [--ref R] [--note N]")
@@ -105,6 +106,7 @@ def cmd_add(a, jobs):
 
 
 def cmd_claim(a, jobs):
+    a["who"] = a["who"] or who_default()
     job = find(a["args"][0], jobs)
     if job["status"] == "done" or job["status"] == "dropped":
         sys.exit(f"{job['id']} is {job['status']}; reopen it first")
@@ -116,6 +118,7 @@ def cmd_claim(a, jobs):
 
 
 def cmd_done(a, jobs):
+    a["who"] = a["who"] or who_default()
     job = find(a["args"][0], jobs)
     if job["status"] == "doing" and job["owner"] and job["owner"] != a["who"]:
         sys.exit(f"OVERLAP: {job['id']} is {job['owner']}'s; ask them or use block")
@@ -125,6 +128,7 @@ def cmd_done(a, jobs):
 
 
 def cmd_block(a, jobs):
+    a["who"] = a["who"] or who_default()
     job = find(a["args"][0], jobs)
     append({"id": job["id"], "ev": "blocked", "owner": a["who"], "who": a["who"],
             "note": a.get("note", "")})
@@ -175,7 +179,7 @@ def cmd_check(a, jobs):
 
 
 def parse(argv):
-    a, args, i = {"who": who_default()}, [], 0
+    a, args, i = {"who": None}, [], 0
     while i < len(argv):
         if argv[i].startswith("--"):
             k = argv[i][2:]
