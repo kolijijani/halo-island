@@ -594,7 +594,7 @@ impl App {
         st.now = clock::mono();
         st.local = clock::local_now();
         st.unix = clock::unix_now();
-        st.accent = theme_accent(st.settings.theme);
+        st.accent = theme_accent(st.settings.notch_theme);
         let saved_settings = st.settings.clone();
         let smoke = smoke_dir.map(Smoke::new);
         App {
@@ -968,15 +968,12 @@ impl App {
         if let Some(s) = self.settings_ui.as_mut() {
             s.view.dirty = true;
         }
-        if before.theme != self.st.settings.theme {
-            self.st.accent = theme_accent(self.st.settings.theme);
-            // The menu ticks the theme and lists its idle looks (the status
-            // bar is Pill's alone, not Diorama's). Around a notch only Pill's
-            // island moves along the top edge (Move island to the centre).
+        if before.notch_theme != self.st.settings.notch_theme || before.notch_type != self.st.settings.notch_type {
+            self.st.accent = theme_accent(self.st.settings.notch_theme);
             self.refresh_menu();
         }
-        // The Pill theme's window keeps room for the gap above the island.
-        if pill::on(before.theme) != pill::on(self.st.settings.theme) {
+        // The Pill type's window keeps room for the gap above the island.
+        if pill::on(before.notch_type) != pill::on(self.st.settings.notch_type) {
             self.layout_surface();
         }
         // Hide or Stay on top of full-screen apps (Settings or the menu bar).
@@ -1047,9 +1044,21 @@ impl App {
         if addons_changed {
             self.sync_addons();
         }
-        // The AI tab's heads-up notices: its worker reads every few minutes only while they're on.
-        if before.usage.notices != self.st.settings.usage.notices {
+        // The AI tab's heads-up notices: its worker reads every few minutes only while they're on,
+        // and carries the near threshold and 24-hour clock format.
+        if before.usage.notices != self.st.settings.usage.notices
+            || before.usage.near_pct != self.st.settings.usage.near_pct
+            || before.use_24h != self.st.settings.use_24h
+        {
             self.set_usage_watch();
+        }
+        if !self.expanded
+            && !self.st.settings.remember_page
+            && (before.remember_page || before.start_page != self.st.settings.start_page)
+        {
+            self.st.page = self.resolved_start_page();
+        } else if self.st.page != PageKind::Settings && !pages::tabs(&self.st).contains(&self.st.page) {
+            self.st.page = self.resolved_start_page();
         }
     }
 
@@ -1232,7 +1241,7 @@ impl App {
                 }
             }
             MenuCmd::CentreIsland => s.island_x = None,
-            MenuCmd::SetTheme(t) => s.theme = t,
+            MenuCmd::SetTheme(t) => s.set_legacy_theme(t),
             MenuCmd::SetIdleStyle(style) => s.idle_style = style,
             MenuCmd::ToggleSounds => s.sounds = !s.sounds,
             MenuCmd::SetHideFullscreen(hide) => s.hide_in_fullscreen = hide,
@@ -2094,7 +2103,7 @@ impl App {
     /// whose island floats below the menu bar. The other themes' island
     /// belongs at the camera.
     fn movable(&self) -> bool {
-        self.screen.notch.is_none() || pill::on(self.st.settings.theme)
+        self.screen.notch.is_none() || pill::on(self.st.settings.notch_type)
     }
 
     /// The spot along the top edge the island was dragged to, DIPs from the
@@ -2184,7 +2193,7 @@ impl App {
     /// margin and the gap above it (below the menu bar on a notch).
     fn room(&self) -> (f32, f32, f32) {
         let side = SHOULDER + HIT_MARGIN;
-        if !pill::on(self.st.settings.theme) {
+        if !pill::on(self.st.settings.notch_type) {
             return (side, 0.0, HIT_MARGIN);
         }
         let top = self.screen.notch.map_or(0.0, |n| n.h) + pill::TOP_GAP;
@@ -2195,7 +2204,7 @@ impl App {
     /// (none in the Pill theme, which floats below the menu bar).
     fn strip(&self) -> f32 {
         match self.screen.notch {
-            Some(n) if !pill::on(self.st.settings.theme) => n.h,
+            Some(n) if !pill::on(self.st.settings.notch_type) => n.h,
             _ => 0.0,
         }
     }
@@ -2207,7 +2216,7 @@ impl App {
     /// own spring (island.rs), so it lets go of the notch and comes back with
     /// the outline.
     fn gap_target(&self, m: &Mode) -> Option<f32> {
-        if !pill::on(self.st.settings.theme) {
+        if !pill::on(self.st.settings.notch_type) {
             return None;
         }
         match self.screen.notch {
@@ -2613,6 +2622,12 @@ impl App {
 
     // ------------------------------------------------------------ island state
 
+    fn resolved_start_page(&self) -> PageKind {
+        let tabs = pages::tabs(&self.st);
+        let p = PageKind::from_key(&self.st.settings.start_page);
+        if tabs.contains(&p) { p } else { pages::first_tab(&self.st) }
+    }
+
     fn expand(&mut self) {
         if !self.expanded {
             self.expanded = true;
@@ -2626,10 +2641,12 @@ impl App {
             if self.st.rec_live() && self.st.record_on() {
                 self.st.page = PageKind::Record;
             } else if self.st.page == PageKind::Record && !self.st.record_on() {
-                self.st.page = pages::first_tab(&self.st);
+                self.st.page = self.resolved_start_page();
             } else if self.mode == Mode::Activity(activities::Activity::Download) {
                 // The download pill opens on its page.
                 self.st.page = PageKind::Downloads;
+            } else if self.st.page != PageKind::Settings && !pages::tabs(&self.st).contains(&self.st.page) {
+                self.st.page = self.resolved_start_page();
             }
         }
         self.request_frame();
@@ -2716,8 +2733,13 @@ impl App {
                 self.blur_text();
             }
             self.set_sysmon(false);
-            // Settings closes with the island: it opens again on the page it was opened from.
-            if self.st.page == PageKind::Settings {
+            self.st.ui.tab_more_open = false;
+            self.st.ui.power_menu_open = false;
+            self.st.ui.power_confirm = None;
+            if !self.st.settings.remember_page {
+                self.st.ui.before_settings = None;
+                self.st.page = self.resolved_start_page();
+            } else if self.st.page == PageKind::Settings {
                 self.st.page = self.st.ui.before_settings.take().filter(|p| pages::tabs(&self.st).contains(p)).unwrap_or_else(|| pages::first_tab(&self.st));
             }
             self.st.update.sheet = false;
@@ -2912,6 +2934,9 @@ impl App {
                     }
                 }
                 Command::Collapse => self.collapse(),
+                Command::Power(action) => {
+                    services::power::execute(action);
+                }
                 Command::Play(s) => services::play(s == Sound::Chime),
                 Command::OpenUrl(u) => services::open(&u),
                 Command::RedeemLicense(code) => {
@@ -2964,6 +2989,10 @@ impl App {
                 // Halo's clipboard list is Windows' so far.
                 Command::ClipBack(_) => {}
                 Command::PreviewAdzan => self.preview_adzan(),
+                Command::PreviewHud(kind) => {
+                    let secs = AppState::popup_secs(&kind);
+                    self.st.show_hud(kind, secs);
+                }
             }
         }
         self.sync_phone_offer();
@@ -3425,6 +3454,16 @@ impl App {
                 }
                 self.st.chime();
                 self.maybe_schedule_collapse();
+            }
+            PhoneEvent::Clip { from, text } => {
+                if self.st.settings.clips {
+                    let cap = if self.st.settings.pro { 50 } else { 5 };
+                    self.st.clips.push(&text, cap);
+                }
+                self.st.cmd(Command::ClipBack(text.clone()));
+                pd.outcome = Some((format!("Copied text from {from}"), true, until));
+                pinfo!("phone drop: text copied from {from}");
+                self.st.chime();
             }
             PhoneEvent::Failed { from, reason, detail, .. } => {
                 pd.transfer = None;
@@ -5280,10 +5319,10 @@ fn system_report(st: &AppState) -> (bool, String) {
 }
 
 /// Halo's orange in his theme, the Mac's accent colour otherwise.
-pub(crate) fn theme_accent(theme: Theme) -> Color {
+pub(crate) fn theme_accent(theme: halo_core::settings::NotchTheme) -> Color {
     if face::on(theme) {
         face::ORANGE
-    } else if theme == Theme::Diorama {
+    } else if theme == halo_core::settings::NotchTheme::Diorama {
         // Its own, which its day and night looks paint as theirs.
         halo_core::look::DIORAMA_ACCENT
     } else {

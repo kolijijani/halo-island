@@ -20,8 +20,8 @@ use windows::core::{implement, Result, PCWSTR};
 use windows::Win32::Foundation::E_FAIL;
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl};
 use windows::Win32::Media::Audio::{
-    eConsole, eMultimedia, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl,
-    MMDeviceEnumerator, AUDCLNT_E_DEVICE_INVALIDATED, AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient,
+    IMMNotificationClient_Impl, MMDeviceEnumerator, AUDCLNT_E_DEVICE_INVALIDATED, AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
@@ -37,18 +37,28 @@ pub struct AudioService {
 }
 
 impl AudioService {
-    pub fn start(sink: EventSink) -> Result<Self> {
+    pub fn start(sink: EventSink, watch_mic: bool) -> Result<Self> {
         let (tx, rx) = mpsc::channel();
         let (done_tx, done) = mpsc::channel();
         let client_tx = tx.clone();
         let thread = std::thread::Builder::new()
             .name("halo-audio".into())
             .spawn(move || {
-                worker(sink, rx, client_tx);
+                worker(sink, rx, client_tx, watch_mic);
                 let _ = done_tx.send(());
             })
             .map_err(|e| windows::core::Error::new(E_FAIL, format!("audio thread: {e}")))?;
         Ok(Self { tx, done, thread: Some(thread) })
+    }
+
+    /// Nudge master volume by `delta` (-1..=1); unmutes if raising while muted.
+    pub fn adjust_volume(&self, delta: f32) {
+        let _ = self.tx.send(Msg::AdjustVolume(delta));
+    }
+
+    /// Enable or disable microphone mute notifications (eCapture endpoint).
+    pub fn set_mic_watch(&self, on: bool) {
+        let _ = self.tx.send(Msg::SetMicWatch(on));
     }
 }
 
@@ -69,6 +79,12 @@ impl Drop for AudioService {
 enum Msg {
     /// The default render endpoint (console or multimedia role) changed.
     DefaultChanged,
+    /// The default capture (microphone) endpoint changed.
+    MicChanged,
+    /// Nudge master output volume by `delta` (-1..=1).
+    AdjustVolume(f32),
+    /// Turn microphone mute notifications on or off.
+    SetMicWatch(bool),
     Shutdown,
 }
 
@@ -80,6 +96,8 @@ struct GateState {
     generation: u32,
     /// Last reported (level in 1/10000 steps, muted).
     last: Option<(u32, bool)>,
+    /// Last reported microphone mute state.
+    last_mic: Option<bool>,
 }
 
 struct Gate {
@@ -90,7 +108,7 @@ struct Gate {
 impl Gate {
     fn lock(&self) -> MutexGuard<'_, GateState> {
         // A poisoned lock only means another thread panicked mid-update; the
-        // two plain fields are still meaningful.
+        // plain fields are still meaningful.
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -115,6 +133,22 @@ impl Gate {
         s.last = Some(key);
         self.sink.send(AppEvent::Volume { level, muted });
     }
+
+    /// Report microphone mute state unless stale or duplicate.
+    fn publish_mic(&self, generation: u32, muted: bool) {
+        let mut s = self.lock();
+        if s.generation != generation || s.last_mic == Some(muted) {
+            return;
+        }
+        s.last_mic = Some(muted);
+        self.sink.send(AppEvent::Mic { muted });
+    }
+
+    fn reset_mic(&self) {
+        let mut s = self.lock();
+        s.generation = s.generation.wrapping_add(1);
+        s.last_mic = None;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +158,7 @@ impl Gate {
 struct VolumeCallback {
     gate: Arc<Gate>,
     generation: u32,
+    is_mic: bool,
 }
 
 impl IAudioEndpointVolumeCallback_Impl for VolumeCallback_Impl {
@@ -131,7 +166,11 @@ impl IAudioEndpointVolumeCallback_Impl for VolumeCallback_Impl {
         // SAFETY: Core Audio passes either null or a struct that is valid for
         // the duration of this call; we only read two fields.
         if let Some(data) = unsafe { pnotify.as_ref() } {
-            self.gate.publish(self.generation, data.fMasterVolume, data.bMuted.as_bool());
+            if self.is_mic {
+                self.gate.publish_mic(self.generation, data.bMuted.as_bool());
+            } else {
+                self.gate.publish(self.generation, data.fMasterVolume, data.bMuted.as_bool());
+            }
         }
         Ok(())
     }
@@ -159,6 +198,8 @@ impl IMMNotificationClient_Impl for DeviceClient_Impl {
         // Never touch Core Audio from here: just wake the worker.
         if flow == eRender && (role == eConsole || role == eMultimedia) {
             let _ = self.tx.send(Msg::DefaultChanged);
+        } else if flow == eCapture && (role == eConsole || role == eCommunications) {
+            let _ = self.tx.send(Msg::MicChanged);
         }
         Ok(())
     }
@@ -215,7 +256,7 @@ impl Binding {
     }
 }
 
-fn worker(sink: EventSink, rx: Receiver<Msg>, client_tx: Sender<Msg>) {
+fn worker(sink: EventSink, rx: Receiver<Msg>, client_tx: Sender<Msg>, mut watch_mic: bool) {
     // Declared first so it is dropped last, after every COM object below.
     let com = ComApartment::enter_mta();
     if !com.initialized {
@@ -239,31 +280,56 @@ fn worker(sink: EventSink, rx: Receiver<Msg>, client_tx: Sender<Msg>) {
         }
     };
 
-    let gate = Arc::new(Gate { sink, state: Mutex::new(GateState { generation: 0, last: None }) });
+    let gate = Arc::new(Gate { sink: sink.clone(), state: Mutex::new(GateState { generation: 0, last: None, last_mic: None }) });
+    let mic_gate = Arc::new(Gate { sink, state: Mutex::new(GateState { generation: 0, last: None, last_mic: None }) });
     // The first report doubles as the initial state, which the app shows silently.
-    let mut binding = rebind(&enumerator, &gate, None);
+    let mut binding = rebind(&enumerator, &gate, None, false);
+    let mut mic_binding = if watch_mic { rebind(&enumerator, &mic_gate, None, true) } else { None };
 
     while let Ok(msg) = rx.recv() {
         match msg {
             Msg::Shutdown => break,
             Msg::DefaultChanged => {
-                // One switch fires once per role; handle the burst once.
-                let mut shutdown = false;
-                while let Ok(m) = rx.try_recv() {
-                    if matches!(m, Msg::Shutdown) {
-                        shutdown = true;
-                        break;
+                binding = rebind(&enumerator, &gate, binding, false);
+            }
+            Msg::MicChanged => {
+                if watch_mic {
+                    mic_binding = rebind(&enumerator, &mic_gate, mic_binding, true);
+                }
+            }
+            Msg::SetMicWatch(on) => {
+                if on != watch_mic {
+                    watch_mic = on;
+                    if watch_mic {
+                        mic_binding = rebind(&enumerator, &mic_gate, mic_binding, true);
+                    } else {
+                        mic_gate.reset_mic();
+                        if let Some(b) = mic_binding.take() {
+                            b.unbind();
+                        }
                     }
                 }
-                if shutdown {
-                    break;
+            }
+            Msg::AdjustVolume(delta) => {
+                if let Some(b) = &binding {
+                    if let Ok(cur) = unsafe { b.volume.GetMasterVolumeLevelScalar() } {
+                        let next = (cur + delta).clamp(0.0, 1.0);
+                        unsafe {
+                            if delta > 0.0 {
+                                let _ = b.volume.SetMute(false, std::ptr::null());
+                            }
+                            let _ = b.volume.SetMasterVolumeLevelScalar(next, std::ptr::null());
+                        }
+                    }
                 }
-                binding = rebind(&enumerator, &gate, binding);
             }
         }
     }
 
     if let Some(b) = binding {
+        b.unbind();
+    }
+    if let Some(b) = mic_binding {
         b.unbind();
     }
     if client_registered {
@@ -276,12 +342,14 @@ fn worker(sink: EventSink, rx: Receiver<Msg>, client_tx: Sender<Msg>) {
 
 /// Bind to the current default endpoint (unless it is the one already bound)
 /// and report its state.
-fn rebind(enumerator: &IMMDeviceEnumerator, gate: &Arc<Gate>, current: Option<Binding>) -> Option<Binding> {
-    let device = match unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) } {
+fn rebind(enumerator: &IMMDeviceEnumerator, gate: &Arc<Gate>, current: Option<Binding>, is_mic: bool) -> Option<Binding> {
+    let flow = if is_mic { eCapture } else { eRender };
+    let device = match unsafe { enumerator.GetDefaultAudioEndpoint(flow, eConsole) } {
         Ok(d) => d,
         Err(e) => {
-            // No output device at all (all unplugged / disabled).
-            crate::pinfo!("audio: no default output device ({e})");
+            if !is_mic {
+                crate::pinfo!("audio: no default output device ({e})");
+            }
             gate.next_generation();
             if let Some(b) = current {
                 b.unbind();
@@ -291,10 +359,8 @@ fn rebind(enumerator: &IMMDeviceEnumerator, gate: &Arc<Gate>, current: Option<Bi
     };
     let id = device_id(&device);
     if let Some(b) = &current {
-        // Same endpoint (a per-role repeat of one switch) and still alive. A
-        // quick unplug + replug keeps the id but invalidates the old object,
-        // which then fails this read and gets re-bound below.
-        if !id.is_empty() && b.id == id && unsafe { b.volume.GetMasterVolumeLevelScalar() }.is_ok() {
+        // Same endpoint (a per-role repeat of one switch) and still alive.
+        if !id.is_empty() && b.id == id && unsafe { b.volume.GetMute() }.is_ok() {
             return current;
         }
     }
@@ -304,24 +370,32 @@ fn rebind(enumerator: &IMMDeviceEnumerator, gate: &Arc<Gate>, current: Option<Bi
     if let Some(b) = current {
         b.unbind();
     }
-    match bind(&device, id, gate, generation) {
+    match bind(&device, id, gate, generation, is_mic) {
         Ok(b) => {
-            match unsafe { (b.volume.GetMasterVolumeLevelScalar(), b.volume.GetMute()) } {
-                (Ok(level), Ok(muted)) => gate.publish(generation, level, muted.as_bool()),
-                (Err(e), _) | (_, Err(e)) => crate::pwarn!("audio: reading the volume failed ({e})"),
+            if is_mic {
+                if let Ok(muted) = unsafe { b.volume.GetMute() } {
+                    gate.publish_mic(generation, muted.as_bool());
+                }
+            } else {
+                match unsafe { (b.volume.GetMasterVolumeLevelScalar(), b.volume.GetMute()) } {
+                    (Ok(level), Ok(muted)) => gate.publish(generation, level, muted.as_bool()),
+                    (Err(e), _) | (_, Err(e)) => crate::pwarn!("audio: reading the volume failed ({e})"),
+                }
             }
             Some(b)
         }
         Err(e) => {
-            crate::pwarn!("audio: binding the default output device failed ({e})");
+            if !is_mic {
+                crate::pwarn!("audio: binding the default output device failed ({e})");
+            }
             None
         }
     }
 }
 
-fn bind(device: &IMMDevice, id: String, gate: &Arc<Gate>, generation: u32) -> Result<Binding> {
+fn bind(device: &IMMDevice, id: String, gate: &Arc<Gate>, generation: u32, is_mic: bool) -> Result<Binding> {
     let volume: IAudioEndpointVolume = unsafe { device.Activate(CLSCTX_ALL, None)? };
-    let callback: IAudioEndpointVolumeCallback = VolumeCallback { gate: Arc::clone(gate), generation }.into();
+    let callback: IAudioEndpointVolumeCallback = VolumeCallback { gate: Arc::clone(gate), generation, is_mic }.into();
     unsafe { volume.RegisterControlChangeNotify(&callback)? };
     Ok(Binding { id, volume, callback })
 }

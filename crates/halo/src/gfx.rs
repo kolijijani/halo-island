@@ -1902,14 +1902,25 @@ impl<'a> Canvas<'a> {
     /// Glass without a view of the screen: the look's ground, see-through so
     /// the screen still shows under it, a soft shadow and the rim light.
     fn smoked_glass(&mut self, p: &GlassParams) {
-        for i in 1..=3 {
-            let grow = i as f32 * p.shadow_reach / 3.0;
-            let b = p.body;
-            let shadow = Rect::new(b.x - grow, b.y, b.w + 2.0 * grow, b.h + p.shadow_drop + grow);
-            self.path(&notch_segments(shadow, p.radius + grow, p.shoulder), Some(Color::black(p.shadow_alpha / 4.0)), None);
-        }
         let ground = Color::lerp(p.ground_dark, p.ground_light, p.light_mix).with_alpha(halo_core::glass::SMOKED_OPACITY);
-        self.notch(p.body, p.radius, p.shoulder, ground, Some(Color::white((0.55 * p.rim).clamp(0.0, 1.0))));
+        let rim = Color::white((0.55 * p.rim).clamp(0.0, 1.0));
+        if p.shoulder < 0.0 {
+            for i in 1..=3 {
+                let grow = i as f32 * p.shadow_reach / 3.0;
+                let b = p.body;
+                let shadow = Rect::new(b.x - grow, b.y - grow + p.shadow_drop, b.w + 2.0 * grow, b.h + 2.0 * grow);
+                self.path(&crate::pill::shape::segments(shadow, p.radius + grow), Some(Color::black(p.shadow_alpha / 4.0)), None);
+            }
+            self.path(&crate::pill::shape::segments(p.body, p.radius), Some(ground), Some((rim, 1.0)));
+        } else {
+            for i in 1..=3 {
+                let grow = i as f32 * p.shadow_reach / 3.0;
+                let b = p.body;
+                let shadow = Rect::new(b.x - grow, b.y, b.w + 2.0 * grow, b.h + p.shadow_drop + grow);
+                self.path(&notch_segments(shadow, p.radius + grow, p.shoulder), Some(Color::black(p.shadow_alpha / 4.0)), None);
+            }
+            self.notch(p.body, p.radius, p.shoulder, ground, Some(rim));
+        }
     }
 
     /// Mask subsequent drawing to the island silhouette (anti-aliased) until

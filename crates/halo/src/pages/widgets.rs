@@ -59,9 +59,7 @@ fn draw_tiles(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let list = st.settings.widgets.clone();
     let e = Entrance::of(ui, st, PageKind::Widgets);
     if list.is_empty() {
-        let ic = Point::new(r.center().x, r.center().y - 16.0);
-        scaled(ui, ic, e.pop(0.05), |ui| ui.c.icon(Icon::Addons, Rect::from_center(ic, 22.0, 22.0), Color::white(0.35)));
-        ui.c.text("Add widgets in Settings › General.", r.offset(0.0, 8.0), &TextStyle::footnote().color(palette::TEXT_DIM).center());
+        super::empty_state(ui, r, Icon::Addons, "No widgets yet", "Add widgets in Settings \u{203a} General", e);
         return;
     }
     let live = alive(ui, st, PageKind::Widgets);
@@ -492,25 +490,21 @@ fn draw_clips(ui: &mut Ui, st: &mut AppState, r: Rect) {
         ui.c.text("Clipboard is off (Settings › General).", Rect::new(r.x, r.y, r.w, 18.0), &TextStyle::footnote().color(palette::TEXT_DIM));
         return;
     }
-    let pro = st.settings.pro;
     let mut y = r.y;
-    if pro {
-        let mut q = std::mem::take(&mut st.ui.clip_query);
-        ui.text_input(wid("widgets.clips.search"), Rect::new(r.x, y, r.w, PILL_SMALL), &mut q, "Search what you copied", 60);
-        st.ui.clip_query = q;
-        y += PILL_SMALL + 6.0;
-    } else {
-        ui.c.text("Clipboard · 5 items", Rect::new(r.x, y, r.w, 16.0), &TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_DIM));
-        y += 18.0;
-    }
-    let found: Vec<String> = st.clips.find(&st.ui.clip_query).into_iter().map(str::to_string).collect();
+    let mut q = std::mem::take(&mut st.ui.clip_query);
+    ui.text_input(wid("widgets.clips.search"), Rect::new(r.x, y, r.w, PILL_SMALL), &mut q, "Search clipboard", 60);
+    st.ui.clip_query = q;
+    y += PILL_SMALL + 6.0;
+    let found: Vec<(String, bool)> = st.clips.find(&st.ui.clip_query).into_iter().map(|s| (s.to_string(), st.clips.is_pinned(s))).collect();
     if found.is_empty() {
-        ui.c.text("Nothing copied yet.", Rect::new(r.x, y, r.w, 18.0), &TextStyle::footnote().color(palette::TEXT_FAINT));
+        let empty = if st.ui.clip_query.trim().is_empty() { "Nothing copied yet." } else { "No matching clip." };
+        ui.c.text(empty, Rect::new(r.x, y, r.w, 18.0), &TextStyle::footnote().color(palette::TEXT_FAINT));
         return;
     }
     let e = Entrance::of(ui, st, PageKind::Widgets);
     let fits = ((r.bottom() - y) / CLIP_H).floor().max(0.0) as usize;
-    for (i, t) in found.iter().take(fits).enumerate() {
+    let mut toggle_pin: Option<String> = None;
+    for (i, (t, pinned)) in found.iter().take(fits).enumerate() {
         let row = Rect::new(r.x, y + i as f32 * CLIP_H, r.w, CLIP_H - 2.0);
         let id = wid_n("widgets.clip", i as u64);
         let resp = ui.button(id, row);
@@ -519,21 +513,42 @@ fn draw_clips(ui: &mut Ui, st: &mut AppState, r: Rect) {
         // the pointer it lights and shows it goes back on the clipboard.
         let k = e.pop(0.24 + 0.05 * i.min(6) as f32);
         rise(ui, k, |ui| {
-            ui.c.fill_rrect(row, 6.0, Color::lerp(Color::white(0.03), palette::SURFACE_HOVER, h));
+            let base = if *pinned { st.accent.with_alpha(0.08) } else { Color::white(0.03) };
+            ui.c.fill_rrect(row, 6.0, Color::lerp(base, palette::SURFACE_HOVER, h));
             let dot = Point::new(row.x + 9.0, row.center().y);
-            ui.c.fill_circle(dot, 2.0 + 0.5 * h, Color::lerp(Color::white(0.3), st.accent, h));
+            let dot_col = if *pinned { st.accent } else { Color::lerp(Color::white(0.3), st.accent, h) };
+            ui.c.fill_circle(dot, 2.0 + 0.5 * h, dot_col);
         });
+        let pin_r = Rect::new(row.right() - 20.0, row.center().y - 9.0, 18.0, 18.0);
+        let mut pin_clicked = false;
+        if *pinned || h > 0.05 {
+            let pin_col = if *pinned {
+                st.accent
+            } else if ui.hovered(pin_r) {
+                palette::TEXT
+            } else {
+                palette::TEXT_DIM.with_alpha(h)
+            };
+            pin_clicked = ui.icon_button(wid_n("widgets.clip.pin", i as u64), pin_r, Icon::Pin, pin_col, 11.0).clicked;
+        }
         if h > 0.0 {
-            let ic = Rect::new(row.right() - 18.0 + 3.0 * (1.0 - h), row.center().y - 6.0, 12.0, 12.0);
+            let ic = Rect::new(pin_r.x - 14.0 + 2.0 * (1.0 - h), row.center().y - 6.0, 12.0, 12.0);
             ui.c.icon(Icon::Clipboard, ic, st.accent.with_alpha(h));
         }
         let line: String = t.lines().next().unwrap_or("").chars().take(60).collect();
-        let text_r = Rect::new(row.x + 18.0, row.y, (row.w - 24.0 - 16.0 * h).max(0.0), row.h);
+        let right_pad = if *pinned || h > 0.05 { 36.0 } else { 8.0 };
+        let text_r = Rect::new(row.x + 18.0, row.y, (row.w - 18.0 - right_pad).max(0.0), row.h);
         ui.c.text(&line, text_r, &TextStyle::footnote());
-        // Click: it goes back on the clipboard.
-        if resp.clicked {
+        if pin_clicked {
+            toggle_pin = Some(t.clone());
+        } else if resp.clicked {
             st.cmd(Command::ClipBack(t.clone()));
         }
+    }
+    if let Some(text) = toggle_pin {
+        let now_pinned = st.clips.toggle_pin(&text);
+        st.toast(if now_pinned { "Pinned" } else { "Unpinned" });
+        ui.request_repaint();
     }
 }
 

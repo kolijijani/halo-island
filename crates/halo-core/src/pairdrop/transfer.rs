@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 pub const MAX_FILES: usize = 500;
 /// Largest send, all files together.
 pub const MAX_TOTAL: u64 = 64 * 1024 * 1024 * 1024;
+/// Largest quick text/link clip sent to the PC clipboard (matches `halo::Clips::MAX_CHARS`).
+pub const MAX_CLIP_CHARS: usize = 4000;
 /// Bytes per binary frame the PC sends.
 pub const FRAME: usize = 16 * 1024;
 /// Staging folders in the inbox: `<prefix><n>`. Not the same prefix as the
@@ -28,6 +30,7 @@ pub const STAGING_PREFIX: &str = ".halo-paired-";
 pub enum FromPhone {
     Hello { name: String },
     Send(Vec<(String, u64)>),
+    Clip { text: String },
     Get { id: u64 },
     Bye,
     /// Anything we don't know (newer phone page): ignored.
@@ -41,6 +44,8 @@ struct Raw {
     name: String,
     #[serde(default)]
     files: Vec<RawFile>,
+    #[serde(default)]
+    text: String,
     #[serde(default)]
     id: Option<u64>,
 }
@@ -57,6 +62,10 @@ pub fn parse(text: &[u8]) -> Option<FromPhone> {
     Some(match r.t.as_str() {
         "hello" => FromPhone::Hello { name: super::signal::clean_name(&r.name) },
         "send" => FromPhone::Send(r.files.into_iter().map(|f| (f.name, f.size)).collect()),
+        "clip" => {
+            let clean: String = r.text.trim().chars().take(MAX_CLIP_CHARS).collect();
+            if clean.is_empty() { FromPhone::Other } else { FromPhone::Clip { text: clean } }
+        }
         "get" => match r.id {
             Some(id) => FromPhone::Get { id },
             None => FromPhone::Other,
@@ -101,6 +110,10 @@ pub fn got(n: u64) -> String {
 
 pub fn saved(files: usize) -> String {
     json!({ "t": "saved", "files": files }).to_string()
+}
+
+pub fn copied() -> String {
+    json!({ "t": "copied" }).to_string()
 }
 
 pub fn failed(why: &str) -> String {
@@ -325,6 +338,9 @@ mod tests {
         assert_eq!(parse(br#"{"t":"get","id":7}"#), Some(FromPhone::Get { id: 7 }));
         assert_eq!(parse(br#"{"t":"get"}"#), Some(FromPhone::Other));
         assert_eq!(parse(br#"{"t":"bye"}"#), Some(FromPhone::Bye));
+        assert_eq!(parse(br#"{"t":"clip","text":"  https://halo.island  "}"#), Some(FromPhone::Clip { text: "https://halo.island".into() }));
+        assert_eq!(parse(br#"{"t":"clip","text":"   "}"#), Some(FromPhone::Other));
+        assert_eq!(copied(), r#"{"t":"copied"}"#);
         assert_eq!(parse(br#"{"t":"later-thing","x":1}"#), Some(FromPhone::Other));
         assert!(parse(b"not json").is_none());
     }

@@ -48,6 +48,11 @@ body {
 }
 [hidden] { display: none !important; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; opacity: 0; }
+.clip-in { width: 100%; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--raise); color: var(--ink); font: inherit; outline: none; }
+.clip-in:focus { border-color: var(--focus); }
+.clip-st { margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 18px; }
+.clip-st[data-kind=ok] { color: var(--ok); }
+.clip-st[data-kind=bad] { color: var(--bad); }
 svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 h1, h2 { text-wrap: balance; }
@@ -224,6 +229,15 @@ dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
         </div>
       </div>
       <div id="status" role="status" aria-live="polite" tabindex="-1" data-kind=""></div>
+    </section>
+
+    <section class="panel" aria-labelledby="clip-h">
+      <h2 id="clip-h">Send text or link</h2>
+      <div class="stack">
+        <input class="clip-in" id="clip-in" type="text" maxlength="4000" autocomplete="off" placeholder="Paste a link or note for the PC's clipboard">
+        <button class="btn primary" id="clip-btn" type="button">Copy to PC</button>
+      </div>
+      <div class="clip-st" id="clip-st" role="status" aria-live="polite" data-kind=""></div>
     </section>
 
     <section class="panel" aria-labelledby="shelf-h">
@@ -523,6 +537,30 @@ dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
     $("choose").focus();
   });
   $("send").addEventListener("click", send);
+
+  function sendClip() {
+    var inp = $("clip-in"), btn = $("clip-btn"), st = $("clip-st");
+    var text = (inp.value || "").trim();
+    if (!text || btn.disabled) return;
+    btn.disabled = true;
+    st.setAttribute("data-kind", "");
+    st.textContent = "Copying…";
+    fetch(base + "clip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text }), cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (v) {
+        if (!v.ok) throw v.why || "failed";
+        inp.value = "";
+        st.setAttribute("data-kind", "ok");
+        st.textContent = "Copied to " + pcName + "'s clipboard.";
+      })
+      .catch(function () {
+        st.setAttribute("data-kind", "bad");
+        st.textContent = "Couldn't send text. Check that Phone drop is still open.";
+      })
+      .finally(function () { btn.disabled = false; });
+  }
+  $("clip-btn").addEventListener("click", sendClip);
+  $("clip-in").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendClip(); } });
 
   loadInfo();
   // Every 4 s while the page is in view, so the Shelf and the connection stay current; stops once Phone drop is closed.

@@ -114,6 +114,10 @@ pub enum HudKind {
     /// Joined or left a Wi-Fi network (`halo_core::popups::wifi_change`):
     /// its name when Windows tells it, and whether it reaches the internet.
     Wifi { connected: bool, ssid: Option<String>, internet: bool },
+    /// Screen brightness changed (0..=1).
+    Brightness { level: f32 },
+    /// Default microphone muted or unmuted.
+    Mic { muted: bool },
 }
 
 impl HudKind {
@@ -137,6 +141,8 @@ impl HudKind {
             HudKind::Volume { level, muted } => ("Volume".into(), if *muted { "Muted".into() } else { format!("{}%", (level * 100.0).round() as i32) }),
             HudKind::Charging { percent, plugged } => (if *plugged { "Charging" } else { "On battery" }.into(), format!("{percent}%")),
             HudKind::LowBattery { percent } => ("Low battery".into(), format!("{percent}%")),
+            HudKind::Brightness { level } => ("Brightness".into(), format!("{}%", (level * 100.0).round() as i32)),
+            HudKind::Mic { muted } => ("Microphone".into(), if *muted { "Muted" } else { "Unmuted" }.into()),
         }
     }
 }
@@ -359,6 +365,19 @@ pub struct PageUiState {
     pub weather_found: Option<(String, Vec<halo_core::prayer::Place>)>,
     pub task_input: String,
     pub task_scroll: f32,
+    /// To-do rows whose children are currently collapsed (UI-only, not stored).
+    pub task_collapsed: std::collections::HashSet<u64>,
+    /// Parent task the To-do input row is adding under (`None` = root).
+    pub task_parent: Option<u64>,
+    /// Task currently being renamed inline, with its draft text.
+    pub task_editing: Option<u64>,
+    pub task_edit_buf: String,
+    /// Quick Switcher (`Ctrl+K`) overlay state.
+    pub quick_open: bool,
+    pub quick_query: String,
+    pub quick_sel: usize,
+    /// Brief in-island feedback toast `(message, expires_mono)`.
+    pub toast: Option<(String, f64)>,
     pub shelf_scroll: f32,
     /// How far the Today page's news is scrolled (DIPs).
     pub today_scroll: f32,
@@ -378,6 +397,18 @@ pub struct PageUiState {
     pub entrance: Option<(PageKind, f64)>,
     /// Header tab under the pointer and since when (for hover labels).
     pub tab_hover: Option<(usize, f64)>,
+    /// In-island overflow popover ("…" at the end of a crowded tab row): open state and open time.
+    pub tab_more_open: bool,
+    pub tab_more_since: f64,
+    /// In-island power menu popover: open state, open time, pending destructive confirmation, and double-fire guard.
+    pub power_menu_open: bool,
+    pub power_menu_since: f64,
+    pub power_confirm: Option<crate::commands::PowerAction>,
+    pub power_busy_until: f64,
+    /// Header tab being dragged to reorder: `(tab, moved_past_threshold)`.
+    pub tab_drag: Option<(PageKind, bool)>,
+    /// Settings › Tabs row being dragged to reorder: `(tab, moved_past_threshold)`.
+    pub settings_tab_drag: Option<(PageKind, bool)>,
     /// The row or tile under the pointer and since when, for its hover to
     /// fade in (`pages::entrance::hover`).
     pub hover: Option<(crate::ui::WidgetId, f64)>,
@@ -1218,6 +1249,11 @@ impl AppState {
     }
 
     /// Show a notice pill for `secs` seconds.
+    /// Show a brief floating feedback pill inside the expanded island.
+    pub fn toast(&mut self, msg: impl Into<String>) {
+        self.ui.toast = Some((msg.into(), self.now + 2.2));
+    }
+
     pub fn notify(&mut self, icon: Icon, color: Color, title: impl Into<String>, subtitle: impl Into<String>, secs: f64, action: Option<NoticeAction>) {
         self.notice = Some(Notice { icon, color, title: title.into(), title_dim: String::new(), subtitle: subtitle.into(), until: self.now + secs, action, inline: None, reveal: None });
     }
@@ -1256,7 +1292,8 @@ impl AppState {
     /// How long a queued pop-up shows.
     pub fn popup_secs(kind: &HudKind) -> f64 {
         match kind {
-            HudKind::CapsLock { .. } => 1.6,
+            HudKind::CapsLock { .. } | HudKind::Volume { .. } | HudKind::Brightness { .. } => 1.6,
+            HudKind::Mic { .. } => 1.8,
             _ => 2.6,
         }
     }
@@ -1295,7 +1332,7 @@ impl AppState {
     /// Accent for media UI: art colour when available, else the system accent.
     /// The Halo theme keeps to Halo's orange.
     pub fn media_accent(&self) -> Color {
-        if self.settings.theme == halo_core::settings::Theme::Halo {
+        if self.settings.notch_theme == halo_core::settings::NotchTheme::Halo {
             return self.accent;
         }
         self.media.as_ref().and_then(|m| m.art_color).unwrap_or(self.accent)

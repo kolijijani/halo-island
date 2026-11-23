@@ -205,6 +205,14 @@ impl<'a, 'g> Ui<'a, 'g> {
         self.wants_focus
     }
 
+    /// Move keyboard focus to a text input widget with the caret at `caret`.
+    pub fn focus(&mut self, id: WidgetId, caret: usize) {
+        self.input.focused = Some(id);
+        self.input.caret = caret;
+        self.wants_focus = Some(true);
+        self.repaint = true;
+    }
+
     pub fn hovered(&self, r: Rect) -> bool {
         self.input.mouse.is_some_and(|m| r.contains(m))
     }

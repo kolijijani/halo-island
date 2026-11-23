@@ -36,3 +36,40 @@
 {"id": "C6", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
 {"id": "release-next-version-cut-version-notes-w", "ev": "open", "title": "Release next version - cut version, notes, website, tag", "owner": "", "who": "qc", "ref": "", "note": "owner 23 Nov: Antigravity cuts, Qi-Cha verifies; tag only when owner says release", "ts": 1795448987}
 {"id": "release-next-version-verify-before-tag", "ev": "open", "title": "Release next version - verify before tag", "owner": "", "who": "qc", "ref": "", "note": "owner 23 Nov: Qi-Cha runs ci release_dry_run and reads it before the tag is pushed", "ts": 1795448987}
+{"id": "L1", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "L2", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "R1", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "R2", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "R3", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "R5", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C1", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C2", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C3", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C4", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C5", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "C6", "ev": "dropped", "who": "owner", "note": "disahkan siap / digugurkan oleh maintainer", "ts": 1795404417}
+{"id": "separate-notch-type-from-notch-theme", "ev": "open", "title": "Separate notch type from notch theme", "owner": "", "who": "ag", "ref": "", "note": "Option A: notch_type (Notch/Pill) x notch_theme (Classic/Halo/Glass/Diorama)", "ts": 1795413868}
+{"id": "separate-notch-type-from-notch-theme", "ev": "doing", "owner": "ag", "branch": "ag/separate-notch-type-from-notch-theme", "who": "ag", "ts": 1795413878}
+{"id": "separate-notch-type-from-notch-theme", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Separated notch_type (Notch/Pill) from notch_theme (Classic/Halo/Glass/Diorama) with v8 migration, Pill glass shader, and dual live-preview pickers", "ts": 1795414906}
+{"id": "cpu-temperature-inside-the-game-section", "ev": "open", "title": "CPU temperature inside the Game section", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795415688}
+{"id": "cpu-temperature-inside-the-game-section", "ev": "doing", "owner": "ag", "branch": "ag/cpu-temperature-inside-the-game-section", "who": "ag", "ts": 1795415697}
+{"id": "cpu-temperature-inside-the-game-section", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Show CPU temp on game notch/pill and Games page; poll PDH thermal zone every 2s only during active games", "ts": 1795415925}
+{"id": "new-notch-menu-for-power-actions", "ev": "open", "title": "New notch menu for power actions", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795416050}
+{"id": "new-notch-menu-for-power-actions", "ev": "doing", "owner": "ag", "branch": "ag/new-notch-menu-for-power-actions", "who": "ag", "ts": 1795416062}
+{"id": "new-notch-menu-for-power-actions", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Added header Power menu popover (Shut down, Restart, Sleep, Lock) with inline confirm for destructive actions, Win32 services::power::execute, and UI+service double-fire guards", "ts": 1795416559}
+{"id": "reorderable-notch-tabs", "ev": "open", "title": "Reorderable notch tabs", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795416599}
+{"id": "reorderable-notch-tabs", "ev": "doing", "owner": "ag", "branch": "ag/reorderable-notch-tabs", "who": "ag", "ts": 1795416599}
+{"id": "reorderable-notch-tabs", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Added drag-to-reorder tab list in Settings > Tabs (preserving hidden/disabled keys in tab_order), always-visible Reset to default option, and unit test", "ts": 1795416814}
+{"id": "fix-inert-advanced-settings-items", "ev": "open", "title": "Fix inert Advanced settings items", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795416974}
+{"id": "fix-inert-advanced-settings-items", "ev": "doing", "owner": "ag", "branch": "ag/fix-inert-advanced-settings-items", "who": "ag", "ts": 1795416984}
+{"id": "fix-inert-advanced-settings-items", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Fixed RememberPage/StartPage runtime wiring in collapse/expand/settings_changed, fallback when active tab hidden, AiNear/Clock24 usage watcher updates, Pro notice feedback + island repaint on GameStats/Pro cards, and WM_CAPTURECHANGED cleanup", "ts": 1795417440}
+{"id": "fix-antigravity-detection-in-ai-usage-on", "ev": "open", "title": "Fix Antigravity detection in AI usage on Windows", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795417734}
+{"id": "fix-antigravity-detection-in-ai-usage-on", "ev": "doing", "owner": "ag", "branch": "ag/fix-antigravity-detection-in-ai-usage-on", "who": "ag", "ts": 1795417746}
+{"id": "fix-antigravity-detection-in-ai-usage-on", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Support Windows Antigravity detection (Antigravity.exe, %APPDATA%\\Antigravity, %LOCALAPPDATA%\\Programs\\antigravity, ~/.gemini/antigravity), optional agy.exe CLI quota runner, and Desktop status fallback card when agy CLI is absent", "ts": 1795418163}
+{"id": "cpu-temperature-fallback-via-afterburner", "ev": "open", "title": "CPU temperature fallback via Afterburner/HWiNFO shared memory and Game page switch", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795420875}
+{"id": "cpu-temperature-fallback-via-afterburner", "ev": "doing", "owner": "ag", "branch": "ag/cpu-temperature-fallback-via-afterburner", "who": "ag", "ts": 1795420888}
+{"id": "cpu-temperature-fallback-via-afterburner", "ev": "done", "owner": "ag", "who": "ag", "commit": "", "note": "Added opportunistic Afterburner/HWiNFO shared-memory CPU temp fallback when native ACPI zones are static, plus separate CPU load and CPU temperature switches on Games page", "ts": 1795421068}
+{"id": "dock-phase-1-investigate-window-layer-an", "ev": "open", "title": "Dock phase 1 - investigate window layer and build three mockups", "owner": "", "who": "qc", "ref": "", "note": "phase 1 only: no Rust code, mockups A magnification / B flush / C island strip", "ts": 1795441078}
+{"id": "to-do-tab-titles-tasks-subtasks", "ev": "open", "title": "To-do tab titles tasks subtasks", "owner": "", "who": "qc", "ref": "", "note": "three levels, parent done only when all children done", "ts": 1795441418}
+{"id": "apple-watch-health-data-feasibility", "ev": "open", "title": "Apple Watch health data feasibility", "owner": "", "who": "qc", "ref": "", "note": "investigation only, routes and costs", "ts": 1795441418}
+{"id": "to-do-tab-titles-tasks-subtasks", "ev": "doing", "owner": "ag", "branch": "ag/todo", "who": "ag", "ts": 1795441709}

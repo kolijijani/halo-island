@@ -52,7 +52,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 pub struct Services {
     media: Option<media::MediaService>,
     lyrics: Option<lyrics::LyricsService>,
-    _audio: Option<audio::AudioService>,
+    audio: Option<audio::AudioService>,
     _bluetooth: Option<bluetooth::BluetoothService>,
     _network: Option<network::NetworkWatcher>,
     fullscreen: Option<fullscreen::FullscreenWatcher>,
@@ -86,7 +86,7 @@ impl Services {
     pub fn start(sink: &EventSink, _island: HWND, helper: HWND, settings: &Settings, activity: halo_account::Activity) -> Self {
         let media = started("media", media::MediaService::start(sink.clone()));
         let lyrics = started("lyrics", lyrics::LyricsService::start(sink.clone()));
-        let audio = started("audio", audio::AudioService::start(sink.clone()));
+        let audio = started("audio", audio::AudioService::start(sink.clone(), settings.hud_mic));
         let bluetooth = started("bluetooth", bluetooth::BluetoothService::start(sink.clone()));
         // Wi-Fi's pop-up: Windows' own network event wakes it, nothing polls.
         let network = started("network", network::NetworkWatcher::start(sink.clone()));
@@ -107,7 +107,19 @@ impl Services {
             .map(|a| a.id)
             .collect();
         let addons = started("add-ons", addons::AddonService::start(sink.clone(), on));
-        Self { media, lyrics, _audio: audio, _bluetooth: bluetooth, _network: network, fullscreen, halo_account: halo, pairdrop, addons, stocks: std::cell::OnceCell::new(), usage: std::cell::OnceCell::new(), downloader: std::cell::OnceCell::new(), sink: sink.clone() }
+        Self { media, lyrics, audio, _bluetooth: bluetooth, _network: network, fullscreen, halo_account: halo, pairdrop, addons, stocks: std::cell::OnceCell::new(), usage: std::cell::OnceCell::new(), downloader: std::cell::OnceCell::new(), sink: sink.clone() }
+    }
+
+    pub fn adjust_volume(&self, delta: f32) {
+        if let Some(a) = &self.audio {
+            a.adjust_volume(delta);
+        }
+    }
+
+    pub fn set_mic_watch(&self, on: bool) {
+        if let Some(a) = &self.audio {
+            a.set_mic_watch(on);
+        }
     }
 
     pub fn stop(self, _helper: HWND) {

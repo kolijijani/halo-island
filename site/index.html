@@ -280,6 +280,15 @@ main { container-type: inline-size; }
 .buybox span.fine { display: block; margin-top: 3px; font: 400 12px/1.33337 var(--font-text); letter-spacing: -0.01em; color: var(--gray); }
 .buybox a.notes { color: var(--link); text-decoration: none; }
 .buybox a.notes:hover { text-decoration: underline; }
+.hero-looks { margin-top: 14px; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.72); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 6px 20px rgba(120, 60, 20, 0.08); }
+.hero-looks button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font: 600 13px/1 var(--font-text); color: var(--gray); cursor: pointer; transition: background 0.22s var(--ease), color 0.22s var(--ease), box-shadow 0.22s var(--ease); }
+.hero-looks button:hover { color: var(--ink); }
+.hero-looks button[aria-checked="true"] { background: #fff; color: var(--ink); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); }
+.hero-stage .hero-pic { display: none !important; }
+.hero-stage[data-hero-look="classic"] .hero-pic-classic,
+.hero-stage[data-hero-look="halo"] .hero-pic-halo,
+.hero-stage[data-hero-look="pill"] .hero-pic-pill,
+.hero-stage[data-hero-look="diorama"] .hero-pic-diorama { display: block !important; }
 .hero-halo { align-self: end; height: 100%; max-height: 240px; width: auto; max-width: min(420px, 80%); object-fit: contain; object-position: center bottom; transform: translate3d(0, calc((1 - var(--p, 1)) * 30%), 0); will-change: transform; }
 @media (max-height: 820px) and (min-width: 700px) { .hero-halo { display: none; } }
 
@@ -771,7 +780,7 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <div class="side-sec">
       <p class="side-group">Overview</p>
       <a class="side-item" href="#top" data-k="home start download hero notch island"><i class="ic" style="--c:#1d1d1f"><svg class="ico"><use href="#i-screen"/></svg></i><span>A living notch</span></a>
-      <a class="side-item" href="#new" data-k="new release 0.2.55 use my location permission weather reads again offline timed out settings never hides pin crowded tabs more menu widgets add-on phone drop light dark 0.2.53 tidier tray one seat follows you widgets redrawn full screen advanced latest changes cat icon mascot updates itself auto-update install now install on next start updated to water ring goal reached prayer progress bar entrance animation spring pages come alive pop-ups bounce caps lock wi-fi bluetooth charging glow volume bar notice tasks done green 0.2.51 stocks klci bursa yahoo stocks klci bursa yahoo weather location city mireld balance tokens halo pro trial license countdown adzan voices makkah subuh every setting 0.2.40 caffeine coffee kopi espresso americano latte cappuccino flat white mocha es kopi susu shots beans arabica blend robusta decaf kopi tubruk instant sachet filter cold brew tea green tea energy drink cola your own mg last call bedtime sleep reminder half-life day limit 0.2.40 slide the glass ball drag hand day night switch sunset dusk diorama long pill as long as a notch lamp post bushes fence whole island matches frame cream indigo open card notices 0.2.40 prayer times kemenag muhammadiyah khgt kalender hijriah global tunggal hijri date tanggal hijriah majelis tarjih subuh 18 isbat ramadan syawal 0.2.40 diorama fifth look theme pixel art house tree cat sky day night dawn golden hour sunset sunrise moon stars glass ball resting pill see what pro brings studio pro add-ons every pro feature ai usage claude ultra 10x max 20x clearer adzan azan athan adhan prayer times sound recording antigravity agy ai tab top bar menu bar over notifications store tabs phone drop double tap zoom move the island drag along the top edge left right side browser tabs out of the way centre center notch pill menu bar settings in the island againgear advanced settings window island closes update in version row check now settings window glides smooth motion 144 fps 120 hz promotion slide switches highlight trackpad scroll reduce motion downloader progress youtube puzzle solving meeting notes ielts coach speaking band downloader video sound studio pro settings window gear every setting one place sidebar light dark mode window title bar meeting notes record call transcript summary action items pro ai tab usage codex claude code opencode go gemini cursor copilot kimi glm minimax openrouter limits plans resets heads-up tabs hide switch off music today shelf tasks focus prayer countdown ok lyrics come back steps two hours ielts notifications whatsapp telegram signed developer id checked by apple opens open anyway gone privacy security permissions once more right click menu stays open island stays open always looks for new versions version check now bluetooth pop-ups headphones speakers paired quiet connected disconnected check for updates every hour check now update available stays lyrics bar zen firefox stocks prices fixed getting prices updates install in place ihsg idx saham watchlist chart trade.halo.island today five weeks week ahead schedule month grid dots allow turn on prayer times anywhere world city youtube spotify browser now playing pill notch halo halo-island tab system health add-ons clipboard history gone today your day google calendar gmail meeting join flights bills clipboard add-on touch screen tablet taps tap through notch eyes hide and seek camera update available new version install now next start updater installer window steps health halo-island sign in headphones full screen power island stays maximized windows sing along romaji lyrics prayer script reader teleprompter games power"><i class="ic" style="--c:#bf4800"><svg class="ico"><use href="#i-spark"/></svg></i><span>New in 0.2.55</span></a>
+      <a class="side-item" href="#new" data-k="new release 0.2.55 tab popover reorder drag scroll header music glow seek tooltip middle click volume brightness microphone osd settings search preview hero theme switcher 0.2.54 use my location permission weather reads again offline timed out settings never hides pin crowded tabs more menu widgets add-on phone drop light dark 0.2.53 tidier tray one seat follows you widgets redrawn full screen advanced latest changes cat icon mascot updates itself auto-update install now install on next start updated to water ring goal reached prayer progress bar entrance animation spring pages come alive pop-ups bounce caps lock wi-fi bluetooth charging glow volume bar notice tasks done green 0.2.51 stocks klci bursa yahoo weather location city mireld balance tokens halo pro trial license countdown adzan voices makkah subuh every setting 0.2.40 caffeine coffee"><i class="ic" style="--c:#bf4800"><svg class="ico"><use href="#i-spark"/></svg></i><span>New in 0.2.55</span></a>
       <a class="side-item" href="#highlights" data-k="best gallery overview"><i class="ic" style="--c:#ff9f0a"><svg class="ico"><use href="#i-spark"/></svg></i><span>Highlights</span></a>
       <a class="side-item" href="#features" data-k="rest idle music timer volume charging headphones bluetooth clock eyes prayer countdown"><i class="ic" style="--c:#636366"><svg class="ico"><use href="#i-island"/></svg></i><span>While it rests</span></a>
     </div>
@@ -853,25 +862,35 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   <section class="hero" id="top" aria-label="Halo Island">
     <div class="hero-track" data-scene="hero">
       <div class="hero-pin">
-        <div class="hero-stage">
+        <div class="hero-stage" id="heroStage" data-hero-look="classic">
           <div class="hero-sky" aria-hidden="true"></div>
           <div class="hero-island">
             <div class="hi closed">
-              <img class="look-classic" src="assets/shots/classic/media-activity.webp" srcset="assets/shots/classic/media-activity.webp 1x, assets/shots/zoom/classic/media-activity.webp 2x" alt="The island while music plays: album art and a little equalizer" width="351" height="32">
-              <img class="look-halo" src="assets/shots/halo/media-activity.webp" srcset="assets/shots/halo/media-activity.webp 1x, assets/shots/zoom/halo/media-activity.webp 2x" alt="The cream island of the Halo theme: album art, and Halo swaying as music notes float up" width="327" height="32">
+              <img class="hero-pic hero-pic-classic" src="assets/shots/classic/media-activity.webp" srcset="assets/shots/classic/media-activity.webp 1x, assets/shots/zoom/classic/media-activity.webp 2x" alt="The island while music plays: album art and a little equalizer" width="351" height="32">
+              <img class="hero-pic hero-pic-halo" src="assets/shots/halo/media-activity.webp" srcset="assets/shots/halo/media-activity.webp 1x, assets/shots/zoom/halo/media-activity.webp 2x" alt="The cream island of the Halo theme: album art, and Halo swaying as music notes float up" width="327" height="32">
+              <img class="hero-pic hero-pic-pill" src="assets/shots/pill/media-activity.webp" alt="The floating Pill theme while music plays" width="351" height="44" loading="lazy">
+              <img class="hero-pic hero-pic-diorama" src="assets/shots/diorama/morning.webp" alt="The Diorama theme: a pixel-art house, tree and sky in the resting pill" width="210" height="48" loading="lazy">
             </div>
             <div class="hi open">
-              <img class="look-classic" src="assets/shots/classic/page-media.webp" alt="The open island: the Music page with synced lyrics" width="660" height="227">
-              <img class="look-halo" src="assets/shots/halo/page-media.webp" alt="The open island in the Halo theme: the Music page with synced lyrics" width="660" height="227">
+              <img class="hero-pic hero-pic-classic" src="assets/shots/classic/page-media.webp" alt="The open island: the Music page with synced lyrics" width="660" height="227">
+              <img class="hero-pic hero-pic-halo" src="assets/shots/halo/page-media.webp" alt="The open island in the Halo theme: the Music page with synced lyrics" width="660" height="227">
+              <img class="hero-pic hero-pic-pill" src="assets/shots/pill/page-media.webp" alt="The open island in the Pill theme: the Music page with synced lyrics" width="660" height="227" loading="lazy">
+              <img class="hero-pic hero-pic-diorama" src="assets/shots/diorama/page-media-day.webp" alt="The open island in the Diorama theme: the Music page with synced lyrics" width="660" height="227" loading="lazy">
             </div>
           </div>
           <div class="hero-copy">
             <h1 class="t-hero-eyebrow">Halo Island</h1>
             <p class="t-hero">A living notch.</p>
-            <a class="t-avail" href="#new">0.2.55 release candidate: To-do integration is pending.</a>
+            <a class="t-avail" href="#new">New in 0.2.55: in-island tab popover, zero-expand gestures, Brightness &amp; Mic pop-ups, and Settings search.</a>
             <div class="buybox">
               <div><b>Free for Windows</b><span class="fine">Open source · Windows <span data-release="size">3.1&nbsp;MB</span> · <a class="notes" data-release="notes" href="https://github.com/kolijijani/halo-island/releases/latest">What's new in <span data-release="version">0.2.55</span></a></span></div>
               <a class="btn dl-primary" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe"><span class="dl-word">Download</span><span class="send-word">Send to your computer</span></a>
+            </div>
+            <div class="hero-looks" id="heroLooks" role="radiogroup" aria-label="Preview island theme">
+              <button type="button" role="radio" data-k="classic" aria-checked="true">Classic</button>
+              <button type="button" role="radio" data-k="halo" aria-checked="false">Halo</button>
+              <button type="button" role="radio" data-k="pill" aria-checked="false">Pill</button>
+              <button type="button" role="radio" data-k="diorama" aria-checked="false">Diorama</button>
             </div>
           </div>
           <img class="hero-halo" src="brand/art/halo-peek.webp" alt="Halo, a grey plush cat, peeking over the island while a song plays" width="1200" height="661">
@@ -892,27 +911,26 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
       <h2 class="t-l" id="new-title">New in 0.2.55.</h2>
       <button class="more" type="button" data-more="m-new">Everything new, release by release<i><svg class="ico"><use href="#i-plus"/></svg></i></button>
     </div>
-    <p class="content t-tile">Release candidate: To-do integration is pending. The cards below describe the latest features from 0.2.54, not new features in this build.</p>
     <div class="content news">
-      <a class="news-tile shot rv" href="#features">
-        <span class="news-visual top left" aria-hidden="true"><img class="look-classic" src="assets/shots/classic/page-widgets-weather.webp" alt="" width="660" height="275" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-widgets-weather.webp" alt="" width="660" height="275" loading="lazy"></span>
-        <p class="t-card">Weather reads again</p><p class="t-tile">The Weather tile said "Can't reach it" while your browser read the same forecast fine. It asks plainly now, and when there's no reading it says why: Offline, Timed out or Location off.</p>
-      </a>
-      <a class="news-tile shot rv" href="#prayer">
-        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><path d="M60 22c-15 0-26 11-26 25 0 19 26 47 26 47s26-28 26-47c0-14-11-25-26-25z" fill="#29272D"/><circle cx="60" cy="47" r="10" fill="#E4D98A"/><ellipse cx="60" cy="98" rx="20" ry="5" fill="#626270"/></svg></span>
-        <p class="t-card">Use my location finds you</p><p class="t-tile">Windows asks for permission again, and the button asks where you are each time you press it, on Prayer times and the Weather tile. No answer in 30 seconds says so.</p>
-      </a>
       <a class="news-tile shot rv" href="#pages">
-        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="8" y="46" width="104" height="30" rx="15" fill="#29272D"/><circle cx="24" cy="61" r="5" fill="#626270"/><circle cx="38" cy="61" r="5" fill="#626270"/><circle cx="52" cy="61" r="5" fill="#626270"/><circle cx="64" cy="61" r="1.8" fill="#E4D98A"/><circle cx="70" cy="61" r="1.8" fill="#E4D98A"/><circle cx="76" cy="61" r="1.8" fill="#E4D98A"/><rect x="85" y="56" width="3" height="10" rx="1.5" fill="#E4D98A"/><circle cx="100" cy="61" r="6" fill="none" stroke="#E4D98A" stroke-width="3"/></svg></span>
-        <p class="t-card">Settings never hides</p><p class="t-tile">However many tabs you switch on, the pin and Settings keep their place. Crowded tabs make room, and the ones that don't fit wait behind "…".</p>
+        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="10" y="20" width="100" height="22" rx="11" fill="#1C1C1E"/><circle cx="24" cy="31" r="4" fill="#626270"/><circle cx="38" cy="31" r="4" fill="#626270"/><circle cx="52" cy="31" r="4" fill="#626270"/><rect x="64" y="26" width="16" height="10" rx="5" fill="#3A3A3C"/><rect x="24" y="46" width="72" height="54" rx="12" fill="#242426" stroke="#3A3A3C" stroke-width="1.5"/><rect x="33" y="55" width="14" height="14" rx="4" fill="#A2845E"/><rect x="53" y="55" width="14" height="14" rx="4" fill="#0A84FF"/><rect x="73" y="55" width="14" height="14" rx="4" fill="#FF9F0A"/><rect x="33" y="76" width="14" height="14" rx="4" fill="#30D158"/><rect x="53" y="76" width="14" height="14" rx="4" fill="#BF5AF2"/></svg></span>
+        <p class="t-card">In-island tab popover &amp; reordering</p><p class="t-tile">Clicking "…" opens a dark glass grid right inside the island instead of a grey Win32 menu. Drag tabs horizontally in the header to put your favorites first, or scroll the wheel over the header to switch tabs.</p>
       </a>
-      <a class="news-tile shot rv" href="#phone-drop">
-        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="38" y="16" width="44" height="88" rx="10" fill="#29272D"/><rect x="44" y="24" width="32" height="14" rx="4" fill="#626270"/><circle cx="50" cy="31" r="2.5" fill="#E4D98A"/><rect x="44" y="44" width="32" height="20" rx="4" fill="none" stroke="#E4D98A" stroke-width="2.5" stroke-dasharray="4 3"/><circle cx="48" cy="74" r="3" fill="#E4D98A"/><circle cx="56" cy="74" r="3" fill="#E4D98A"/><circle cx="64" cy="74" r="3" fill="#626270"/><circle cx="72" cy="74" r="3" fill="#626270"/><rect x="44" y="84" width="32" height="10" rx="5" fill="#626270"/></svg></span>
-        <p class="t-card">A new Phone drop page</p><p class="t-tile">The page your phone opens follows its light or dark mode, shows which PC it's sending to, and lights each step from Choose to On the Shelf.</p>
+      <a class="news-tile shot rv" href="#music">
+        <span class="news-visual top left" aria-hidden="true"><img class="look-classic" src="assets/shots/classic/page-media.webp" alt="" width="660" height="227" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-media.webp" alt="" width="660" height="227" loading="lazy"></span>
+        <p class="t-card">Music page glow &amp; seek tooltip</p><p class="t-tile">Album art gets a soft ambient glow tinted to the cover's accent color, and hovering or scrubbing the seek bar shows a floating timestamp capsule right above the cursor.</p>
       </a>
-      <a class="news-tile shot wide rv" href="#addons">
-        <span class="news-visual top left low" aria-hidden="true"><img class="look-classic" src="assets/shots/classic/page-addons.webp" alt="" width="660" height="331" loading="lazy"><img class="look-halo" src="assets/shots/halo/page-addons.webp" alt="" width="660" height="331" loading="lazy"></span>
-        <p class="t-card">Widgets is an add-on</p><p class="t-tile">Weather, Calendar and the other widgets, Drink water and the clipboard list now switch on together in Add-ons. Off, none of them runs. If you used Drink water or the clipboard list, it stays on.</p>
+      <a class="news-tile shot rv" href="#features">
+        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="14" y="24" width="92" height="24" rx="12" fill="#1C1C1E"/><rect x="22" y="30" width="12" height="12" rx="3" fill="#FF375F"/><rect x="86" y="31" width="3" height="10" rx="1.5" fill="#FF375F"/><rect x="91" y="29" width="3" height="14" rx="1.5" fill="#FF375F"/><rect x="96" y="32" width="3" height="8" rx="1.5" fill="#FF375F"/><rect x="44" y="58" width="32" height="48" rx="16" fill="#2C2C2E" stroke="#48484A" stroke-width="2"/><rect x="57" y="66" width="6" height="12" rx="3" fill="#0A84FF"/></svg></span>
+        <p class="t-card">Zero-expand gestures</p><p class="t-tile">Middle-click the collapsed island to play or pause music immediately, or scroll the mouse wheel over it to adjust system volume and show the Volume pop-up — without opening the island.</p>
+      </a>
+      <a class="news-tile shot rv" href="#features">
+        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="10" y="26" width="100" height="26" rx="13" fill="#1C1C1E"/><circle cx="24" cy="39" r="5" fill="none" stroke="#FFD60A" stroke-width="2"/><rect x="36" y="36" width="54" height="6" rx="3" fill="#3A3A3C"/><rect x="36" y="36" width="38" height="6" rx="3" fill="#FFFFFF"/><rect x="18" y="64" width="84" height="30" rx="15" fill="#1C1C1E"/><circle cx="34" cy="79" r="9" fill="#FF453A"/><rect x="31" y="74" width="6" height="8" rx="3" fill="#FFFFFF"/><rect x="49" y="73" width="36" height="5" rx="2.5" fill="#FFFFFF"/><rect x="49" y="82" width="24" height="4" rx="2" fill="#8E8E93"/></svg></span>
+        <p class="t-card">Brightness &amp; Microphone pop-ups</p><p class="t-tile">Display brightness changes show a gliding sun-bar pop-up via Windows power events, and muting or unmuting your microphone pops a red or green Microphone badge via Core Audio callbacks.</p>
+      </a>
+      <a class="news-tile shot wide rv" href="#settings">
+        <span class="news-visual" aria-hidden="true"><svg width="168" height="168" viewBox="0 0 120 120" style="filter:drop-shadow(0 16px 28px rgba(0,0,0,0.32))"><rect x="12" y="20" width="96" height="80" rx="12" fill="#1C1C1E" stroke="#3A3A3C" stroke-width="1.5"/><rect x="12" y="20" width="34" height="80" rx="12" fill="#242426"/><rect x="18" y="30" width="22" height="9" rx="4" fill="#3A3A3C" stroke="#0A84FF" stroke-width="1.2"/><rect x="54" y="32" width="46" height="16" rx="5" fill="#2C2C2E"/><rect x="82" y="36" width="14" height="8" rx="4" fill="#30D158"/><rect x="54" y="54" width="46" height="16" rx="5" fill="#2C2C2E"/><rect x="65" y="58" width="14" height="8" rx="4" fill="#3A3A3C"/><rect x="82" y="58" width="14" height="8" rx="4" fill="#30D158"/></svg></span>
+        <p class="t-card">Searchable Settings &amp; pop-up previews</p><p class="t-tile">Search across all 13 sections in Advanced settings (or press Ctrl+F), and click Preview beside any switch in Pop-ups to see the live pop-up on the island right away.</p>
       </a>
     </div>
   </section>
@@ -1931,7 +1949,13 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
     <p class="t-label">Everything new</p>
     <h2 class="t-m" id="m-new-t">Release by release.</h2>
     <h4>New in 0.2.55</h4>
-    <p>Release candidate. To-do integration is pending; this build does not yet include PR #2.</p>
+    <ul class="new-list">
+      <li><i class="ic" style="--c:#0a84ff"><svg class="ico"><use href="#i-addons"/></svg></i><span><b>In-island tab popover &amp; reordering</b>Clicking "…" opens an in-island popover grid with tinted icons instead of a classic Win32 menu. Drag tabs in the header to reorder them, or scroll over the header to switch tabs.</span></li>
+      <li><i class="ic" style="--c:#ff2d55"><svg class="ico"><use href="#i-music"/></svg></i><span><b>Music page glow &amp; seek tooltip</b>Album art gets a soft ambient glow tinted to the cover color, and hovering or scrubbing the seek bar shows a floating timestamp capsule above the cursor.</span></li>
+      <li><i class="ic" style="--c:#5856d6"><svg class="ico"><use href="#i-island"/></svg></i><span><b>Zero-expand gestures</b>Middle-click the collapsed island to play or pause music immediately, or scroll the wheel over it to adjust system volume directly.</span></li>
+      <li><i class="ic" style="--c:#ff9f0a"><svg class="ico"><use href="#i-spark"/></svg></i><span><b>Brightness &amp; Microphone pop-ups</b>Display brightness changes show a gliding sun-bar pop-up, and muting or unmuting your microphone shows a red/green Microphone badge — both event-driven with zero polling.</span></li>
+      <li><i class="ic" style="--c:#30d158"><svg class="ico"><use href="#i-gear"/></svg></i><span><b>Settings search &amp; pop-up previews</b>Search across all 13 sections in Advanced settings (or press Ctrl+F), and click Preview beside any switch in Pop-ups to test it live on the island.</span></li>
+    </ul>
     <h4>New in 0.2.54</h4>
     <ul class="new-list">
       <li><i class="ic" style="--c:#ff3b30"><svg class="ico"><use href="#i-cal"/></svg></i><span><b>Weather reads again</b>The Weather tile no longer says "Can't reach it" when the forecast is there. With no reading, it says why: Offline, Timed out, Location off, Location timed out or Location unknown.</span></li>
@@ -2191,6 +2215,27 @@ dialog.more-sheet::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-
   }
   sws.forEach(function (s) { s.addEventListener('click', function () { pickLook(s.dataset.k); }); });
   radioKeys(sws, pickLook);
+
+  // ---- Hero theme switcher (Classic, Halo, Pill, Diorama).
+  var heroStage = document.getElementById('heroStage');
+  var heroBtns = [].slice.call(document.querySelectorAll('#heroLooks button'));
+  if (heroStage && heroBtns.length) {
+    function pickHeroLook(k) {
+      heroStage.setAttribute('data-hero-look', k);
+      heroBtns.forEach(function (b) { b.setAttribute('aria-checked', String(b.dataset.k === k)); });
+      if (k === 'classic' || k === 'halo') {
+        document.documentElement.dataset.look = k;
+        document.querySelectorAll('.side-look button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.look === k)); });
+      }
+    }
+    heroBtns.forEach(function (b) { b.addEventListener('click', function () { pickHeroLook(b.dataset.k); }); });
+    radioKeys(heroBtns, pickHeroLook);
+    document.querySelectorAll('.side-look button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.dataset.look === 'classic' || b.dataset.look === 'halo') pickHeroLook(b.dataset.look);
+      });
+    });
+  }
 
   function radioKeys(group, pick) {
     group.forEach(function (b, i) {

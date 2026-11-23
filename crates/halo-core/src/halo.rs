@@ -153,15 +153,19 @@ pub fn weather_words(code: u16) -> &'static str {
 
 // ---------------------------------------------------------------- clipboard
 
-/// What was copied, newest first, without repeats.
+/// What was copied, newest first, without repeats, plus pinned entries that
+/// stay at the top even as new copies roll through `items`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Clips {
     pub items: Vec<String>,
+    pub pinned: Vec<String>,
 }
 
 impl Clips {
     /// Largest item kept, in chars: a copied book stays out.
     pub const MAX_CHARS: usize = 4000;
+    /// Maximum number of pinned clipboard entries.
+    pub const MAX_PINNED: usize = 5;
 
     /// Keep `text` first; returns whether the list changed.
     pub fn push(&mut self, text: &str, cap: usize) -> bool {
@@ -176,10 +180,36 @@ impl Clips {
         true
     }
 
-    /// Items containing `q` (any case); everything for an empty `q`.
+    pub fn is_pinned(&self, text: &str) -> bool {
+        self.pinned.iter().any(|p| p == text)
+    }
+
+    /// Pin or unpin `text`. Returns `true` when `text` is now pinned.
+    pub fn toggle_pin(&mut self, text: &str) -> bool {
+        if let Some(i) = self.pinned.iter().position(|p| p == text) {
+            self.pinned.remove(i);
+            return false;
+        }
+        let t: String = text.trim().chars().take(Self::MAX_CHARS).collect();
+        if t.is_empty() {
+            return false;
+        }
+        self.pinned.insert(0, t);
+        self.pinned.truncate(Self::MAX_PINNED);
+        true
+    }
+
+    /// Items containing `q` (any case), pinned first, deduplicated; everything for an empty `q`.
     pub fn find(&self, q: &str) -> Vec<&str> {
         let q = q.trim().to_lowercase();
-        self.items.iter().filter(|i| q.is_empty() || i.to_lowercase().contains(&q)).map(String::as_str).collect()
+        let matches = |s: &str| q.is_empty() || s.to_lowercase().contains(&q);
+        let mut out: Vec<&str> = self.pinned.iter().map(String::as_str).filter(|s| matches(s)).collect();
+        for item in &self.items {
+            if matches(item) && !self.pinned.iter().any(|p| p == item) {
+                out.push(item.as_str());
+            }
+        }
+        out
     }
 }
 
@@ -430,5 +460,20 @@ mod tests {
         assert_eq!(widget_slots(true), Widget::ALL.len());
         assert!(Widget::ALL.iter().filter(|w| !w.pro()).count() == 2);
         assert!(newer_wins(1, 2) && !newer_wins(2, 2));
+    }
+
+    #[test]
+    fn clips_pin_stays_first_and_survives_push() {
+        let mut c = Clips::default();
+        c.push("alpha", 2);
+        c.push("beta", 2);
+        assert!(c.toggle_pin("alpha"));
+        assert!(c.is_pinned("alpha"));
+        c.push("gamma", 2);
+        c.push("delta", 2);
+        assert_eq!(c.find(""), vec!["alpha", "delta", "gamma"]);
+        assert_eq!(c.find("AL"), vec!["alpha"]);
+        assert!(!c.toggle_pin("alpha"));
+        assert_eq!(c.find(""), vec!["delta", "gamma"]);
     }
 }

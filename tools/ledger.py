@@ -139,7 +139,7 @@ def cmd_list(a, jobs):
     rows = sorted(jobs.values(), key=lambda j: (j["status"] != "doing", j["id"]))
     if a.get("open"):
         rows = [j for j in rows if j["status"] in OPEN]
-    if a.get("who"):
+    if a.get("who_set"):
         rows = [j for j in rows if j["owner"] == a["who"]]
     if not rows:
         print("nothing open — ledger is clear")
@@ -226,6 +226,8 @@ def parse(argv):
             if i + 1 >= len(argv):
                 sys.exit(f"--{k} needs a value")
             a[k] = argv[i + 1]
+            if k == "who":
+                a["who_set"] = True
             i += 2
         else:
             args.append(argv[i])
@@ -248,6 +250,12 @@ def selftest():
         except SystemExit as e:
             assert "already" in str(e)
         cmd_claim({"args": [jid], "who": "qc", "branch": "qc/x"}, load())
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            cmd_list(parse([]), load())
+        assert jid in buf.getvalue(), "list hid a job because who defaulted"
         try:
             cmd_claim({"args": [jid], "who": "ag"}, load())
             raise AssertionError("overlap allowed")

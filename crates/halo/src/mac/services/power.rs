@@ -81,3 +81,17 @@ pub fn watch(sink: EventSink) {
         cf::CFRunLoopAddSource(cf::CFRunLoopGetMain(), source, cf::kCFRunLoopCommonModes);
     }
 }
+
+/// Run a power action requested from the notch power menu (with duplicate-fire guard).
+pub fn execute(action: crate::commands::PowerAction) -> bool {
+    use std::time::{Duration, Instant};
+    static GUARD: Mutex<Option<Instant>> = Mutex::new(None);
+    if let Ok(mut g) = GUARD.lock() {
+        if g.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
+            return false;
+        }
+        *g = Some(Instant::now());
+    }
+    pwarn!("power: {:?} is only wired on Windows", action);
+    false
+}

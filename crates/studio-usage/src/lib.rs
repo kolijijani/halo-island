@@ -261,6 +261,10 @@ pub enum Want {
     /// DPAPI blob alone. [`Got::Text`] with what was in them, [`Got::Missing`]
     /// if they don't open or aren't text. A Mac answers [`Got::Missing`].
     Unseal { sealed: safe_storage::Sealed, key: Option<safe_storage::Sealed> },
+    /// Whether a process with this executable name (e.g. `Antigravity.exe`)
+    /// is running on this computer: [`Got::Text`] when found, [`Got::Missing`]
+    /// otherwise. Checked only during a refresh, never at rest.
+    Process(&'static str),
 }
 
 impl Want {

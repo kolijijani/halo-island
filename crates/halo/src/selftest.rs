@@ -2979,7 +2979,7 @@ impl SelfTest {
             _ => IdleStyle::Clock,
         };
         if st.settings.theme != self.theme {
-            st.settings.theme = self.theme;
+            st.settings.set_legacy_theme(self.theme);
             st.accent = match self.theme {
                 Theme::Halo => crate::face::ORANGE,
                 // Diorama's own, as the app keeps it (`theme_accent`).
@@ -3568,7 +3568,7 @@ impl SelfTest {
             let cx = ((body.x + body.w / 2.0) * scale).floor() as i32;
             // 3 DIPs inside the body's top edge: the window's top rows where
             // the island hangs from the edge, below the gap where it floats.
-            let pill = crate::pill::on(self.theme);
+            let pill = crate::pill::on(self.theme.split().0);
             // The Diorama theme's resting pill is its picture (for the clock,
             // the Minimal look and, the status bar being Pill's own, Status).
             let picture = self.theme == Theme::Diorama && app.selftest_mode().0 == Mode::Idle && crate::pill::diorama::shows(&app.st);
@@ -4001,9 +4001,10 @@ fn seed_tasks(st: &mut AppState) {
     let unix = st.unix;
     let day_start = st.day_start_unix();
     let tasks = &mut st.store.tasks;
-    let done = tasks.add("Water the balcony plants", unix - 5 * 3600);
-    tasks.add("Sketch the onboarding screens", unix - 3 * 3600);
-    tasks.add("Book the ferry for Saturday", unix - 2 * 3600);
+    let trip = tasks.add("Weekend trip", unix - 5 * 3600);
+    let ferry = tasks.add_under(trip, "Book the ferry for Saturday", unix - 4 * 3600);
+    tasks.add_under(ferry, "Check morning timetable", unix - 3 * 3600);
+    let done = tasks.add_under(trip, "Water the balcony plants", unix - 2 * 3600);
     if let Some(id) = done {
         tasks.toggle(id, (unix - 1800).max(day_start + 60));
     }

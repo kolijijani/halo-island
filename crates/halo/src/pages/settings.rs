@@ -29,7 +29,7 @@ use crate::ui::{wid, wid_n, PillStyle, Ui, PILL_SMALL};
 use crate::version::VERSION;
 use halo_core::geom::{palette, Color, Point, Rect};
 use halo_core::phonedrop::fmt_bytes;
-use halo_core::settings::{IdleStyle, Theme};
+use halo_core::settings::{IdleStyle, NotchTheme, NotchType};
 use halo_core::update::Release;
 
 /// Account row, a line, the pickers under their labels (or a row each on a
@@ -82,8 +82,8 @@ const CHIP_ICON: f32 = 14.0;
 const CHIP_ICON_GAP: f32 = 5.0;
 const CHIP_GAP: f32 = 6.0;
 
-// Glass: on Windows from a copy of the screen, on a Mac macOS's own glass.
-const THEMES: [(Theme, &str); 5] = [(Theme::Classic, "Classic"), (Theme::Halo, "Halo"), (Theme::Glass, "Glass"), (Theme::Pill, "Pill"), (Theme::Diorama, "Diorama")];
+const NOTCH_TYPES: [(NotchType, &str); 2] = [(NotchType::Notch, "Notch"), (NotchType::Pill, "Pill")];
+const THEMES: [(NotchTheme, &str); 4] = [(NotchTheme::Classic, "Classic"), (NotchTheme::Halo, "Halo"), (NotchTheme::Glass, "Glass"), (NotchTheme::Diorama, "Diorama")];
 
 /// An idle look's name in the picker (`eyes` is Halo in his theme).
 fn idle_name(s: IdleStyle, eyes: &'static str) -> &'static str {
@@ -96,11 +96,10 @@ fn idle_name(s: IdleStyle, eyes: &'static str) -> &'static str {
     }
 }
 
-/// The idle looks `theme` offers, as the picker names them.
-fn idle_names(theme: Theme) -> Vec<&'static str> {
-    // In the Halo theme the eyes are Halo's own (as in the tray menu).
-    let eyes = if theme == Theme::Halo { "Halo" } else { "Eyes" };
-    status::looks(theme).iter().map(|s| idle_name(*s, eyes)).collect()
+/// The idle looks `(ty, theme)` offers, as the picker names them.
+fn idle_names(ty: NotchType, theme: NotchTheme) -> Vec<&'static str> {
+    let eyes = if theme == NotchTheme::Halo { "Halo" } else { "Eyes" };
+    status::looks(ty, theme).iter().map(|s| idle_name(*s, eyes)).collect()
 }
 
 /// The switches, as the tray menu names them.
@@ -187,50 +186,70 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let cols = [area.x, area.x + col_w + COL_GAP];
     let label_st = TextStyle::caption().weight(Weight::Semibold).color(palette::TEXT_FAINT);
 
-    // Pickers.
+    // Pickers: Type, Theme, Idle look.
+    let type_names: Vec<&str> = NOTCH_TYPES.iter().map(|t| t.1).collect();
+    let type_sel = NOTCH_TYPES.iter().position(|t| t.0 == st.settings.notch_type).unwrap_or(0);
     let theme_names: Vec<&str> = THEMES.iter().map(|t| t.1).collect();
-    let theme_sel = THEMES.iter().position(|t| t.0 == st.settings.theme).unwrap_or(0);
-    let looks = status::looks(st.settings.theme);
-    let look_names = idle_names(st.settings.theme);
-    let look_sel = looks.iter().position(|s| *s == status::shown(st.settings.theme, st.settings.idle_style)).unwrap_or(0);
-    // Side by side under their labels when both fit their columns, each
-    // closed up only as far as it needs; else a row each. Whether they fit is
-    // asked of the five themes and of this theme's own looks: at the default
-    // width both do in every theme, and an island narrower than about 560
-    // gives each a row, where every name has its room.
-    let theme_pad = pad_to_fit(ui, &theme_names, col_w);
-    let side_by_side = theme_pad >= SEG_PAD_MIN && pad_to_fit(ui, &look_names, col_w) >= SEG_PAD_MIN;
-    let (theme_pick, look_pick) = if side_by_side {
-        ui.c.text("THEME", Rect::new(cols[0], area.y + LABELS_Y, col_w, 14.0), &label_st);
-        ui.c.text("IDLE LOOK", Rect::new(cols[1], area.y + LABELS_Y, col_w, 14.0), &label_st);
+    let theme_sel = THEMES.iter().position(|t| t.0 == st.settings.notch_theme).unwrap_or(0);
+    let looks = status::looks(st.settings.notch_type, st.settings.notch_theme);
+    let look_names = idle_names(st.settings.notch_type, st.settings.notch_theme);
+    let look_sel = looks.iter().position(|s| *s == status::shown(st.settings.notch_type, st.settings.notch_theme, st.settings.idle_style)).unwrap_or(0);
+
+    let min_w = |ui: &mut Ui, names: &[&str]| 2.0 * SEG_INSET + names.iter().map(|n| choice_width(ui, n, SEG_PAD_MIN)).sum::<f32>();
+    let type_w = min_w(ui, &type_names);
+    let theme_w = min_w(ui, &theme_names);
+    let look_w = min_w(ui, &look_names);
+    let gap = 12.0;
+    let side_by_side = type_w + theme_w + look_w + 2.0 * gap <= area.w;
+    let (type_pick, theme_pick, look_pick) = if side_by_side {
+        let extra = ((area.w - (type_w + theme_w + look_w + 2.0 * gap)) / 3.0).max(0.0);
+        let x0 = area.x;
+        let x1 = x0 + type_w + extra + gap;
+        let x2 = x1 + theme_w + extra + gap;
+        ui.c.text("TYPE", Rect::new(x0, area.y + LABELS_Y, type_w + extra, 14.0), &label_st);
+        ui.c.text("THEME", Rect::new(x1, area.y + LABELS_Y, theme_w + extra, 14.0), &label_st);
+        ui.c.text("IDLE LOOK", Rect::new(x2, area.y + LABELS_Y, look_w + extra, 14.0), &label_st);
         let y = area.y + PICKERS_Y;
-        let look_pad = pad_to_fit(ui, &look_names, col_w);
+        let p0 = pad_to_fit(ui, &type_names, type_w + extra);
+        let p1 = pad_to_fit(ui, &theme_names, theme_w + extra);
+        let p2 = pad_to_fit(ui, &look_names, look_w + extra);
         (
-            picker_padded(ui, "settings.theme", cols[0], y, PILL_SMALL, &theme_names, theme_sel, theme_pad, e.pop(0.1)),
-            picker_padded(ui, "settings.idle", cols[1], y, PILL_SMALL, &look_names, look_sel, look_pad, e.pop(0.14)),
+            picker_padded(ui, "settings.type", x0, y, PILL_SMALL, &type_names, type_sel, p0, e.pop(0.08)),
+            picker_padded(ui, "settings.theme", x1, y, PILL_SMALL, &theme_names, theme_sel, p1, e.pop(0.11)),
+            picker_padded(ui, "settings.idle", x2, y, PILL_SMALL, &look_names, look_sel, p2, e.pop(0.14)),
         )
     } else {
-        // A row each, the labels in a column of their own and both pickers
-        // starting after it.
-        let labels = ["THEME", "IDLE LOOK"];
+        let labels = ["STYLE", "IDLE LOOK"];
         let label_w = labels.iter().map(|l| ui.c.measure(l, &label_st, 300.0).0.ceil()).fold(0.0f32, f32::max);
         let x = area.x + label_w + STACK_GAP;
-        let pick = |ui: &mut Ui, i: usize, id: &str, names: &[&str], sel: usize| {
-            let row = Rect::new(area.x, area.y + STACK_Y[i], area.w, ROW_H);
-            ui.c.text(labels[i], Rect::new(row.x, row.y, label_w + 2.0, row.h), &label_st);
-            let pad = pad_to_fit(ui, names, row.right() - x).max(0.0);
-            picker_padded(ui, id, x, row.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, names, sel, pad, e.pop(0.1 + 0.04 * i as f32))
-        };
-        (pick(ui, 0, "settings.theme", &theme_names, theme_sel), pick(ui, 1, "settings.idle", &look_names, look_sel))
+        let row0 = Rect::new(area.x, area.y + STACK_Y[0], area.w, ROW_H);
+        ui.c.text(labels[0], Rect::new(row0.x, row0.y, label_w + 2.0, row0.h), &label_st);
+        let tw = min_w(ui, &type_names);
+        let tp = picker_padded(ui, "settings.type", x, row0.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, &type_names, type_sel, SEG_PAD_MIN, e.pop(0.08));
+        let tx = x + tw + 8.0;
+        let th_pad = pad_to_fit(ui, &theme_names, (row0.right() - tx).max(0.0)).max(0.0);
+        let thp = picker_padded(ui, "settings.theme", tx, row0.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, &theme_names, theme_sel, th_pad, e.pop(0.11));
+        let row1 = Rect::new(area.x, area.y + STACK_Y[1], area.w, ROW_H);
+        ui.c.text(labels[1], Rect::new(row1.x, row1.y, label_w + 2.0, row1.h), &label_st);
+        let lp_pad = pad_to_fit(ui, &look_names, (row1.right() - x).max(0.0)).max(0.0);
+        let lp = picker_padded(ui, "settings.idle", x, row1.center().y - ROW_PICKER_H / 2.0, ROW_PICKER_H, &look_names, look_sel, lp_pad, e.pop(0.14));
+        (tp, thp, lp)
     };
+    if let Some(i) = type_pick {
+        let ty = NOTCH_TYPES[i].0;
+        if !ty.free() && !st.settings.pro {
+            st.notify(Icon::Lock, palette::YELLOW, "That notch type is Halo Pro", "Activate Halo Pro in Settings to use the floating Pill", 5.0, None);
+        } else {
+            st.settings.notch_type = ty;
+            st.cmd(Command::SaveSettings);
+        }
+    }
     if let Some(i) = theme_pick {
-        // Glass, Pill and Diorama are Halo Pro's: without Pro the theme
-        // stays as it is and a notice says so.
         let t = THEMES[i].0;
         if !t.free() && !st.settings.pro {
-            st.notify(Icon::Lock, palette::YELLOW, "That theme is Halo Pro", "Activate Halo Pro in Settings to use Glass, Pill and Diorama", 5.0, None);
+            st.notify(Icon::Lock, palette::YELLOW, "That theme is Halo Pro", "Activate Halo Pro in Settings to use Glass and Diorama", 5.0, None);
         } else {
-            st.settings.theme = t;
+            st.settings.notch_theme = t;
             st.cmd(Command::SaveSettings);
         }
     }
@@ -871,13 +890,12 @@ mod tests {
     /// Where a theme comes in the picker. No `_` arm: a theme added to the
     /// enum stops this compiling until it has a place, and then the test
     /// below asks the picker for it.
-    fn place(t: Theme) -> usize {
+    fn place(t: NotchTheme) -> usize {
         match t {
-            Theme::Classic => 0,
-            Theme::Halo => 1,
-            Theme::Glass => 2,
-            Theme::Pill => 3,
-            Theme::Diorama => 4,
+            NotchTheme::Classic => 0,
+            NotchTheme::Halo => 1,
+            NotchTheme::Glass => 2,
+            NotchTheme::Diorama => 3,
         }
     }
 
@@ -902,7 +920,8 @@ mod tests {
 
     #[test]
     fn the_theme_picker_has_every_theme_by_its_name() {
-        assert_eq!(THEMES.map(|t| t.1), ["Classic", "Halo", "Glass", "Pill", "Diorama"]);
+        assert_eq!(NOTCH_TYPES.map(|t| t.1), ["Notch", "Pill"]);
+        assert_eq!(THEMES.map(|t| t.1), ["Classic", "Halo", "Glass", "Diorama"]);
         for (i, (theme, name)) in THEMES.iter().enumerate() {
             assert_eq!(place(*theme), i, "{name}");
         }
@@ -910,17 +929,16 @@ mod tests {
 
     #[test]
     fn the_idle_look_picker_names_each_themes_own_looks() {
-        for theme in [Theme::Classic, Theme::Glass] {
-            assert_eq!(idle_names(theme), ["Clock", "Eyes", "Minimal", "Hidden"], "{theme:?}");
+        for theme in [NotchTheme::Classic, NotchTheme::Glass, NotchTheme::Diorama] {
+            assert_eq!(idle_names(NotchType::Notch, theme), ["Clock", "Eyes", "Minimal", "Hidden"], "{theme:?}");
         }
-        // Diorama rests as its picture, with the time or alone: no eyes.
-        assert_eq!(idle_names(Theme::Diorama), ["Clock", "Minimal", "Hidden"]);
-        // In his theme the eyes are Halo's own, and the status bar is Pill's.
-        assert_eq!(idle_names(Theme::Halo), ["Clock", "Halo", "Minimal", "Hidden"]);
-        assert_eq!(idle_names(Theme::Pill), ["Clock", "Eyes", "Minimal", "Hidden", "Status"]);
-        // A name for every look a theme offers, one choice each.
-        for (theme, _) in THEMES {
-            assert_eq!(idle_names(theme).len(), status::looks(theme).len(), "{theme:?}");
+        assert_eq!(idle_names(NotchType::Pill, NotchTheme::Diorama), ["Clock", "Minimal", "Hidden"]);
+        assert_eq!(idle_names(NotchType::Notch, NotchTheme::Halo), ["Clock", "Halo", "Minimal", "Hidden"]);
+        assert_eq!(idle_names(NotchType::Pill, NotchTheme::Classic), ["Clock", "Eyes", "Minimal", "Hidden", "Status"]);
+        for (ty, _) in NOTCH_TYPES {
+            for (theme, _) in THEMES {
+                assert_eq!(idle_names(ty, theme).len(), status::looks(ty, theme).len(), "{ty:?} x {theme:?}");
+            }
         }
     }
 }

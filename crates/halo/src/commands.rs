@@ -190,6 +190,44 @@ pub enum Command {
     /// Prayer times' Sound: play the picked voice now, once, on the adzan's
     /// own one-at-a-time player; again stops it.
     PreviewAdzan,
+    /// Settings › Pop-ups: show a live preview of this pop-up on the island.
+    PreviewHud(crate::state::HudKind),
+    /// Notch power menu: run a system power action via `services::power`.
+    Power(PowerAction),
+}
+
+/// System power actions offered by the notch power menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerAction {
+    Shutdown,
+    Restart,
+    Sleep,
+    Lock,
+}
+
+impl PowerAction {
+    /// Destructive actions ask for confirmation before running.
+    pub const fn needs_confirm(self) -> bool {
+        matches!(self, PowerAction::Shutdown | PowerAction::Restart)
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            PowerAction::Shutdown => "Shut down",
+            PowerAction::Restart => "Restart",
+            PowerAction::Sleep => "Sleep",
+            PowerAction::Lock => "Lock",
+        }
+    }
+
+    pub const fn confirm_prompt(self) -> &'static str {
+        match self {
+            PowerAction::Shutdown => "Shut down this PC?",
+            PowerAction::Restart => "Restart this PC?",
+            PowerAction::Sleep => "Put this PC to sleep?",
+            PowerAction::Lock => "Lock this PC?",
+        }
+    }
 }
 
 /// What the Downloads page asks for.

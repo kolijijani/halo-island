@@ -135,6 +135,13 @@
       <div class="status" id="send-status" hidden role="status" aria-live="polite"><span class="spin" id="send-spin" hidden></span><span id="send-status-text"></span></div>
     </section>
 
+    <form class="card" id="clip-card" aria-labelledby="clip-h">
+      <h2 id="clip-h">Send text or link</h2>
+      <div class="field"><input id="clip-input" type="text" maxlength="4000" autocomplete="off" placeholder="Paste a link or note for the PC's clipboard"></div>
+      <button class="btn quiet" id="clip-send" type="submit">Copy to PC</button>
+      <div class="status" id="clip-status" hidden role="status" aria-live="polite"><span class="spin" id="clip-spin" hidden></span><span id="clip-status-text"></span></div>
+    </form>
+
     <section class="card" aria-labelledby="shelf-h">
       <h2 id="shelf-h">On the Shelf</h2>
       <ul class="files" id="shelf"></ul>

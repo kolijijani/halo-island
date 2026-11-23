@@ -39,26 +39,21 @@ use crate::island::Geom;
 use crate::state::AppState;
 use crate::ui::Ui;
 use halo_core::geom::Rect;
-use halo_core::settings::Theme;
+use halo_core::settings::{NotchTheme, NotchType};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// The island floats this far below the screen's top edge (DIPs).
 pub const TOP_GAP: f32 = 8.0;
 
-/// The island floats and lays itself out the Pill way: in the Pill theme
-/// and in Diorama, which is Pill with a picture in its resting capsule.
-pub fn on(theme: Theme) -> bool {
-    matches!(theme, Theme::Pill | Theme::Diorama)
+/// The island floats and lays itself out the Pill way when `notch_type` is Pill.
+pub fn on(ty: NotchType) -> bool {
+    ty == NotchType::Pill
 }
 
-/// The look the island paints in this frame: the theme's
-/// (`halo_core::look::of`, or `around_notch` where it wraps a camera notch),
-/// except that Diorama's takes its night when the picture does
-/// ([`diorama::night`]), the whole island with it. Glass picks its own.
+/// The look the island paints in this frame, combining `notch_type` and `notch_theme`.
 pub fn look(st: &AppState, around_notch: bool) -> &'static halo_core::look::Look {
-    match st.settings.theme {
-        // It floats below a notch too, so it keeps its look there.
-        Theme::Diorama => {
+    match st.settings.notch_theme {
+        NotchTheme::Diorama => {
             let night = match HELD_NIGHT.load(Ordering::Relaxed) {
                 0 => false,
                 1 => true,
@@ -66,14 +61,25 @@ pub fn look(st: &AppState, around_notch: bool) -> &'static halo_core::look::Look
             };
             halo_core::look::diorama(night)
         }
-        theme if around_notch => halo_core::look::around_notch(theme),
-        // Halo Island: Classic is Halo's pill, light or dark with Windows,
-        // or the theme builder's colours (Halo Pro).
-        Theme::Classic => match st.settings.custom_look.filter(|_| st.settings.pro) {
-            Some(c) => custom_look(c),
-            None => halo_core::look::halo(st.app_light),
-        },
-        theme => halo_core::look::of(theme),
+        NotchTheme::Halo => {
+            if around_notch && st.settings.notch_type == NotchType::Notch {
+                &halo_core::look::HALO_NIGHT
+            } else {
+                &halo_core::look::HALO
+            }
+        }
+        NotchTheme::Glass => &halo_core::look::GLASS_DARK,
+        NotchTheme::Classic => {
+            if around_notch && st.settings.notch_type == NotchType::Notch {
+                &halo_core::look::CLASSIC
+            } else if let Some(c) = st.settings.custom_look.filter(|_| st.settings.pro) {
+                custom_look(c)
+            } else if st.settings.notch_type == NotchType::Pill {
+                &halo_core::look::PILL
+            } else {
+                halo_core::look::halo(st.app_light)
+            }
+        }
     }
 }
 
@@ -106,10 +112,10 @@ pub fn hold_night(night: Option<bool>) {
     HELD_NIGHT.store(night.map_or(u8::MAX, u8::from), Ordering::Relaxed);
 }
 
-/// The island's size for `m` in the Pill theme, or `None` for Classic's.
+/// The island's size for `m` in the Pill type, or `None` for Notch's.
 pub fn geom(m: &Mode, st: &AppState) -> Option<Geom> {
-    diorama::note_theme(st.settings.theme);
-    if !on(st.settings.theme) {
+    diorama::note_theme(st.settings.notch_theme);
+    if !on(st.settings.notch_type) {
         return None;
     }
     match m {
@@ -126,10 +132,10 @@ pub fn geom(m: &Mode, st: &AppState) -> Option<Geom> {
 
 /// Draw the collapsed `m` the Pill way. `false` = draw it as Classic does.
 pub fn draw(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect) -> bool {
-    if st.settings.theme != Theme::Diorama {
+    if st.settings.notch_theme != NotchTheme::Diorama || st.settings.notch_type != NotchType::Pill {
         diorama::put_away(ui);
     }
-    if !on(st.settings.theme) {
+    if !on(st.settings.notch_type) {
         return false;
     }
     match m {
@@ -142,10 +148,10 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect) -> bool {
     }
 }
 
-/// Whether the collapsed `m` needs ambient frames in the Pill theme
+/// Whether the collapsed `m` needs ambient frames in the Pill type
 /// (`None` = as in Classic).
 pub fn is_live(m: &Mode, st: &AppState) -> Option<bool> {
-    if !on(st.settings.theme) {
+    if !on(st.settings.notch_type) {
         return None;
     }
     match m {
@@ -158,7 +164,7 @@ pub fn is_live(m: &Mode, st: &AppState) -> Option<bool> {
 /// The next time the Pill content of `m` changes on its own (a one-shot
 /// wake, never a poll), on top of Classic's.
 pub fn next_wake(m: &Mode, st: &AppState) -> Option<f64> {
-    if !on(st.settings.theme) {
+    if !on(st.settings.notch_type) {
         return None;
     }
     match m {

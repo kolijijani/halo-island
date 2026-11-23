@@ -135,6 +135,15 @@ pub enum Icon {
     Wifi,
     /// Wi-Fi gone: the arcs struck through.
     WifiOff,
+    /// Brightness pop-up: a sun with eight rays.
+    Sun,
+    /// Microphone muted pop-up: the mic struck through.
+    MicOff,
+    /// Power menu button and Shut down action: a vertical bar through an open ring.
+    Power,
+    /// Disclosure chevrons for collapsible rows (To-do tree).
+    ChevronRight,
+    ChevronDown,
 }
 
 /// A service's mark, for its card on the AI tab and its notices.
@@ -382,6 +391,29 @@ pub fn parts(icon: Icon) -> &'static [Part] {
         CapsLock => p![s("M12 3.5L4.5 11.5H8.5V15.5H15.5V11.5H19.5Z"), s("M8.5 19.5H15.5")],
         Wifi => p![s("M2.5 9a14 14 0 0 1 19 0"), s("M5.5 12.5a9.5 9.5 0 0 1 13 0"), s("M8.6 16a5 5 0 0 1 6.8 0"), f("M12 18.2a1.3 1.3 0 1 1 0 2.6a1.3 1.3 0 1 1 0-2.6z")],
         WifiOff => p![s("M2.5 9a14 14 0 0 1 19 0"), s("M5.5 12.5a9.5 9.5 0 0 1 13 0"), s("M8.6 16a5 5 0 0 1 6.8 0"), s("M4 3.5L20 20.5")],
+        Sun => p![
+            s("M8 12a4 4 0 1 0 8 0a4 4 0 1 0-8 0"),
+            s("M12 2.5v2.2"),
+            s("M12 19.3v2.2"),
+            s("M2.5 12h2.2"),
+            s("M19.3 12h2.2"),
+            s("M5.3 5.3l1.5 1.5"),
+            s("M17.2 17.2l1.5 1.5"),
+            s("M18.7 5.3l-1.5 1.5"),
+            s("M6.8 17.2l-1.5 1.5"),
+        ],
+        MicOff => p![
+            s("M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0z"),
+            s("M5.5 11a6.5 6.5 0 0 0 13 0"),
+            s("M12 17.5V21"),
+            s("M4 3.5L20 20.5"),
+        ],
+        Power => p![
+            s("M12 3.5v8"),
+            s("M16.95 6.55a7.5 7.5 0 1 1-9.9 0"),
+        ],
+        ChevronRight => p![s("M9 6l6 6-6 6")],
+        ChevronDown => p![s("M6 9l6 6 6-6")],
     }
 }
 
@@ -479,7 +511,8 @@ mod tests {
         Icon::Recorder, Icon::Screen, Icon::AppWindow, Icon::Area, Icon::Camera, Icon::Mic, Icon::Bell, Icon::Message,
         Icon::Ai, Icon::OpenAi, Icon::Claude, Icon::OpenCode, Icon::Gemini, Icon::Antigravity, Icon::Cursor, Icon::Copilot, Icon::Kimi, Icon::Zai,
         Icon::MiniMax, Icon::OpenRouter,
-        Icon::Lock, Icon::CapsLock, Icon::Wifi, Icon::WifiOff,
+        Icon::Lock, Icon::CapsLock, Icon::Wifi, Icon::WifiOff, Icon::Sun, Icon::MicOff, Icon::Power,
+        Icon::ChevronRight, Icon::ChevronDown,
     ];
 
     #[test]

@@ -772,6 +772,19 @@ class Link {
     }
   }
 
+  // Sends quick text or a link straight to the PC's clipboard.
+  async sendClip(text) {
+    if (this.busy) throw new Problem('busy-here');
+    this.busy = true;
+    try {
+      this.sendJson({ t: 'clip', text });
+      await this.expect((m) => m.t === 'copied', 15_000, 'no-answer');
+      this.lastActivity = Date.now();
+    } finally {
+      this.busy = false;
+    }
+  }
+
   // Pulls one Shelf file onto the phone. Resolves with a File.
   async get(item, onProgress) {
     if (this.busy) throw new Problem('busy-here');
@@ -1562,6 +1575,34 @@ $('clear').addEventListener('click', () => {
   renderChosen();
 });
 $('send').addEventListener('click', sendChosen);
+$('clip-card').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('clip-input');
+  const text = input.value.trim();
+  if (!text || pcv.busy) return;
+  const session = pcv.session;
+  pcv.busy = true;
+  $('clip-send').disabled = true;
+  setStatus('clip', pcv.link && pcv.link.ready ? 'Copying…' : `Connecting to ${pcName(pcv.pair)}…`, 'wait');
+  try {
+    const l = await ensureLink();
+    await l.sendClip(text);
+    input.value = '';
+    setStatus('clip', `Copied to ${PcName(pcv.pair)}'s clipboard`, 'ok');
+  } catch (err) {
+    if (current(session, err)) {
+      if (CONNECT_PROBLEMS.includes(err.code)) {
+        setStatus('clip', '');
+        showPcError(err.code);
+      } else {
+        setStatus('clip', problemText(err.code, PcName(pcv.pair), 'send'), 'bad');
+      }
+    }
+  } finally {
+    pcv.busy = false;
+    $('clip-send').disabled = false;
+  }
+});
 $('pc-retry').addEventListener('click', connectPc);
 $('pc-back').addEventListener('click', () => {
   if (history.state && history.state.pc) history.back();

@@ -381,7 +381,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     let art_px = if art_settled { Some(scale) } else { None };
     let art_r = Rect::new(x0, y0 + ART_TOP, ART, ART);
     let art_k = e.pop(0.0);
-    scaled(ui, art_r.center(), art_k, |ui| draw_art(ui, m, art_r, a.art_scale, art_px.filter(|_| art_k == 1.0)));
+    scaled(ui, art_r.center(), art_k, |ui| draw_art(ui, m, art_r, accent, a.art_scale, art_px.filter(|_| art_k == 1.0)));
 
     // Title, artist, player.
     let title = match m.title.trim() {
@@ -430,6 +430,8 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
         if hover || scrub.held.is_some() {
             let c = Point::new(bar.x + bar.w * progress, bar.y + bar.h / 2.0);
             ui.c.fill_circle(c, 6.0, palette::TEXT);
+            let hover_f = scrub.held.or_else(|| ui.input.mouse.map(|p| ((p.x - bar.x) / bar.w.max(1.0)).clamp(0.0, 1.0))).unwrap_or(progress);
+            draw_seek_tip(ui, bar, hover_f, hover_f as f64 * tl.duration_s, scale);
         }
         let ts = TextStyle::footnote().tabular().color(palette::TEXT_DIM);
         let half = mid.w / 2.0;
@@ -517,9 +519,30 @@ pub(crate) fn push_media(st: &mut AppState, c: MediaCmd) {
     st.media_cmd(c);
 }
 
+/// Floating time capsule above a hovered/dragged seek bar (`1:23`).
+pub(crate) fn draw_seek_tip(ui: &mut Ui, bar: Rect, frac: f32, time_s: f64, scale: f32) {
+    let label = fmt_duration(time_s);
+    let ts = TextStyle::caption().weight(Weight::Semibold).tabular().center();
+    let tw = ui.c.measure(&label, &ts, 120.0).0;
+    let w = snap((tw + 14.0).ceil(), scale);
+    let h = 19.0;
+    let cx = (bar.x + bar.w * frac.clamp(0.0, 1.0)).clamp(bar.x + w / 2.0, (bar.right() - w / 2.0).max(bar.x + w / 2.0));
+    let r = Rect::new(snap(cx - w / 2.0, scale), snap(bar.y - h - 7.0, scale), w, h);
+    ui.c.fill_rrect(r, h / 2.0, super::TIP_FILL);
+    ui.c.stroke_rrect(r, h / 2.0, Color::white(0.12), 1.0);
+    ui.c.text(&label, r, &ts);
+}
+
+/// Soft ambient album-art glow drawn behind the cover image (zero extra layers/frames).
+pub(crate) fn draw_art_glow(ui: &mut Ui, rr: Rect, radius: f32, accent: Color) {
+    for (spread, alpha) in [(12.0f32, 0.035f32), (7.0, 0.065), (3.0, 0.095)] {
+        ui.c.fill_rrect(rr.inset(-spread, -spread), radius + spread * 0.65, accent.mul_alpha(alpha));
+    }
+}
+
 /// Cover art (or a placeholder tile) scaled about its centre by `scale`;
 /// snapped to device pixels when `px_scale` is given (i.e. at rest).
-fn draw_art(ui: &mut Ui, m: &MediaSession, r: Rect, scale: f32, px_scale: Option<f32>) {
+fn draw_art(ui: &mut Ui, m: &MediaSession, r: Rect, accent: Color, scale: f32, px_scale: Option<f32>) {
     let mut rr = Rect::from_center(r.center(), r.w * scale, r.h * scale);
     if let Some(s) = px_scale {
         let (x0, y0) = (snap(rr.x, s), snap(rr.y, s));
@@ -528,6 +551,7 @@ fn draw_art(ui: &mut Ui, m: &MediaSession, r: Rect, scale: f32, px_scale: Option
     let radius = ART_RADIUS * scale;
     match &m.art {
         Some(img) => {
+            draw_art_glow(ui, rr, radius, accent);
             ui.c.image(img, rr, radius);
             // Hairline so dark covers keep an edge on the black island.
             ui.c.stroke_rrect(rr, radius, Color::white(0.08), 1.0);
