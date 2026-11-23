@@ -413,7 +413,7 @@ Early, but in daily use on Windows 11. Most rough edges are in places a test mac
 
 ## Contributions
 
-- **Antigravity** — all development work for **v0.2.55**, including features, bug fixes and testing.
+- **Antigravity** — all development work for **v0.2.55**, including features, bug fixes, testing and release preparation.
 
 ## Credits
 
