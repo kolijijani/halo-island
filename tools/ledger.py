@@ -178,6 +178,42 @@ def cmd_check(a, jobs):
     return 1 if bad else 0
 
 
+def cmd_merge(a, jobs):
+    """Union another copy of the ledger in (used when two machines each hold one)."""
+    import hashlib
+    def key(ev):
+        return hashlib.sha1(json.dumps([ev.get("id"), ev.get("ev"), ev.get("ts"),
+                                        ev.get("who"), ev.get("title")]).encode()).hexdigest()
+    have = set()
+    with open(LEDGER, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    have.add(key(json.loads(line)))
+                except json.JSONDecodeError:
+                    pass
+    added = 0
+    for path in a["args"]:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if key(ev) in have:
+                    continue
+                have.add(key(ev))
+                append(ev)
+                added += 1
+                print(f"+ {ev['id']} {ev.get('ev')} {ev.get('who', '')}")
+    print(f"merged {added} new event(s)")
+    return 0
+
+
 def parse(argv):
     a, args, i = {"who": None}, [], 0
     while i < len(argv):
@@ -235,7 +271,7 @@ def main():
         return selftest()
     jobs = load()
     fn = {"add": cmd_add, "claim": cmd_claim, "done": cmd_done, "block": cmd_block,
-          "list": cmd_list, "check": cmd_check}.get(cmd)
+          "list": cmd_list, "check": cmd_check, "merge": cmd_merge}.get(cmd)
     if not fn:
         sys.exit(__doc__)
     sys.exit(fn(a, jobs) or 0)
