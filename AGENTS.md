@@ -58,11 +58,11 @@ To try the release path without releasing, run `ci` by hand with `release_dry_ru
 
 Two agents work on this repo at once: **Qi-Cha** (`qc`, the maintainer's assistant on the VPS) and **Antigravity** (`ag`, on the maintainer's PC). They never share a disk, so git and one ledger keep them apart.
 
-`docs/ledger.jsonl` is **the** list of jobs. It is append-only JSON events, one per line — never edit or reorder lines, never rewrite another agent's line. `python3 tools/ledger.py list` prints the folded state. Don't keep a second todo list in a scratch file, a chat message or your own notes; if a job isn't in the ledger it will be dropped.
+`docs/ledger.jsonl` is **the** list of jobs. It is append-only JSON events, one per line — never edit or reorder lines, never rewrite another agent's line. `python3 tools/ledger.py list` prints the folded state (`py tools/ledger.py` on Windows, where `python3` is not a command). Don't keep a second todo list in a scratch file, a chat message or your own notes; if a job isn't in the ledger it will be dropped.
 
 Before you touch code:
 
-1. `git pull --rebase`
+1. `git pull --rebase` (and `py tools/ledger.py check` if it's been more than a day)
 2. `python3 tools/ledger.py list --open`
 3. `python3 tools/ledger.py claim <id> --who ag` — this also creates the branch name `ag/<id>`.
 
