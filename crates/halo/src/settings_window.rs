@@ -827,8 +827,18 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Tabs, "Shelf", Key::Tab(PageKind::Shelf)),
     (Section::Tabs, "Tasks", Key::Tab(PageKind::Tasks)),
     (Section::Tabs, "Focus", Key::Tab(PageKind::Focus)),
+    (Section::Tabs, "Widgets", Key::Tab(PageKind::Widgets)),
+    (Section::Tabs, "AI", Key::Tab(PageKind::Ai)),
+    (Section::Tabs, "System", Key::Tab(PageKind::System)),
+    (Section::Tabs, "Games", Key::Tab(PageKind::Games)),
+    (Section::Tabs, "Script", Key::Tab(PageKind::Script)),
+    (Section::Tabs, "Record", Key::Tab(PageKind::Record)),
+    (Section::Tabs, "Prayer", Key::Tab(PageKind::Prayer)),
+    (Section::Tabs, "Stocks", Key::Tab(PageKind::Stocks)),
+    (Section::Tabs, "Caffeine", Key::Tab(PageKind::Caffeine)),
+    (Section::Tabs, "Downloads", Key::Tab(PageKind::Downloads)),
     (Section::Tabs, "Notifications", Key::Tab(PageKind::Notifications)),
-    (Section::Tabs, "Tab order", Key::ResetTabOrder),
+    (Section::Tabs, "Reset to default", Key::ResetTabOrder),
     (Section::Focus, "Focus", Key::FocusMin),
     (Section::Focus, "Short break", Key::ShortBreak),
     (Section::Focus, "Long break", Key::LongBreak),
@@ -2618,6 +2628,9 @@ mod tests {
             let mut st = AppState::new(s.sanitized(), Store::default());
             st.settings.pro = true;
             st.notify_can = true;
+            st.recorder = true;
+            st.store.recorder_island = true;
+            st.downloader_offered = true;
             for a in halo_core::addons::ALL {
                 st.addons.insert(a.id, halo_core::addons::Status::Ready);
             }
@@ -2647,7 +2660,7 @@ mod tests {
             assert!(listed.contains(d), "{d:?} is drawn but not in the inventory");
         }
         for (s, label, k) in INVENTORY {
-            let here = cfg!(windows) || !matches!(k, Key::Display | Key::Mascot | Key::GameStats | Key::GamePeek);
+            let here = cfg!(windows) || !matches!(k, Key::Display | Key::Mascot | Key::GameStats | Key::GamePeek | Key::Tab(PageKind::Games));
             assert!(!here || drawn.contains(&(*s, *k)), "{label} is in the inventory but never drawn");
             // Its words are the row's own label (the slots are one item).
             match states.iter().find_map(|st| rows(*s, st).into_iter().find(|i| i.key == *k)) {

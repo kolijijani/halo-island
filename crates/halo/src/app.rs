@@ -859,7 +859,9 @@ impl App {
         self.schedule_minute_timer();
         if let Some(t) = self.selftest.as_mut() {
             t.begin(&mut self.st);
-            unsafe { SetTimer(self.hwnd, TIMER_SELFTEST, 50, None) };
+            // 16 ms (~1 frame) avoids ~62.5 ms Windows timer quantization stalls
+            // between selftest settle steps without altering any scene check.
+            unsafe { SetTimer(self.hwnd, TIMER_SELFTEST, 16, None) };
         }
         self.request_frame();
     }
@@ -3797,7 +3799,7 @@ impl App {
             self.mode = target;
             retarget = true;
             if let Mode::Expanded(p) = target {
-                self.st.ui.entrance = pages::entrance::start(p, now, self.reduce_motion || self.st.power.saver);
+                self.st.ui.entrance = pages::entrance::start(p, now, self.reduce_motion || self.st.power.saver || self.in_selftest);
             }
             if target == Mode::Expanded(PageKind::Downloads) {
                 self.downloads_page_shown();

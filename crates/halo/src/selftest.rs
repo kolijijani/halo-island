@@ -4674,7 +4674,9 @@ mod tests {
 
     /// The app's state in the Diorama picture `r`, as `apply_rest` leaves it.
     fn state(r: &Rest) -> AppState {
-        let mut st = AppState::new(Settings { theme: Theme::Diorama, ..Settings::default() }, Store::default());
+        let mut settings = Settings::default();
+        settings.set_legacy_theme(Theme::Diorama);
+        let mut st = AppState::new(settings, Store::default());
         st.local = r.time();
         st.settings.use_24h = !r.h12;
         st.settings.idle_style = if r.minimal { IdleStyle::Minimal } else { IdleStyle::Clock };
@@ -4800,7 +4802,9 @@ mod tests {
         // The clock and status scenes rest at the PC's own time and date:
         // every seventh minute of the day, through a month of moons, with
         // both clocks. No badge: their battery is at 76 %, not charging.
-        let mut st = AppState::new(Settings { theme: Theme::Diorama, ..Settings::default() }, Store::default());
+        let mut settings = Settings::default();
+        settings.set_legacy_theme(Theme::Diorama);
+        let mut st = AppState::new(settings, Store::default());
         st.power = fake_power(false);
         for (k, minute) in (0..1440u32).step_by(7).enumerate() {
             let (year, month, day) = REST_DAY;

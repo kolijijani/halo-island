@@ -534,8 +534,9 @@ pub(crate) fn draw_seek_tip(ui: &mut Ui, bar: Rect, frac: f32, time_s: f64, scal
 }
 
 /// Soft ambient album-art glow drawn behind the cover image (zero extra layers/frames).
+/// Outer spread stays within `pages::PAD` so it never tints the Diorama frame margin.
 pub(crate) fn draw_art_glow(ui: &mut Ui, rr: Rect, radius: f32, accent: Color) {
-    for (spread, alpha) in [(12.0f32, 0.035f32), (7.0, 0.065), (3.0, 0.095)] {
+    for (spread, alpha) in [(8.0f32, 0.045f32), (5.0, 0.070), (2.5, 0.095)] {
         ui.c.fill_rrect(rr.inset(-spread, -spread), radius + spread * 0.65, accent.mul_alpha(alpha));
     }
 }
