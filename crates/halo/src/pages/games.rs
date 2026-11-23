@@ -33,7 +33,7 @@ use halo_core::sysmon::{fmt_bytes, fmt_pct};
 /// The System page's height: the window never grows for this page.
 const HEIGHT: f32 = 256.0;
 const SEP_H: f32 = 20.0;
-const ROW_H: f32 = 26.0;
+const ROW_H: f32 = 24.0;
 const DASH_H: f32 = 86.0;
 const DETAIL_H: f32 = 20.0;
 const PLACEHOLDER: &str = "\u{2013}";
@@ -69,6 +69,28 @@ fn hz_name(hz: u16) -> String {
     } else {
         format!("{hz} Hz")
     }
+}
+
+/// True once a CPU reading arrived with no temperature while CPU temp is on.
+fn cpu_temp_missing(st: &AppState) -> bool {
+    st.settings.game_cpu_temp
+        && st
+            .system
+            .latest
+            .as_ref()
+            .and_then(|r| r.cpu.as_ref())
+            .is_some_and(|c| c.temp_c.is_none())
+}
+
+fn cpu_row_value(cpu: Option<(f32, Option<f32>)>, want_temp: bool) -> String {
+    cpu.map_or_else(
+        || PLACEHOLDER.into(),
+        |(load, temp_c)| match temp_c {
+            Some(t) => format!("{} \u{b7} {t:.0}\u{b0}C", fmt_pct(load)),
+            None if want_temp => format!("{} \u{b7} no sensor", fmt_pct(load)),
+            None => fmt_pct(load),
+        },
+    )
 }
 
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
@@ -125,7 +147,7 @@ fn draw_settings(ui: &mut Ui, st: &mut AppState, r: Rect) {
         st.settings.game_peek = GAME_READOUT[i].0;
         st.cmd(Command::SaveSettings);
     }
-    let (about, rest) = rest.split_top(30.0);
+    let (about, rest) = rest.split_top(28.0);
     let about_text = if st.settings.game_peek {
         "A few seconds as a game starts, when FPS drops and on Alt+Shift+F."
     } else {
@@ -173,15 +195,27 @@ fn draw_settings(ui: &mut Ui, st: &mut AppState, r: Rect) {
         ui,
         wid("games.cpu"),
         row,
-        "CPU",
+        "CPU load",
         Some(st.settings.game_cpu),
         accent,
     ) {
         st.settings.game_cpu = !st.settings.game_cpu;
         st.cmd(Command::SaveSettings);
     }
+    let (row, rest) = rest.split_top(ROW_H);
+    if crate::pages::settings::switch_row(
+        ui,
+        wid("games.cpu_temp"),
+        row,
+        "CPU temperature",
+        Some(st.settings.game_cpu_temp),
+        accent,
+    ) {
+        st.settings.game_cpu_temp = !st.settings.game_cpu_temp;
+        st.cmd(Command::SaveSettings);
+    }
     // The refresh rate: a click steps to the next one, Auto after the last.
-    let (row, _) = rest.split_top(ROW_H + 4.0);
+    let (row, rest) = rest.split_top(ROW_H + 2.0);
     let name = hz_name(st.settings.game_hz);
     let w = ui.pill_width("360 Hz", false, true);
     let pill = Rect::new(row.right() - w, row.bottom() - PILL_SMALL, w, PILL_SMALL);
@@ -200,6 +234,14 @@ fn draw_settings(ui: &mut Ui, st: &mut AppState, r: Rect) {
             .unwrap_or(0);
         st.settings.game_hz = GAME_HZ[(at + 1) % GAME_HZ.len()];
         st.cmd(Command::SaveSettings);
+    }
+    if cpu_temp_missing(st) {
+        let (note, _) = rest.split_top(16.0);
+        ui.c.text(
+            "No CPU temp sensor reported by Windows.",
+            note,
+            &TextStyle::caption().color(palette::TEXT_FAINT),
+        );
     }
 }
 
@@ -296,9 +338,7 @@ fn draw_front(ui: &mut Ui, st: &mut AppState, r: Rect) {
     let rows = [
         Row::plain(
             "CPU",
-            reading
-                .and_then(|r| r.cpu.as_ref())
-                .map_or_else(|| PLACEHOLDER.into(), |c| fmt_pct(c.load)),
+            cpu_row_value(reading.and_then(|r| r.cpu.as_ref()).map(|c| (c.load, c.temp_c)), st.settings.game_cpu_temp),
         ),
         Row::plain(
             "Video memory",
@@ -377,11 +417,19 @@ mod tests {
 
     #[test]
     fn the_settings_column_fits_the_page() {
-        // OVER GAMES, two rows and the note; READOUT SHOWS, three switches and the rate.
-        let used = SEP_H + 2.0 * ROW_H + 30.0 + SEP_H + 3.0 * ROW_H + ROW_H + 4.0;
+        // OVER GAMES, two rows and the note; READOUT SHOWS, four switches, rate and optional sensor note.
+        let used = SEP_H + 2.0 * ROW_H + 28.0 + SEP_H + 4.0 * ROW_H + (ROW_H + 2.0) + 16.0;
         assert!(used <= HEIGHT, "{used}");
         // IN FRONT: the dashboard, the name, two rows, the note and its button.
         let used = SEP_H + DASH_H + 3.0 * DETAIL_H + 30.0 + PILL_SMALL;
         assert!(used <= HEIGHT, "{used}");
+    }
+
+    #[test]
+    fn cpu_row_notes_missing_sensor_when_enabled() {
+        assert_eq!(cpu_row_value(Some((0.42, None)), false), "42%");
+        assert_eq!(cpu_row_value(Some((0.42, None)), true), "42% \u{b7} no sensor");
+        assert_eq!(cpu_row_value(Some((0.42, Some(64.4))), true), "42% \u{b7} 64\u{b0}C");
+        assert_eq!(cpu_row_value(None, true), PLACEHOLDER);
     }
 }

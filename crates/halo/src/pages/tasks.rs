@@ -21,15 +21,17 @@ use super::PageKind;
 use crate::gfx::TextStyle;
 use crate::icons::Icon;
 use crate::state::AppState;
-use crate::ui::{wid, wid_n, PillStyle, Ui, WidgetId, PILL_SMALL};
+use crate::ui::{wid, wid_n, KeyInput, PillStyle, Ui, WidgetId, PILL_SMALL};
 use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::todo::{Task, MAX_TASKS, MAX_TASK_LEN};
+use halo_core::todo::{Task, MAX_DEPTH, MAX_TASKS, MAX_TASK_LEN};
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const HEIGHT: f32 = 200.0;
 const INPUT_H: f32 = 34.0;
 const ROW_H: f32 = 31.0;
+/// Indentation step per tree level (title = 0, task = 12, subtask = 24).
+const INDENT: f32 = 12.0;
 /// List viewport, relative to the page top: exactly four rows.
 const LIST_TOP: f32 = 44.0;
 const LIST_H: f32 = 4.0 * ROW_H;
@@ -53,6 +55,8 @@ const APPEAR_S: f64 = 0.24;
 const FREEZE_S: f64 = 2.0;
 /// How long "Undo" is offered after a delete or "Clear done".
 const UNDO_SECS: f64 = 8.0;
+/// Maximum interval between two clicks on a task's text to open inline edit.
+const DBLCLICK_S: f64 = 0.40;
 /// When the page hasn't been drawn for this long, jump to the current state.
 const STALE_S: f64 = 1.0;
 
@@ -71,6 +75,8 @@ struct ListAnim {
     frozen: Option<(Vec<u64>, f64)>,
     /// Tasks removed by delete / "Clear done" and when, for "Undo".
     undo: Option<(Vec<Task>, f64)>,
+    /// Last click on a row's text area, for double-click inline rename.
+    last_click: Option<(u64, f64)>,
 }
 
 thread_local! {
@@ -112,6 +118,55 @@ pub fn height(_st: &AppState) -> f32 {
     HEIGHT
 }
 
+struct RowMeta {
+    done: bool,
+    text: String,
+    depth: usize,
+    has_children: bool,
+    collapsed: bool,
+    progress: (usize, usize),
+}
+
+/// Visible rows in DFS display order, omitting descendants of collapsed rows.
+fn visible_items(st: &AppState, day_start: i64) -> Vec<(u64, RowMeta)> {
+    let ordered = st.store.tasks.display_order(day_start);
+    let has_child: HashSet<u64> = ordered.iter().filter_map(|t| t.parent).collect();
+    let parent_of: HashMap<u64, Option<u64>> = st.store.tasks.tasks.iter().map(|t| (t.id, t.parent)).collect();
+    let mut out = Vec::with_capacity(ordered.len());
+    for t in ordered {
+        let mut hidden = false;
+        let mut cur = t.parent;
+        let mut seen = HashSet::new();
+        while let Some(pid) = cur {
+            if !seen.insert(pid) {
+                break;
+            }
+            if st.ui.task_collapsed.contains(&pid) {
+                hidden = true;
+                break;
+            }
+            cur = parent_of.get(&pid).copied().flatten();
+        }
+        if hidden {
+            continue;
+        }
+        let has_children = has_child.contains(&t.id);
+        let progress = if has_children { st.store.tasks.branch_progress(t.id) } else { (0, 0) };
+        out.push((
+            t.id,
+            RowMeta {
+                done: t.done,
+                text: t.text.clone(),
+                depth: st.store.tasks.depth(t.id).max(1),
+                has_children,
+                collapsed: st.ui.task_collapsed.contains(&t.id),
+                progress,
+            },
+        ));
+    }
+    out
+}
+
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     let now = st.now;
     let mut anim = ANIM.with(Cell::take);
@@ -121,6 +176,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         anim.appeared.clear();
         anim.toggled = None;
         anim.frozen = None;
+        anim.last_click = None;
     }
     // "Undo" lapses after UNDO_SECS, but never under a press that is about to click it.
     let undo_id = wid("tasks.undo");
@@ -137,11 +193,41 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     }
     let full = st.store.tasks.tasks.len() >= MAX_TASKS;
 
+    // Clear target parent if it was removed or can no longer accept children.
+    if let Some(pid) = st.ui.task_parent {
+        let d = st.store.tasks.depth(pid);
+        if d == 0 || d >= MAX_DEPTH {
+            st.ui.task_parent = None;
+        }
+    }
+    // Cancel inline edit if the task was removed.
+    if let Some(eid) = st.ui.task_editing {
+        if !st.store.tasks.tasks.iter().any(|t| t.id == eid) {
+            st.ui.task_editing = None;
+            st.ui.task_edit_buf.clear();
+        }
+    }
+
     // ---- Input: the list's first row, sharing its checkbox and text columns.
+    let input_id = wid("tasks.input");
     let input_r = Rect::new(area.x, area.y, area.w, INPUT_H);
-    let placeholder = if full { "Task list is full" } else { "Add a task, Enter to save" };
+    let placeholder = if full {
+        "Task list is full".to_string()
+    } else if let Some(pid) = st.ui.task_parent {
+        let name = st.store.tasks.tasks.iter().find(|t| t.id == pid).map(|t| t.text.as_str()).unwrap_or("");
+        format!("Add under {name}")
+    } else {
+        "Add a task, Enter to save".to_string()
+    };
     let accent = st.accent;
-    let resp = ui.text_input_row(wid("tasks.input"), input_r, &mut st.ui.task_input, placeholder, MAX_TASK_LEN, accent, Some(Icon::Plus));
+    let resp = ui.text_input_row(input_id, input_r, &mut st.ui.task_input, &placeholder, MAX_TASK_LEN, accent, Some(Icon::Plus));
+    if resp.cancelled && st.ui.task_parent.is_some() {
+        st.ui.task_parent = None;
+        ui.focus(input_id, st.ui.task_input.chars().count());
+    } else if !resp.focused && st.ui.task_parent.is_some() && ui.input.keys.contains(&KeyInput::Escape) {
+        st.ui.task_parent = None;
+        ui.request_repaint();
+    }
     if resp.submitted {
         submit(ui, st, &mut anim, day_start);
     }
@@ -149,7 +235,7 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     // ---- List.
     let view = Rect::new(area.x, area.y + LIST_TOP, area.w, LIST_H);
     let footer_r = Rect::new(area.x, area.y + HEIGHT - FOOTER_H, area.w, FOOTER_H);
-    let mut items: Vec<(u64, (bool, String))> = st.store.tasks.display_order(day_start).into_iter().map(|t| (t.id, (t.done, t.text.clone()))).collect();
+    let mut items = visible_items(st, day_start);
     // Keep the order of the last toggle while the pointer is still over the list.
     let over_list = ui.hovered(view);
     if !anim.frozen.as_ref().is_some_and(|(_, t0)| over_list && now - t0 < FREEZE_S) {
@@ -181,10 +267,18 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         let scrolling = m;
 
         let mut toggle = None;
+        let mut text_click = None;
+        let mut commit_edit = false;
+        let mut cancel_edit = false;
         let mut delete = None;
+        let mut fold = None;
+        let mut add_under = None;
+        let active_parent = st.ui.task_parent;
+        let editing_id = st.ui.task_editing;
+        let chev_gutter = if items.iter().any(|(_, m)| m.has_children || m.depth > 1) { 10.0 } else { 0.0 };
         let mut rows = HashMap::with_capacity(items.len());
         ui.c.clip(view);
-        for (i, (id, (done, text))) in items.iter().enumerate() {
+        for (i, (id, meta)) in items.iter().enumerate() {
             let target = i as f32 * ROW_H;
             let (y, m) = match anim.rows.get(id) {
                 Some(&y0) => glide(y0, target, dt),
@@ -213,12 +307,17 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             // A row on the move glides between pixels; at rest it sits on whole pixels.
             let snap_was = ui.c.set_text_snap(!(scrolling || m || appear < 1.0));
             let k = e.pop(0.06 + 0.05 * i.min(6) as f32);
-            let action = draw_row(ui, st, row, hit, view, *id, *done, text, pop, k);
+            let action = draw_row(ui, st, row, hit, view, *id, meta, chev_gutter, active_parent == Some(*id), editing_id == Some(*id), pop, k);
             ui.c.set_text_snap(snap_was);
             ui.c.set_alpha(prev_alpha);
             match action {
                 RowAction::Toggle => toggle = Some(*id),
+                RowAction::TextClick => text_click = Some(*id),
+                RowAction::CommitEdit => commit_edit = true,
+                RowAction::CancelEdit => cancel_edit = true,
                 RowAction::Delete => delete = Some(*id),
+                RowAction::ToggleFold => fold = Some(*id),
+                RowAction::AddUnder => add_under = Some(*id),
                 RowAction::None => {}
             }
         }
@@ -232,6 +331,56 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
         ui.c.unclip();
         anim.rows = rows;
 
+        if commit_edit {
+            if let Some(id) = st.ui.task_editing.take() {
+                if st.store.tasks.rename(id, &st.ui.task_edit_buf) {
+                    st.save();
+                    st.toast("Task renamed");
+                }
+            }
+            st.ui.task_edit_buf.clear();
+            ui.blur();
+        } else if cancel_edit {
+            st.ui.task_editing = None;
+            st.ui.task_edit_buf.clear();
+        }
+        if let Some(id) = fold {
+            if !st.ui.task_collapsed.remove(&id) {
+                st.ui.task_collapsed.insert(id);
+            }
+            anim.frozen = None;
+            ui.request_repaint();
+        }
+        if let Some(id) = add_under {
+            if st.ui.task_parent == Some(id) {
+                st.ui.task_parent = None;
+            } else {
+                st.ui.task_parent = Some(id);
+                st.ui.task_collapsed.remove(&id);
+                ui.focus(input_id, st.ui.task_input.chars().count());
+            }
+        }
+        if let Some(id) = text_click {
+            if anim.last_click.is_some_and(|(lid, t0)| lid == id && now - t0 <= DBLCLICK_S) {
+                // Second click within DBLCLICK_S: undo the first click's toggle and open inline rename.
+                if st.store.tasks.toggle(id, st.unix) {
+                    st.save();
+                }
+                anim.toggled = None;
+                anim.frozen = None;
+                anim.last_click = None;
+                if let Some(t) = st.store.tasks.tasks.iter().find(|t| t.id == id) {
+                    st.ui.task_editing = Some(id);
+                    st.ui.task_edit_buf = t.text.clone();
+                    ui.focus(wid_n("tasks.edit", id), st.ui.task_edit_buf.chars().count());
+                }
+            } else {
+                anim.last_click = Some((id, now));
+                toggle = Some(id);
+            }
+        } else if toggle.is_some() {
+            anim.last_click = None;
+        }
         if let Some(id) = toggle {
             if st.store.tasks.toggle(id, st.unix) {
                 st.save();
@@ -241,12 +390,22 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
             }
         }
         if let Some(id) = delete {
-            if let Some(task) = st.store.tasks.tasks.iter().find(|t| t.id == id).cloned() {
-                st.store.tasks.remove(id);
+            let removed = st.store.tasks.remove_subtree(id);
+            if !removed.is_empty() {
+                for t in &removed {
+                    anim.rows.remove(&t.id);
+                    anim.appeared.remove(&t.id);
+                    st.ui.task_collapsed.remove(&t.id);
+                    if st.ui.task_parent == Some(t.id) {
+                        st.ui.task_parent = None;
+                    }
+                    if st.ui.task_editing == Some(t.id) {
+                        st.ui.task_editing = None;
+                        st.ui.task_edit_buf.clear();
+                    }
+                }
                 st.save();
-                offer_undo(&mut anim, vec![task], now);
-                anim.rows.remove(&id);
-                anim.appeared.remove(&id);
+                offer_undo(&mut anim, removed, now);
             }
         }
 
@@ -264,22 +423,30 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) {
     ANIM.with(|c| c.set(anim));
 }
 
-/// Add the typed task. Keeps keyboard focus (rapid entry) and scrolls the new
-/// row into view. A full list keeps the text so nothing typed is lost.
+/// Add the typed task (at root or under `st.ui.task_parent`). Keeps keyboard
+/// focus (rapid entry) and scrolls the new row into view. A full list keeps
+/// the text so nothing typed is lost.
 fn submit(ui: &mut Ui, st: &mut AppState, anim: &mut ListAnim, day_start: i64) {
     if st.ui.task_input.trim().is_empty() {
         st.ui.task_input.clear();
         ui.input.caret = 0;
         return;
     }
-    let Some(id) = st.store.tasks.add(&st.ui.task_input, st.unix) else { return };
+    let parent = st.ui.task_parent;
+    let Some(id) = st.store.tasks.add_under(parent, &st.ui.task_input, st.unix) else { return };
     st.ui.task_input.clear();
     ui.input.caret = 0;
+    // Expand the parent chain so the newly added row is visible.
+    let mut cur = st.store.tasks.tasks.iter().find(|t| t.id == id).and_then(|t| t.parent);
+    while let Some(pid) = cur {
+        st.ui.task_collapsed.remove(&pid);
+        cur = st.store.tasks.tasks.iter().find(|t| t.id == pid).and_then(|t| t.parent);
+    }
     st.save();
     anim.appeared.insert(id, st.now);
     // The new row goes to its sorted place, so stop holding the old order.
     anim.frozen = None;
-    if let Some(idx) = st.store.tasks.display_order(day_start).iter().position(|t| t.id == id) {
+    if let Some(idx) = visible_items(st, day_start).iter().position(|(tid, _)| *tid == id) {
         let y = idx as f32 * ROW_H;
         if y + ROW_H > st.ui.task_scroll + LIST_H {
             st.ui.task_scroll = y + ROW_H - LIST_H;
@@ -304,23 +471,14 @@ fn offer_undo(anim: &mut ListAnim, removed: Vec<Task>, now: f64) {
     }
 }
 
-/// Put the snapshot back (open tasks first should the list have filled up since).
+/// Put the snapshot back (parents before children so subtrees survive).
 fn restore(st: &mut AppState, anim: &mut ListAnim) {
-    let Some((mut tasks, _)) = anim.undo.take() else { return };
-    tasks.sort_by_key(|t| (t.done, std::cmp::Reverse(t.done_unix)));
-    let mut restored = false;
-    for t in tasks {
-        if st.store.tasks.tasks.len() >= MAX_TASKS {
-            break;
-        }
-        if st.store.tasks.tasks.iter().any(|x| x.id == t.id) {
-            continue;
-        }
-        anim.appeared.insert(t.id, st.now);
-        st.store.tasks.tasks.push(t);
-        restored = true;
+    let Some((tasks, _)) = anim.undo.take() else { return };
+    let restored = st.store.tasks.restore(tasks);
+    for id in &restored {
+        anim.appeared.insert(*id, st.now);
     }
-    if restored {
+    if !restored.is_empty() {
         st.save();
     }
     anim.frozen = None;
@@ -330,9 +488,7 @@ fn restore(st: &mut AppState, anim: &mut ListAnim) {
 /// today's), yet they count toward `MAX_TASKS`. Once the list is full, drop
 /// those hidden ones so the user isn't blocked by tasks they cannot see.
 fn make_room(st: &mut AppState, day_start: i64) {
-    let before = st.store.tasks.tasks.len();
-    st.store.tasks.tasks.retain(|t| !t.done || t.done_unix.is_some_and(|d| d >= day_start));
-    let removed = before - st.store.tasks.tasks.len();
+    let removed = st.store.tasks.prune_done_before(day_start);
     if removed > 0 {
         crate::pinfo!("tasks: list was full, removed {removed} done tasks from earlier days");
         st.save();
@@ -342,52 +498,130 @@ fn make_room(st: &mut AppState, day_start: i64) {
 enum RowAction {
     None,
     Toggle,
+    TextClick,
+    CommitEdit,
+    CancelEdit,
     Delete,
+    ToggleFold,
+    AddUnder,
 }
 
 /// One task row. `hit` is the part of `row` inside the list viewport `view`.
 /// `k` is the page's entrance for this row: its band rises in and its
 /// checkbox pops (1 at rest). Its hover fades in (`entrance::hover`).
 #[allow(clippy::too_many_arguments)]
-fn draw_row(ui: &mut Ui, st: &mut AppState, row: Rect, hit: Rect, view: Rect, id: u64, done: bool, text: &str, pop: Option<f32>, k: f32) -> RowAction {
+fn draw_row(
+    ui: &mut Ui,
+    st: &mut AppState,
+    row: Rect,
+    hit: Rect,
+    view: Rect,
+    id: u64,
+    meta: &RowMeta,
+    chev_gutter: f32,
+    is_add_target: bool,
+    editing: bool,
+    pop: Option<f32>,
+    k: f32,
+) -> RowAction {
     let mut action = RowAction::None;
+    let cy = row.center().y;
+    let indent = (meta.depth.saturating_sub(1)) as f32 * INDENT;
+    let can_add = meta.depth < MAX_DEPTH;
+    let tx = row.x + indent + TEXT_X + chev_gutter;
+    let right_pad = if can_add { 60.0 } else { 36.0 };
+
     let row_id = wid_n("tasks.row", id);
-    let resp = ui.button(row_id, hit);
-    let h = hover(ui, st, row_id, resp.hovered);
+    let (hovered, pressed, clicked) = if editing {
+        (false, false, false)
+    } else {
+        let resp = ui.button(row_id, hit);
+        (resp.hovered, resp.pressed, resp.clicked)
+    };
+    let h = hover(ui, st, row_id, hovered);
     let band = row.inset(2.0, 2.0);
-    if resp.pressed {
+    if pressed {
         ui.c.fill_rrect(band, 9.0, palette::SURFACE_HOVER);
     } else {
-        let rest = if done { palette::GREEN.with_alpha(0.10) } else { Color::white(0.0) };
+        let rest = if meta.done { palette::GREEN.with_alpha(0.10) } else { Color::white(0.0) };
         let fill = Color::lerp(rest, palette::SURFACE, h);
         if fill.a > 0.0 {
             rise(ui, k, |ui| ui.c.fill_rrect(band, 9.0, fill));
         }
     }
-    if resp.clicked {
-        action = RowAction::Toggle;
+    if clicked {
+        action = if ui.input.mouse.is_some_and(|p| p.x >= tx - 4.0 && p.x < row.right() - right_pad) {
+            RowAction::TextClick
+        } else {
+            RowAction::Toggle
+        };
     }
-    let cy = row.center().y;
+
+    // Subtle vertical tree guide lines aligned under each ancestor's chevron.
+    for lvl in 1..meta.depth {
+        let gx = row.x + (lvl - 1) as f32 * INDENT + 10.0;
+        ui.c.line(Point::new(gx, row.y + 3.0), Point::new(gx, row.bottom() - 3.0), Color::white(0.10), 1.0);
+    }
+
+    // Disclosure chevron for rows with children (UI-only collapse state).
+    if meta.has_children {
+        let chev_r = Rect::new(row.x + indent + 1.0, cy - 12.0, 18.0, 24.0);
+        if let Some(chev_hit) = intersect(chev_r, view) {
+            let icon = if meta.collapsed { Icon::ChevronRight } else { Icon::ChevronDown };
+            let col = if ui.hovered(chev_hit) { palette::TEXT } else { palette::TEXT_DIM };
+            if ui.icon_button(wid_n("tasks.fold", id), chev_hit, icon, col, 11.0).clicked {
+                action = RowAction::ToggleFold;
+            }
+        }
+    }
 
     // Checkbox (pops when toggled).
     let scale = pop.map(|t| 1.0 + 0.22 * (t * std::f32::consts::PI).sin()).unwrap_or(1.0);
-    let c = Point::new(row.x + MARK_X, cy);
+    let c = Point::new(row.x + indent + MARK_X + chev_gutter, cy);
     let size = 18.0 * scale * k.max(0.01);
     let icon_r = Rect::from_center(c, size, size);
-    if done {
+    if meta.done {
         ui.c.fill_circle(c, size * 9.0 / 24.0, palette::GREEN.with_alpha(0.16));
         ui.c.icon(Icon::CheckCircle, icon_r, palette::GREEN);
     } else {
-        ui.c.icon(Icon::Circle, icon_r, if resp.hovered { palette::TEXT_DIM } else { palette::TEXT_FAINT });
+        ui.c.icon(Icon::Circle, icon_r, if hovered { palette::TEXT_DIM } else { palette::TEXT_FAINT });
+    }
+
+    if editing {
+        let edit_r = Rect::new(tx - 4.0, row.y + 3.0, (row.right() - 8.0 - (tx - 4.0)).max(24.0), row.h - 6.0);
+        let eresp = ui.text_input(wid_n("tasks.edit", id), edit_r, &mut st.ui.task_edit_buf, "Task name", MAX_TASK_LEN);
+        if eresp.submitted {
+            return RowAction::CommitEdit;
+        }
+        if eresp.cancelled || !eresp.focused {
+            return RowAction::CancelEdit;
+        }
+        return action;
+    }
+
+    // Progress badge (`done/total`) on parent rows, right before the "+" button.
+    let mut text_right = row.right() - right_pad;
+    if meta.has_children && meta.progress.1 > 0 {
+        let badge = format!("{}/{}", meta.progress.0, meta.progress.1);
+        let bstyle = TextStyle::footnote().color(if meta.done { palette::GREEN } else { palette::TEXT_DIM });
+        let text_w = ui.c.measure(&badge, &bstyle, 48.0).0;
+        let bw = (text_w + 10.0).ceil();
+        let bx = text_right - bw;
+        if bx > tx + 16.0 {
+            let badge_r = Rect::new(bx, cy - 8.0, bw, 16.0);
+            let bfill = if meta.done { palette::GREEN.with_alpha(0.16) } else { Color::white(0.07) };
+            ui.c.fill_rrect(badge_r, 8.0, bfill);
+            ui.c.text(&badge, Rect::new(badge_r.x + (bw - text_w) * 0.5, badge_r.y, text_w + 2.0, badge_r.h), &bstyle);
+            text_right = bx - 6.0;
+        }
     }
 
     // Text, struck through when done (the line sweeps in right after checking).
-    let tx = row.x + TEXT_X;
-    let tw = (row.w - TEXT_X - 40.0).max(0.0);
-    let style = TextStyle::body().color(if done { palette::TEXT_FAINT } else { palette::TEXT });
-    ui.c.text(text, Rect::new(tx, row.y, tw, row.h), &style);
-    if done && tw > 0.0 {
-        let w = ui.c.measure(text, &style, tw).0.min(tw);
+    let tw = (text_right - tx).max(0.0);
+    let style = TextStyle::body().color(if meta.done { palette::TEXT_FAINT } else { palette::TEXT });
+    ui.c.text(&meta.text, Rect::new(tx, row.y, tw, row.h), &style);
+    if meta.done && tw > 0.0 {
+        let w = ui.c.measure(&meta.text, &style, tw).0.min(tw);
         let sweep = pop.map(ease_out_cubic).unwrap_or(1.0);
         if sweep > 0.0 {
             let y = cy + 1.0;
@@ -395,9 +629,30 @@ fn draw_row(ui: &mut Ui, st: &mut AppState, row: Rect, hit: Rect, view: Rect, id
         }
     }
 
+    // Small "+" on rows that can accept children (depth 1 and 2).
+    let row_visible = cy - 12.0 >= view.y && cy + 12.0 <= view.bottom();
+    if can_add && row_visible {
+        let add_r = Rect::new(row.right() - 56.0, cy - 12.0, 24.0, 24.0);
+        if is_add_target {
+            ui.c.fill_rrect(add_r, 12.0, st.accent.with_alpha(0.18));
+        }
+        let add_col = if is_add_target {
+            st.accent
+        } else if ui.hovered(add_r) {
+            palette::TEXT
+        } else if hovered {
+            palette::TEXT_DIM
+        } else {
+            palette::TEXT_FAINT.with_alpha(0.55)
+        };
+        if ui.icon_button(wid_n("tasks.add", id), add_r, Icon::Plus, add_col, 12.0).clicked {
+            action = RowAction::AddUnder;
+        }
+    }
+
     // Delete, only while hovering a fully visible row.
-    let del = Rect::new(row.right() - 32.0, cy - 13.0, 26.0, 26.0);
-    if resp.hovered && del.y >= view.y && del.bottom() <= view.bottom() {
+    let del = Rect::new(row.right() - 30.0, cy - 12.0, 24.0, 24.0);
+    if hovered && row_visible {
         let color = if ui.hovered(del) { palette::RED } else { palette::TEXT_DIM };
         if scaled(ui, del.center(), h, |ui| ui.icon_button(wid_n("tasks.del", id), del, Icon::Trash, color, 14.0)).clicked {
             action = RowAction::Delete;
@@ -462,11 +717,23 @@ fn draw_footer(ui: &mut Ui, st: &mut AppState, r: Rect, day_start: i64, full: bo
         let pr = Rect::new(r.right() - w, r.y, w, r.h);
         text_right = pr.x - 12.0;
         if scaled(ui, pr.center(), e.pop(0.2), |ui| ui.pill(wid("tasks.clear"), pr, "Clear done", None, PillStyle::Utility)).clicked {
-            let removed: Vec<Task> = st.store.tasks.tasks.iter().filter(|t| t.done).cloned().collect();
-            if st.store.tasks.clear_done() > 0 {
+            let removed = st.store.tasks.clear_done_taking();
+            if !removed.is_empty() {
+                for t in &removed {
+                    st.ui.task_collapsed.remove(&t.id);
+                    if st.ui.task_parent == Some(t.id) {
+                        st.ui.task_parent = None;
+                    }
+                    if st.ui.task_editing == Some(t.id) {
+                        st.ui.task_editing = None;
+                        st.ui.task_edit_buf.clear();
+                    }
+                }
                 // The scroll offset is clamped to the shorter list on the next frame.
                 st.save();
+                let n = removed.len();
                 offer_undo(anim, removed, st.now);
+                st.toast(if n == 1 { "Cleared 1 task".to_string() } else { format!("Cleared {n} tasks") });
                 anim.toggled = None;
                 anim.frozen = None;
             }
@@ -522,7 +789,7 @@ mod tests {
 
     #[test]
     fn undo_snapshots_accumulate() {
-        let task = |id: u64| Task { id, text: format!("t{id}"), done: false, created_unix: 0, done_unix: None };
+        let task = |id: u64| Task { id, text: format!("t{id}"), done: false, created_unix: 0, done_unix: None, parent: None };
         let mut anim = ListAnim::default();
         offer_undo(&mut anim, vec![task(1)], 1.0);
         offer_undo(&mut anim, vec![task(2)], 3.0);

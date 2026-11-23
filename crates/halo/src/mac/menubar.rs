@@ -65,12 +65,12 @@ pub fn menu_items(s: &Settings, pinned: bool, login: Login, recorder: bool, upda
     let fullscreen = |label: &str, hide: bool| item(label, MenuCmd::SetHideFullscreen(hide), s.hide_in_fullscreen == hide);
     // The theme's own idle looks (the status bar is Pill's), the one it
     // draws ticked: outside Pill a picked status bar shows as the clock.
-    let shown = crate::pill::status::shown(s.theme, s.idle_style);
+    let shown = crate::pill::status::shown(s.notch_type, s.notch_theme, s.idle_style);
     let style = |st: IdleStyle| {
         let label = match st {
             IdleStyle::Clock => "Clock",
             // In the Halo theme the eyes are Halo's own.
-            IdleStyle::Eyes if s.theme == Theme::Halo => "Halo",
+            IdleStyle::Eyes if s.notch_theme == halo_core::settings::NotchTheme::Halo => "Halo",
             IdleStyle::Eyes => "Eyes",
             IdleStyle::Minimal => "Minimal",
             IdleStyle::Hidden => "Hidden until hover",
@@ -86,7 +86,7 @@ pub fn menu_items(s: &Settings, pinned: bool, login: Login, recorder: bool, upda
             label: "Theme".into(),
             items: vec![theme("Classic", Theme::Classic), theme("Halo", Theme::Halo), theme("Glass", Theme::Glass), theme("Pill", Theme::Pill), theme("Diorama", Theme::Diorama)],
         },
-        MenuItem::Sub { label: "Idle look".into(), items: crate::pill::status::looks(s.theme).iter().map(|l| style(*l)).collect() },
+        MenuItem::Sub { label: "Idle look".into(), items: crate::pill::status::looks(s.notch_type, s.notch_theme).iter().map(|l| style(*l)).collect() },
         item("Synced lyrics", MenuCmd::ToggleLyrics, s.lyrics),
         item("Lyrics pronunciation (romaji, pinyin, Korean)", MenuCmd::TogglePronunciation, s.lyrics_pronunciation),
         apple_music_menu(),

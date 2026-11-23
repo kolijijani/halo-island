@@ -376,6 +376,7 @@ fn parts(st: &AppState, id: ProviderId) -> Vec<Part> {
     }
     let age = (now - snap.as_of).max(0);
     let note = match snap.source {
+        Source::Local if id == ProviderId::Antigravity && snap.windows.is_empty() => Some("Detected on this computer".into()),
         Source::Local => Some(format!("From {}'s log, {}", id.name(), ago(age))),
         Source::Online if age > OLD_S || trouble.is_some() => Some(format!("Updated {}", ago(age))),
         Source::Online => None,

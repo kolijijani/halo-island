@@ -39,10 +39,11 @@ pub enum Activity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HudTag {
     Volume,
+    Brightness,
     Charging,
     Bluetooth,
     LowBattery,
-    /// Caps Lock and Wi-Fi: a glyph, what changed and its state.
+    /// Caps Lock, Wi-Fi and Microphone: a glyph, what changed and its state.
     Toggle,
 }
 
@@ -135,10 +136,11 @@ pub fn content_key(m: &Mode) -> u32 {
 fn hud_tag(k: &HudKind) -> HudTag {
     match k {
         HudKind::Volume { .. } => HudTag::Volume,
+        HudKind::Brightness { .. } => HudTag::Brightness,
         HudKind::Charging { .. } => HudTag::Charging,
         HudKind::Bluetooth { .. } => HudTag::Bluetooth,
         HudKind::LowBattery { .. } => HudTag::LowBattery,
-        HudKind::CapsLock { .. } | HudKind::Wifi { .. } => HudTag::Toggle,
+        HudKind::CapsLock { .. } | HudKind::Wifi { .. } | HudKind::Mic { .. } => HudTag::Toggle,
     }
 }
 
@@ -263,12 +265,12 @@ pub fn geom(m: &Mode, st: &AppState) -> Geom {
                     Some(ClockBadge::Low(_)) => 34.0,
                     None => 0.0,
                 };
-                let lead = if face::on(st.settings.theme) { HALO_CLOCK_LEAD } else { 0.0 };
+                let lead = if face::on(st.settings.notch_theme) { HALO_CLOCK_LEAD } else { 0.0 };
                 Geom::new(base + badge + lead, 30.0, 14.0)
             }
             IdleStyle::Minimal => Geom::new(150.0, 26.0, 12.0),
             // A little taller than the eyes, so his ears clear the top edge.
-            IdleStyle::Eyes if face::on(st.settings.theme) => Geom::new(104.0, 36.0, 16.0),
+            IdleStyle::Eyes if face::on(st.settings.notch_theme) => Geom::new(104.0, 36.0, 16.0),
             IdleStyle::Eyes => Geom::new(118.0, 30.0, 14.0),
             IdleStyle::Hidden => hidden_strip(),
         },
@@ -299,7 +301,7 @@ pub fn geom(m: &Mode, st: &AppState) -> Geom {
         Mode::Activity(Activity::Game) => Geom::new(game_w(st), 32.0, 15.0),
         Mode::Activity(Activity::Recording) => Geom::new(recording_w(st), 32.0, 15.0),
         Mode::Activity(Activity::Download) => Geom::new(if download_many(st) { DOWNLOAD_MANY_W } else { DOWNLOAD_W }, 32.0, 15.0),
-        Mode::Hud(HudTag::Volume) => Geom::new(316.0, 40.0, 19.0),
+        Mode::Hud(HudTag::Volume | HudTag::Brightness) => Geom::new(316.0, 40.0, 19.0),
         Mode::Hud(HudTag::Charging) | Mode::Hud(HudTag::LowBattery) => Geom::new(300.0, 40.0, 19.0),
         Mode::Hud(HudTag::Bluetooth) => Geom::new(336.0, 46.0, 22.0),
         Mode::Hud(HudTag::Toggle) => Geom::new(toggle_w(st), 46.0, 22.0),
@@ -337,7 +339,7 @@ pub fn is_live(m: &Mode, st: &AppState) -> bool {
     }
     let Some(media) = st.media.as_ref() else { return false };
     match m {
-        Mode::Activity(Activity::Media) if face::on(st.settings.theme) => {
+        Mode::Activity(Activity::Media) if face::on(st.settings.notch_theme) => {
             face::music_moving(st.now, media.is_playing(), st.media_paused_at, &st.ui.notes)
         }
         Mode::Activity(Activity::Media) | Mode::Activity(Activity::MediaTimer) => media.is_playing(),
@@ -394,7 +396,7 @@ const BLINK_LEN: f64 = 0.14;
 
 /// Halo shows in the idle pill (the clock and "Halo" looks of his theme).
 fn halo_idle(st: &AppState) -> bool {
-    face::on(st.settings.theme) && matches!(st.settings.idle_style, IdleStyle::Clock | IdleStyle::Status | IdleStyle::Eyes)
+    face::on(st.settings.notch_theme) && matches!(st.settings.idle_style, IdleStyle::Clock | IdleStyle::Status | IdleStyle::Eyes)
 }
 
 /// Halo sleeps from midnight to five.
@@ -453,7 +455,7 @@ fn draw_idle(ui: &mut Ui, st: &mut AppState, body: Rect) {
     match st.settings.idle_style {
         IdleStyle::Clock | IdleStyle::Status => {
             // Halo theme: he peeks on the left and the clock centres in the rest.
-            let body = if face::on(st.settings.theme) {
+            let body = if face::on(st.settings.notch_theme) {
                 draw_halo_rest(ui, st, body, body.x + 11.0 + HALO_CLOCK_W / 2.0, HALO_CLOCK_W, body.bottom() - 5.0);
                 Rect::new(body.x + HALO_CLOCK_LEAD, body.y, body.w - HALO_CLOCK_LEAD, body.h)
             } else {
@@ -485,7 +487,7 @@ fn draw_idle(ui: &mut Ui, st: &mut AppState, body: Rect) {
             }
             ui.c.text(&time, Rect::new(x0 + bw + BADGE_GAP, body.y, tw + 2.0, body.h), &ts);
         }
-        IdleStyle::Eyes if face::on(st.settings.theme) => {
+        IdleStyle::Eyes if face::on(st.settings.notch_theme) => {
             draw_halo_rest(ui, st, body, body.center().x, HALO_IDLE_W, body.bottom() - 7.0);
         }
         IdleStyle::Eyes => {
@@ -516,9 +518,9 @@ pub fn draw_eyes(ui: &mut Ui, st: &AppState, cx: f32, cy: f32, look: f32) {
 pub fn mascot_shows(st: &AppState) -> bool {
     cfg!(windows)
         && st.settings.mascot
-        && !face::on(st.settings.theme)
+        && !face::on(st.settings.notch_theme)
         && !crate::pill::diorama::shows(st)
-        && crate::pill::status::shown(st.settings.theme, st.settings.idle_style) == IdleStyle::Clock
+        && crate::pill::status::shown(st.settings.notch_type, st.settings.notch_theme, st.settings.idle_style) == IdleStyle::Clock
 }
 
 /// Halo's capsule eyes, 8 x 16 and 10 apart, in the pose `st.mascot` gives. They lean up to 2 DIPs
@@ -661,7 +663,7 @@ pub fn draw_music(ui: &mut Ui, st: &mut AppState, body: Rect, words: bool) {
     let eq = Rect::new(body.right() - 34.0, cy - 8.0, 20.0, 16.0);
     let sings = words && crate::pill::lyric::sings(st);
     let alpha = if sings { 1.0 } else { peek_alpha(st, body.w) };
-    if face::on(st.settings.theme) {
+    if face::on(st.settings.notch_theme) {
         // Halo bops to the music where the equalizer would be, and a
         // note floats up beside him on every beat (the ones on his
         // left make way for the words: the sung line or the title).
@@ -849,11 +851,18 @@ fn game_temp(st: &AppState) -> Option<f32> {
     st.system.latest.as_ref()?.gpu.as_ref()?.temp_c.filter(|_| st.settings.game_temp)
 }
 
+/// The CPU's temperature for the readout, reusing the System page's reading.
+fn game_cpu_temp(st: &AppState) -> Option<f32> {
+    st.system.latest.as_ref()?.cpu.as_ref()?.temp_c.filter(|_| st.settings.game_cpu_temp)
+}
+
 /// The readout's width: less what the Games page switched off (the frame
 /// rate's group, the CPU's), each about 70 DIPs with its divider.
 fn game_w(st: &AppState) -> f32 {
     let w = if game_temp(st).is_some() { GAME_W } else { GAME_NO_TEMP_W };
-    w - if st.settings.game_fps { 0.0 } else { 70.0 } - if st.settings.game_cpu { 0.0 } else { 70.0 }
+    let cpu_t = if game_cpu_temp(st).is_some() { GAME_W - GAME_NO_TEMP_W } else { 0.0 };
+    let cpu_cut = if st.settings.game_cpu { 0.0 } else if game_cpu_temp(st).is_some() { 35.0 } else { 70.0 };
+    w + cpu_t - if st.settings.game_fps { 0.0 } else { 70.0 } - cpu_cut
 }
 
 /// "144 fps | GPU 97% · 71° | CPU 38%", centred. The frame rate is a dim
@@ -878,14 +887,22 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
         },
         None => dash(),
     };
-    let cpu = reading.and_then(|r| r.cpu.as_ref()).map_or_else(dash, |c| fmt_pct(c.load));
+    let cpu = match reading.and_then(|r| r.cpu.as_ref()) {
+        Some(c) => match (st.settings.game_cpu, c.temp_c.filter(|_| st.settings.game_cpu_temp)) {
+            (true, Some(t)) => Some(format!("{} \u{b7} {t:.0}\u{b0}", fmt_pct(c.load))),
+            (true, None) => Some(fmt_pct(c.load)),
+            (false, Some(t)) => Some(format!("{t:.0}\u{b0}")),
+            (false, None) => None,
+        },
+        None => st.settings.game_cpu.then(dash),
+    };
     // The Games page's switches leave out the frame rate and the CPU.
     let mut groups = Vec::new();
     if st.settings.game_fps {
         groups.push(fps);
     }
     groups.push([("GPU ".into(), label), (gpu, value)]);
-    if st.settings.game_cpu {
+    if let Some(cpu) = cpu {
         groups.push([("CPU ".into(), label), (cpu, value)]);
     }
 
@@ -914,7 +931,11 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
     // The Pill's motion, on Classic's blue (plan 0.3.00 §2.1).
     let p = st.ui.hud.frame(ui, &hud, st.power.saver);
     if let Some(t) = p.glow {
-        let color = if matches!(hud.kind, HudKind::Charging { .. }) { palette::GREEN } else { palette::BLUE };
+        let color = match hud.kind {
+            HudKind::Charging { .. } | HudKind::Mic { muted: false } => palette::GREEN,
+            HudKind::Mic { muted: true } => palette::RED,
+            _ => palette::BLUE,
+        };
         crate::pill::media::pulse(ui, body, color, t);
     }
     let cy = body.center().y;
@@ -946,6 +967,21 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
             let pct = if muted { "Muted".to_string() } else { format!("{}%", (level * 100.0).round() as i32) };
             ui.c.text(&pct, Rect::new(body.right() - HUD_PAD - 48.0, body.y, 48.0, body.h), &label_st.tabular().right());
         }
+        HudKind::Brightness { level } => {
+            ui.c.icon(Icon::Sun, icon_r, palette::TEXT);
+            let bar = Rect::new(body.x + 48.0, cy - 3.0, body.w - 48.0 - 62.0, 6.0);
+            let shown = p.level;
+            ui.c.fill_rrect(bar, 3.0, palette::TRACK);
+            if shown > 0.0 {
+                let fill = match ui.c.look().accent {
+                    Some(a) => a,
+                    None => Color::white(0.95),
+                };
+                ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * shown).max(6.0), bar.h), 3.0, fill);
+            }
+            let pct = format!("{}%", (level * 100.0).round() as i32);
+            ui.c.text(&pct, Rect::new(body.right() - HUD_PAD - 48.0, body.y, 48.0, body.h), &label_st.tabular().right());
+        }
         HudKind::Charging { percent, plugged } => {
             let (icon, color, label) = if plugged { (Icon::Bolt, palette::GREEN, "Charging") } else { (Icon::Battery, palette::TEXT, "On battery") };
             crate::pill::hud::glyph(ui, icon_r, icon, color, &p);
@@ -957,9 +993,14 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
             ui.c.text("Low battery", Rect::new(body.x + 46.0, body.y, 140.0, body.h), &label_st);
             battery_badge(ui, body.right() - HUD_PAD, cy, percent, palette::RED);
         }
-        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. }) => {
+        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. } | HudKind::Mic { .. }) => {
             let icon = toggle_glyph(&k).0;
-            crate::pill::hud::disc(ui, Point::new(body.x + 30.0, cy), 15.0, icon, 17.0, palette::BLUE, palette::ON_ACCENT, &p);
+            let disc_col = match k {
+                HudKind::Mic { muted: true } => palette::RED,
+                HudKind::Mic { muted: false } => palette::GREEN,
+                _ => palette::BLUE,
+            };
+            crate::pill::hud::disc(ui, Point::new(body.x + 30.0, cy), 15.0, icon, 17.0, disc_col, palette::ON_ACCENT, &p);
             let (title, detail) = k.words();
             let (x, w) = (body.x + 54.0, body.right() - HUD_PAD - body.x - 54.0);
             ui.c.text(&title, Rect::new(x, cy - 17.0, w, 18.0), &label_st);
@@ -984,11 +1025,12 @@ fn draw_hud(ui: &mut Ui, st: &mut AppState, body: Rect) {
     }
 }
 
-/// Caps Lock's or Wi-Fi's glyph, and whether its disc is lit (on, joined).
+/// Caps Lock's, Wi-Fi's or Mic's glyph, and whether its disc is lit.
 pub(crate) fn toggle_glyph(k: &HudKind) -> (Icon, bool) {
     match k {
         HudKind::CapsLock { on } => (Icon::CapsLock, *on),
         HudKind::Wifi { connected: true, .. } => (Icon::Wifi, true),
+        HudKind::Mic { muted } => (if *muted { Icon::MicOff } else { Icon::Mic }, true),
         _ => (Icon::WifiOff, false),
     }
 }
@@ -1186,7 +1228,7 @@ mod tests {
         assert_eq!(geom(&media, &st).h, 32.0, "no readings: one row");
         st.lyrics.ruby = vec![vec![Ruby { text: "紙の舟よ".into(), roman: "kami no fune yo".into() }], Vec::new()];
         for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
-            st.settings.theme = theme;
+            st.settings.set_legacy_theme(theme);
             assert_eq!(geom(&media, &st).h, crate::pill::media::H_READS, "{theme:?}: the line over its reading");
         }
         // Readings switched off: one row again, as for a song without them.
@@ -1363,7 +1405,7 @@ mod tests {
         let m = Mode::Activity(Activity::Download);
         let mut st = with_downloads(AppState::new(Settings::default(), Store::default()), 1);
         for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
-            st.settings.theme = theme;
+            st.settings.set_legacy_theme(theme);
             assert!(!is_live(&m, &st), "{theme:?}");
             assert_eq!(next_wake(&m, &st), None, "{theme:?}: it repaints as yt-dlp reports");
             let g = geom(&m, &st);
@@ -1388,14 +1430,14 @@ mod tests {
         let DownloadView { fraction: Some(f), count: 1 } = download_view(&st) else { panic!("{:?}", download_view(&st)) };
         assert_eq!(download_pct(f), "27%");
         for theme in [Theme::Classic, Theme::Pill, Theme::Diorama] {
-            st.settings.theme = theme;
+            st.settings.set_legacy_theme(theme);
             assert_eq!(geom(&m, &st).w, DOWNLOAD_W, "{theme:?}");
         }
         // A second one, queued: the count shows beside the mark.
         add(&mut st, "https://archive.org/details/BigBuckBunny_124");
         assert!(download_many(&st));
         for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill, Theme::Diorama] {
-            st.settings.theme = theme;
+            st.settings.set_legacy_theme(theme);
             assert_eq!(geom(&m, &st).w, DOWNLOAD_MANY_W, "{theme:?}");
         }
         // Joining the picture and the sound: all its bytes are in.
@@ -1408,7 +1450,9 @@ mod tests {
     fn diorama_rests_as_its_picture_and_is_pill_in_everything_else() {
         use halo_core::settings::Theme;
         let state = |theme| {
-            let mut st = AppState::new(Settings { theme, ..Settings::default() }, Store::default());
+            let mut s = Settings::default();
+            s.set_legacy_theme(theme);
+            let mut st = AppState::new(s, Store::default());
             st.power.has_battery = false;
             st
         };

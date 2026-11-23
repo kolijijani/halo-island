@@ -12,7 +12,7 @@
 use crate::gfx::Canvas;
 use halo_core::geom::{Color, Point, Rect};
 use halo_core::face::{self, Affine, Element, Frame, Input, Mood, Paint, Path, Place};
-use halo_core::settings::Theme;
+use halo_core::settings::NotchTheme;
 use halo_core::svgpath::{self, Seg};
 use std::f32::consts::TAU;
 use std::f64::consts::PI;
@@ -41,8 +41,8 @@ const SMALL_EYES: f64 = 1.19;
 const REST_CYCLE: f64 = 6.5;
 const BLINK_WINDOW: f64 = 0.4;
 
-pub fn on(theme: Theme) -> bool {
-    theme == Theme::Halo
+pub fn on(theme: NotchTheme) -> bool {
+    theme == NotchTheme::Halo
 }
 
 /// Is a rest move (blink or ear flick) under way at `now`?

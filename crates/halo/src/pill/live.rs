@@ -323,6 +323,7 @@ struct GameKey {
     cpu: bool,
     fps4: bool,
     temp: Option<bool>,
+    cpu_temp: Option<bool>,
 }
 
 /// The GPU's temperature for the readout, when its driver reports one and
@@ -331,12 +332,18 @@ fn game_temp(st: &AppState) -> Option<f32> {
     st.system.latest.as_ref()?.gpu.as_ref()?.temp_c.filter(|_| st.settings.game_temp)
 }
 
+/// The CPU's temperature for the readout, reusing the System page's reading.
+fn game_cpu_temp(st: &AppState) -> Option<f32> {
+    st.system.latest.as_ref()?.cpu.as_ref()?.temp_c.filter(|_| st.settings.game_cpu_temp)
+}
+
 fn game_key(st: &AppState) -> GameKey {
     GameKey {
         fps: st.settings.game_fps,
         cpu: st.settings.game_cpu,
         fps4: st.game.rate.is_some_and(|r| r.fps.round() >= 1000.0),
         temp: game_temp(st).map(|t| t.round() >= 100.0),
+        cpu_temp: game_cpu_temp(st).map(|t| t.round() >= 100.0),
     }
 }
 
@@ -355,12 +362,16 @@ fn game_w(st: &AppState) -> f32 {
         (false, _) => -55.0,
         (true, four) => if four { 34.0 } else { 25.0 },
     };
-    let cpu = if key.cpu { 0.0 } else { -60.0 };
+    let cpu = if key.cpu { 0.0 } else if key.cpu_temp.is_some() { -32.0 } else { -60.0 };
     let temp = match key.temp {
         Some(hot) => if hot { 36.0 } else { 28.0 },
         None => 0.0,
     };
-    (2.0 * TEXT_INSET + fps + 175.0 + cpu + temp).ceil()
+    let cpu_temp = match key.cpu_temp {
+        Some(hot) => if hot { 36.0 } else { 28.0 },
+        None => 0.0,
+    };
+    (2.0 * TEXT_INSET + fps + 175.0 + cpu + temp + cpu_temp).ceil()
 }
 
 /// One piece of the readout. A number sits right-aligned in the slot of its
@@ -414,6 +425,8 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
     let cpu_pct = number(cpu.map(|c| fmt_pct(c.load)), value, "100%");
     let temp = gpu.and_then(|g| g.temp_c).zip(key.temp);
     let temp = temp.map(|(t, hot)| number(Some(format!("{t:.0}\u{b0}")), value, if hot { "000\u{b0}" } else { "00\u{b0}" }));
+    let cpu_temp = cpu.and_then(|c| c.temp_c).zip(key.cpu_temp);
+    let cpu_temp = cpu_temp.map(|(t, hot)| number(Some(format!("{t:.0}\u{b0}")), value, if hot { "000\u{b0}" } else { "00\u{b0}" }));
     let mut word = |text: &str, style: TextStyle| {
         let w = ui.c.measure(text, &style, 400.0).0;
         Piece::Text { text: text.into(), style, slot: w, room: w }
@@ -427,8 +440,18 @@ fn draw_game(ui: &mut Ui, st: &AppState, body: Rect) {
         groups.push(vec![fps, word("fps", fps_label)]);
     }
     groups.push(gpu_group);
-    if key.cpu {
-        groups.push(vec![word("CPU", label), cpu_pct]);
+    if key.cpu || cpu_temp.is_some() {
+        let mut cpu_group = vec![word("CPU", label)];
+        if key.cpu {
+            cpu_group.push(cpu_pct);
+        }
+        if let Some(t) = cpu_temp {
+            if key.cpu {
+                cpu_group.push(Piece::Dot);
+            }
+            cpu_group.push(t);
+        }
+        groups.push(cpu_group);
     }
 
     let run = |room: bool| {
@@ -470,13 +493,13 @@ mod tests {
     use super::*;
     use halo_core::frames::FrameRate;
     use halo_core::pomodoro::RunState;
-    use halo_core::settings::{Settings, Theme};
+    use halo_core::settings::{NotchType, Settings};
     use halo_core::store::Store;
     use halo_core::sysmon::{GpuReading, Reading};
 
     fn state() -> AppState {
         let mut st = AppState::new(Settings::default(), Store::default());
-        st.settings.theme = Theme::Pill;
+        st.settings.notch_type = NotchType::Pill;
         st.now = 1000.0;
         st
     }

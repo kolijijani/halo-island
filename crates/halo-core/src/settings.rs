@@ -50,6 +50,51 @@ impl Theme {
     pub fn free(self) -> bool {
         matches!(self, Theme::Classic | Theme::Halo)
     }
+
+    /// Split a legacy coupled theme into independent shape (`NotchType`) and style (`NotchTheme`).
+    pub fn split(self) -> (NotchType, NotchTheme) {
+        match self {
+            Theme::Classic => (NotchType::Notch, NotchTheme::Classic),
+            Theme::Halo => (NotchType::Notch, NotchTheme::Halo),
+            Theme::Glass => (NotchType::Notch, NotchTheme::Glass),
+            Theme::Pill => (NotchType::Pill, NotchTheme::Classic),
+            Theme::Diorama => (NotchType::Pill, NotchTheme::Diorama),
+        }
+    }
+}
+
+/// The island's shape/placement: attached to the top edge or floating as a capsule.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotchType {
+    /// Hangs from the top edge with concave shoulders.
+    #[default]
+    Notch,
+    /// Floats below the top edge as a rounded capsule / card.
+    Pill,
+}
+
+impl NotchType {
+    pub fn free(self) -> bool {
+        matches!(self, NotchType::Notch)
+    }
+}
+
+/// The island's visual style/material, independent of [`NotchType`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotchTheme {
+    #[default]
+    Classic,
+    Halo,
+    Glass,
+    Diorama,
+}
+
+impl NotchTheme {
+    pub fn free(self) -> bool {
+        matches!(self, NotchTheme::Classic | NotchTheme::Halo)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,7 +114,7 @@ pub enum MonitorChoice {
 }
 
 /// Bumped when defaults change in a way existing files should pick up.
-pub const SETTINGS_VERSION: u32 = 7;
+pub const SETTINGS_VERSION: u32 = 8;
 
 /// The Games page's refresh rates (`Settings::game_hz`), 0 = Auto.
 pub const GAME_HZ: [u16; 8] = [0, 60, 75, 120, 144, 165, 240, 360];
@@ -85,6 +130,8 @@ pub struct Settings {
     #[serde(default = "version_zero")]
     pub settings_version: u32,
     pub theme: Theme,
+    pub notch_type: NotchType,
+    pub notch_theme: NotchTheme,
     pub idle_style: IdleStyle,
     pub use_24h: bool,
     /// Halo Mascot: the idle clock gives way to Halo's eyes while nothing
@@ -123,6 +170,10 @@ pub struct Settings {
     pub hud_caps: bool,
     /// Wi-Fi joined, left or another network: a pop-up.
     pub hud_wifi: bool,
+    /// Screen brightness changed: a pop-up (Windows power-setting notification).
+    pub hud_brightness: bool,
+    /// Microphone muted or unmuted: a pop-up (Core Audio capture endpoint callback).
+    pub hud_mic: bool,
     pub sounds: bool,
     /// Page shown first when expanding ("media", "widgets", "today", "shelf", "tasks", "focus", "ai").
     pub start_page: String,
@@ -133,6 +184,9 @@ pub struct Settings {
     /// while its key is here. Keys this version doesn't know are kept, so a
     /// newer Studio's choices survive a save.
     pub hidden_tabs: Vec<String>,
+    /// Custom tab order in the header's row, by page key (e.g. `["media", "prayer", ...]`).
+    /// Empty = default order. Any visible tab not listed keeps its default order after these.
+    pub tab_order: Vec<String>,
     pub pomodoro: PomodoroConfig,
     /// Halo (once signed in): show sums and senders on the island straight
     /// away. Off: they wait for a click on Show, so a shared screen shows none.
@@ -161,10 +215,11 @@ pub struct Settings {
     pub game_peek: bool,
     /// What the readout over games shows beside the GPU's load (the Games
     /// page's switches): the frame rate, the GPU's temperature, the CPU's
-    /// load. All on by default.
+    /// load and the CPU's temperature. All on by default.
     pub game_fps: bool,
     pub game_temp: bool,
     pub game_cpu: bool,
+    pub game_cpu_temp: bool,
     /// The game screen's refresh rate in Hz, one of [`GAME_HZ`]: the top of
     /// the Games page's frame-rate chart and ring. 0 = Auto, the nearest
     /// common rate above the minute's peak.
@@ -352,6 +407,8 @@ impl Default for Settings {
         Self {
             settings_version: SETTINGS_VERSION,
             theme: Theme::Classic,
+            notch_type: NotchType::Notch,
+            notch_theme: NotchTheme::Classic,
             idle_style: IdleStyle::Clock,
             use_24h: true,
             mascot: true,
@@ -371,10 +428,13 @@ impl Default for Settings {
             hud_bluetooth: true,
             hud_caps: true,
             hud_wifi: true,
+            hud_brightness: true,
+            hud_mic: true,
             sounds: true,
             start_page: "media".into(),
             remember_page: true,
             hidden_tabs: Vec::new(),
+            tab_order: Vec::new(),
             pomodoro: PomodoroConfig::default(),
             halo_show_amounts: false,
             system_history: true,
@@ -386,6 +446,7 @@ impl Default for Settings {
             game_fps: true,
             game_temp: true,
             game_cpu: true,
+            game_cpu_temp: true,
             game_hz: 0,
             usage: UsageSettings::default(),
             record: RecordSettings::default(),
@@ -503,12 +564,25 @@ impl Settings {
     /// tray or a hand-edited file without Pro, the island keeps Classic.
     /// Returns whether one had to stop.
     pub fn theme_gate(&mut self) -> bool {
-        let kept = self.theme.free() || self.pro;
-        let was = self.theme;
-        if !kept {
-            self.theme = Theme::Classic;
+        let was = (self.theme, self.notch_type, self.notch_theme);
+        if !self.pro {
+            if !self.theme.free() {
+                self.theme = Theme::Classic;
+            }
+            if !self.notch_type.free() {
+                self.notch_type = NotchType::Notch;
+            }
+            if !self.notch_theme.free() {
+                self.notch_theme = NotchTheme::Classic;
+            }
         }
-        was != self.theme
+        was != (self.theme, self.notch_type, self.notch_theme)
+    }
+
+    /// Apply a legacy coupled [`Theme`] to both `notch_type` and `notch_theme`.
+    pub fn set_legacy_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+        (self.notch_type, self.notch_theme) = theme.split();
     }
 
     /// Clamp values a user may have hand-edited into nonsense.
@@ -547,6 +621,14 @@ impl Settings {
         // water reminder or clipboard list was on keeps them, Widgets on.
         if self.settings_version < 7 && (self.water_every_min > 0 || self.clips) && self.addon_unset(crate::addons::WIDGETS.id) {
             self.set_addon(crate::addons::WIDGETS.id, true);
+        }
+        // v8: separate coupled `theme` into independent `notch_type` and `notch_theme`.
+        if self.settings_version < 8
+            && self.notch_type == NotchType::Notch
+            && self.notch_theme == NotchTheme::Classic
+            && self.theme != Theme::Classic
+        {
+            (self.notch_type, self.notch_theme) = self.theme.split();
         }
         self.settings_version = self.settings_version.max(SETTINGS_VERSION);
         // Halo Island brings Step aside back as the mini handle over
@@ -710,6 +792,29 @@ mod tests {
     }
 
     #[test]
+    fn migrates_legacy_theme_into_independent_type_and_theme() {
+        let cases = [
+            ("classic", NotchType::Notch, NotchTheme::Classic),
+            ("halo", NotchType::Notch, NotchTheme::Halo),
+            ("glass", NotchType::Notch, NotchTheme::Glass),
+            ("pill", NotchType::Pill, NotchTheme::Classic),
+            ("diorama", NotchType::Pill, NotchTheme::Diorama),
+        ];
+        for (legacy, want_ty, want_th) in cases {
+            let mut s: Settings = serde_json::from_str(&format!(r#"{{"settings_version":7,"theme":"{legacy}"}}"#)).unwrap();
+            s.licensed = true;
+            let s = s.sanitized();
+            assert_eq!((s.notch_type, s.notch_theme), (want_ty, want_th), "{legacy}");
+            assert_eq!(s.settings_version, SETTINGS_VERSION);
+        }
+        // Independent type x theme survives round-trip without overwriting each other.
+        let mut s: Settings = serde_json::from_str(r#"{"settings_version":8,"notch_type":"pill","notch_theme":"glass"}"#).unwrap();
+        s.licensed = true;
+        let s = s.sanitized();
+        assert_eq!((s.notch_type, s.notch_theme), (NotchType::Pill, NotchTheme::Glass));
+    }
+
+    #[test]
     fn sanitize_clamps() {
         let s = Settings { expanded_width: 5000.0, hover_delay_ms: 99999, ..Default::default() }.sanitized();
         assert_eq!(s.expanded_width, 900.0);
@@ -836,7 +941,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"game_stats":true,"game_peek":true}"#).unwrap();
         assert!(s.game_peek);
         // Older files show all three, on Auto; a rate not offered goes back to Auto.
-        assert!(s.game_fps && s.game_temp && s.game_cpu && s.game_hz == 0);
+        assert!(s.game_fps && s.game_temp && s.game_cpu && s.game_cpu_temp && s.game_hz == 0);
         let s: Settings = serde_json::from_str(r#"{"game_hz":144}"#).unwrap();
         assert_eq!(s.sanitized().game_hz, 144);
         let s: Settings = serde_json::from_str(r#"{"game_hz":59}"#).unwrap();

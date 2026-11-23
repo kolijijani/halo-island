@@ -100,6 +100,8 @@ pub enum Event {
     Progress { id: u64, file: usize, files: usize, done: u64, total: u64 },
     /// Every file arrived and was moved into the inbox, in the order sent.
     Received { id: u64, from: String, paths: Vec<PathBuf> },
+    /// Quick text or link sent straight to the PC's clipboard.
+    Clip { from: String, text: String },
     /// The transfer broke off; nothing from it was kept. `reason` is a plain
     /// sentence for the island, `detail` the system's own words for the log.
     Failed { id: u64, from: String, reason: String, detail: String },
@@ -301,9 +303,10 @@ fn handle(shared: &Shared, mut stream: TcpStream) {
         ("GET", []) => serve_page(shared, &mut stream, &from),
         ("GET", ["info"]) => serve_info(shared, &mut stream),
         ("POST", ["ask"]) => serve_ask(shared, &mut stream, &head, rest, &from),
+        ("POST", ["clip"]) => serve_clip(shared, &mut stream, &head, rest, &from),
         ("PUT", ["up", id, n]) => serve_upload(shared, &mut stream, &head, rest, id, n),
         ("GET", ["get", generation, n]) => serve_download(shared, &mut stream, generation, n),
-        (_, [] | ["info"] | ["ask"] | ["up", _, _] | ["get", _, _]) => http::respond_status(&mut stream, 405),
+        (_, [] | ["info"] | ["ask"] | ["clip"] | ["up", _, _] | ["get", _, _]) => http::respond_status(&mut stream, 405),
         _ => http::respond_status(&mut stream, 404),
     };
     if r.is_ok() {
@@ -391,6 +394,35 @@ fn reply(w: &mut TcpStream, ok: bool, extra: serde_json::Value) -> io::Result<()
         o.extend(e);
     }
     http::respond_json(w, 200, &v)
+}
+
+#[derive(Deserialize)]
+struct ClipBody {
+    text: String,
+}
+
+const MAX_CLIP_CHARS: usize = 4000;
+
+fn serve_clip(shared: &Shared, w: &mut TcpStream, head: &Head, rest: Vec<u8>, from: &str) -> io::Result<()> {
+    let len = match head.content_length() {
+        Ok(n) if n as usize <= MAX_ASK_BODY && !head.chunked() => n as usize,
+        Ok(_) => return http::respond_status(w, 413),
+        Err(()) => return http::respond_status(w, 400),
+    };
+    if head.expects_continue() {
+        w.write_all(b"HTTP/1.1 100 Continue\r\n\r\n")?;
+    }
+    let body = http::read_body(w, rest, len)?;
+    let parsed: ClipBody = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(_) => return reply(w, false, json!({ "why": "bad-request" })),
+    };
+    let text: String = parsed.text.trim().chars().take(MAX_CLIP_CHARS).collect();
+    if text.is_empty() {
+        return reply(w, false, json!({ "why": "empty" }));
+    }
+    (shared.sink)(Event::Clip { from: from.to_string(), text });
+    reply(w, true, json!({}))
 }
 
 fn serve_ask(shared: &Shared, w: &mut TcpStream, head: &Head, rest: Vec<u8>, from: &str) -> io::Result<()> {
@@ -956,5 +988,19 @@ mod tests {
         let mut rest = String::new();
         s.read_to_string(&mut rest).unwrap();
         assert!(rest.contains("declined"));
+    }
+
+    #[test]
+    fn clip_posts_text_and_rejects_blank() {
+        let f = Fixture::new("clip");
+        let (code, body) = f.request("POST", &p("clip"), json!({ "text": "   " }).to_string().as_bytes());
+        assert_eq!(code, 200);
+        assert!(String::from_utf8_lossy(&body).contains("empty"));
+
+        let (code, body) = f.request("POST", &p("clip"), json!({ "text": "  https://halo.island  " }).to_string().as_bytes());
+        assert_eq!(code, 200);
+        assert!(String::from_utf8_lossy(&body).contains(r#""ok":true"#));
+        let ev = f.next_major();
+        assert_eq!(ev, Event::Clip { from: "iPhone".into(), text: "https://halo.island".into() });
     }
 }

@@ -61,6 +61,7 @@ pub fn geom(st: &AppState) -> Option<Geom> {
         // Where the status bar leaves the resting pill to us, it is the clock.
         IdleStyle::Clock | IdleStyle::Status => Some(Geom::new(clock_width(st), H, H / 2.0)),
         IdleStyle::Minimal => Some(Geom::new(MINIMAL_W, MINIMAL_H, MINIMAL_H / 2.0)),
+        IdleStyle::Eyes if crate::face::on(st.settings.notch_theme) => Some(Geom::new(104.0, 36.0, 18.0)),
         IdleStyle::Eyes => Some(Geom::new(EYES_W, H, H / 2.0)),
         // Classic's invisible strip: it only catches the pointer at the edge.
         IdleStyle::Hidden => None,
@@ -192,12 +193,12 @@ pub fn battery_glyph(c: &mut Canvas, r: Rect, percent: u8, charging: bool) {
 mod tests {
     use super::*;
     use crate::state::PowerState;
-    use halo_core::settings::{Settings, Theme};
+    use halo_core::settings::{NotchType, Settings};
     use halo_core::store::Store;
 
     fn state(battery: bool, use_24h: bool) -> AppState {
         let mut st = AppState::new(Settings::default(), Store::default());
-        st.settings.theme = Theme::Pill;
+        st.settings.notch_type = NotchType::Pill;
         st.settings.use_24h = use_24h;
         // The clock's own shapes: Halo Mascot (on by default) rests in its place.
         st.settings.mascot = false;

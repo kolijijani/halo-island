@@ -48,12 +48,12 @@ pub fn header_rect(body: Rect) -> Rect {
 /// Draw the header and `page` inside the card `body` the Pill way.
 /// `false` = `pages::draw_expanded` draws it as Classic does.
 pub fn draw(ui: &mut Ui, st: &mut AppState, body: Rect, page: PageKind, transition: Option<PageTransition>) -> bool {
-    if !super::on(st.settings.theme) {
+    if !super::on(st.settings.notch_type) {
         return false;
     }
     let tr = transition.filter(|tr| tr.t < 1.0 && tr.from != page);
     let header = header_rect(body);
-    let tip = pages::draw_header(ui, st, header, page, tr);
+    let (tip, popover) = pages::draw_header(ui, st, header, page, tr);
     // A switch slides the pages sideways, which would poke the rows nearest
     // the bottom corners out of the card for a few frames: the card's
     // outline masks them while it runs. At rest every page stays inside its
@@ -61,12 +61,25 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, body: Rect, page: PageKind, transiti
     if tr.is_some() {
         ui.c.push_outline_mask(&super::shape::segments(body, RADIUS));
     }
-    pages::draw_pages(ui, st, body, header, page, tr);
+    if popover.is_some() {
+        let mut ghost_input = crate::ui::Input::default();
+        let mut ghost_hits = Vec::new();
+        let now = ui.now;
+        let mut ghost = Ui::new(&mut *ui.c, &mut ghost_input, &mut ghost_hits, now);
+        pages::draw_pages(&mut ghost, st, body, header, page, tr);
+        if ghost.repaint_requested() {
+            ui.request_anim();
+        }
+    } else {
+        pages::draw_pages(ui, st, body, header, page, tr);
+    }
     if tr.is_some() {
         ui.c.pop_shape_mask();
     }
-    // Hover labels sit on top of the page, outside the content clip.
-    if let Some(tip) = tip {
+    if let Some(popover) = popover {
+        pages::draw_popover(ui, st, body, popover);
+    } else if let Some(tip) = tip {
+        // Hover labels sit on top of the page, outside the content clip.
         draw_tip(ui, body, header, &tip);
     }
     true
@@ -109,16 +122,16 @@ fn corner_inset(body: Rect, radius: f32, y0: f32, y1: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::activities::{self, Mode};
-    use halo_core::settings::{Settings, Theme};
+    use halo_core::settings::{NotchType, Settings};
     use halo_core::store::Store;
 
-    fn state(theme: Theme) -> AppState {
-        AppState::new(Settings { theme, ..Settings::default() }, Store::default())
+    fn state(notch_type: NotchType) -> AppState {
+        AppState::new(Settings { notch_type, ..Settings::default() }, Store::default())
     }
 
     #[test]
     fn the_card_fits_its_page_with_every_corner_round() {
-        let st = state(Theme::Pill);
+        let st = state(NotchType::Pill);
         for p in PageKind::ALL {
             let g = activities::geom(&Mode::Expanded(p), &st);
             // The window is laid out for the tallest page with Classic's sum.

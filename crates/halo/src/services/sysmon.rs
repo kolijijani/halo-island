@@ -81,6 +81,9 @@ use windows::Win32::System::Power::{
 };
 use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32};
+use windows::Win32::System::Memory::{
+    MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualQuery, FILE_MAP_READ, MEMORY_BASIC_INFORMATION,
+};
 use windows::Win32::System::SystemInformation::{
     CpuSetInformation, GetSystemCpuSetInformation, GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX, SYSTEM_CPU_SET_INFORMATION,
 };
@@ -97,6 +100,8 @@ const PERIOD: Duration = Duration::from_secs(1);
 const FIRST: Duration = Duration::from_millis(350);
 /// Drive list, route and battery details change rarely: look again this often.
 const SLOW: Duration = Duration::from_secs(10);
+/// CPU thermal zone during a game (System page closed): read about every 2s and stop when no game runs.
+const GAME_TEMP_EVERY: Duration = Duration::from_secs(2);
 /// A process list rarely needs more than this; it grows when Windows asks.
 const PROC_BUF: usize = 512 * 1024;
 const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC000_0004_u32 as i32;
@@ -389,6 +394,10 @@ struct Sampler {
     compressed: u64,
     /// The thermal zone reading, its lowest and highest so far (placeholders never move).
     zone: Option<(f32, f32, f32)>,
+    /// Opportunistic CPU temperature from an active monitor's shared memory when
+    /// Windows' own ACPI thermal zones are static placeholders.
+    ext_temp: Option<f32>,
+    game_temp_at: Option<Instant>,
     slow_at: Option<Instant>,
     /// A power supply that reports over USB, open while the page is, and
     /// whether this opening looked for one (once per opening).
@@ -425,6 +434,8 @@ impl Sampler {
             drive_list: Vec::new(),
             compressed: 0,
             zone: None,
+            ext_temp: None,
+            game_temp_at: None,
             slow_at: None,
             psu: None,
             psu_looked: false,
@@ -475,13 +486,33 @@ impl Sampler {
             self.psu = None;
             self.psu_looked = false;
         }
-        let pdh = self.pdh.as_ref().filter(|p| p.collect(full));
-        let counters = pdh.map(|p| p.read(full)).unwrap_or_default();
+        let read_zone = full || (sensors && self.game_temp_at.is_none_or(|t| t.elapsed() >= GAME_TEMP_EVERY));
+        if !full && !sensors {
+            self.game_temp_at = None;
+            self.ext_temp = None;
+        } else if read_zone && !full {
+            self.game_temp_at = Some(Instant::now());
+        }
+        let pdh = self.pdh.as_ref().filter(|p| p.collect(read_zone));
+        let counters = pdh.map(|p| p.read(read_zone)).unwrap_or_default();
 
         let mut cpu = self.cpu_reading(&counters);
         if let Some(c) = cpu.as_mut() {
-            c.temp_c = self.zone_temp(counters.zone_c);
-            c.power_w = counters.package_w;
+            c.temp_c = if read_zone {
+                let z = self.zone_temp(counters.zone_c);
+                if z.is_some() {
+                    self.ext_temp = None;
+                    z
+                } else {
+                    self.ext_temp = external_cpu_temp();
+                    self.ext_temp
+                }
+            } else if sensors {
+                self.cached_zone_temp().or(self.ext_temp)
+            } else {
+                None
+            };
+            c.power_w = if full { counters.package_w } else { None };
         }
 
         let gpu = self.gpu.as_mut().and_then(|g| g.reading(full || sensors));
@@ -688,6 +719,11 @@ impl Sampler {
         let c = c.filter(|c| (5.0..=115.0).contains(c))?;
         let (lo, hi) = self.zone.map_or((c, c), |(_, lo, hi)| (lo.min(c), hi.max(c)));
         self.zone = Some((c, lo, hi));
+        (hi - lo >= ZONE_STILL_C).then_some(c)
+    }
+
+    fn cached_zone_temp(&self) -> Option<f32> {
+        let (c, lo, hi) = self.zone?;
         (hi - lo >= ZONE_STILL_C).then_some(c)
     }
 
@@ -1644,4 +1680,119 @@ unsafe fn query_battery(h: HANDLE) -> Option<BatteryDetails> {
         d.rate_mw = Some(st.Rate);
     }
     Some(d)
+}
+
+/// Opportunistic CPU temperature from an already-running monitor's read-only
+/// shared memory (MSI Afterburner or HWiNFO) when Windows' ACPI thermal zones
+/// are static placeholders. Only called when System is open or during a game.
+fn external_cpu_temp() -> Option<f32> {
+    read_shared_mem(w!("MAHMSharedMemory"), parse_mahm_cpu_temp)
+        .or_else(|| read_shared_mem(w!("Global\\HWiNFO_SENS_SM2"), parse_hwinfo_cpu_temp))
+}
+
+fn read_shared_mem<T>(name: PCWSTR, parse: impl FnOnce(&[u8]) -> Option<T>) -> Option<T> {
+    let h = unsafe { OpenFileMappingW(FILE_MAP_READ.0, false, name) }.ok()?;
+    let view = unsafe { MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0) };
+    let out = if !view.Value.is_null() {
+        let mut info = MEMORY_BASIC_INFORMATION::default();
+        let ok = unsafe { VirtualQuery(Some(view.Value), &mut info, std::mem::size_of::<MEMORY_BASIC_INFORMATION>()) };
+        let res = if ok > 0 && info.RegionSize > 0 {
+            // SAFETY: view.Value is mapped read-only for info.RegionSize bytes until UnmapViewOfFile.
+            let bytes = unsafe { std::slice::from_raw_parts(view.Value.cast::<u8>(), info.RegionSize) };
+            parse(bytes)
+        } else {
+            None
+        };
+        let _ = unsafe { UnmapViewOfFile(view) };
+        res
+    } else {
+        None
+    };
+    let _ = unsafe { CloseHandle(h) };
+    out
+}
+
+fn cstr_ascii(bytes: &[u8]) -> &str {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    std::str::from_utf8(&bytes[..end]).unwrap_or("")
+}
+
+fn parse_mahm_cpu_temp(buf: &[u8]) -> Option<f32> {
+    if buf.len() < 28 {
+        return None;
+    }
+    let sig = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+    let ver = u32::from_le_bytes(buf[4..8].try_into().ok()?);
+    if sig != 0x4D41_484D || ver < 0x0002_0000 {
+        return None;
+    }
+    let hdr_size = u32::from_le_bytes(buf[8..12].try_into().ok()?) as usize;
+    let num_entries = (u32::from_le_bytes(buf[12..16].try_into().ok()?) as usize).min(512);
+    let entry_size = u32::from_le_bytes(buf[16..20].try_into().ok()?) as usize;
+    if hdr_size < 28 || entry_size < 1304 {
+        return None;
+    }
+    let mut max_core: Option<f32> = None;
+    for i in 0..num_entries {
+        let off = hdr_size.checked_add(i.checked_mul(entry_size)?)?;
+        let entry = buf.get(off..off.checked_add(1304)?)?;
+        let val = f32::from_le_bytes(entry[1300..1304].try_into().ok()?);
+        if !val.is_finite() || !(5.0..=115.0).contains(&val) {
+            continue;
+        }
+        let name = cstr_ascii(&entry[..260]);
+        if name.eq_ignore_ascii_case("CPU temperature") {
+            return Some(val);
+        }
+        let lower = name.to_ascii_lowercase();
+        if lower.starts_with("cpu") && lower.ends_with("temperature") {
+            max_core = Some(max_core.map_or(val, |b| b.max(val)));
+        }
+    }
+    max_core
+}
+
+fn parse_hwinfo_cpu_temp(buf: &[u8]) -> Option<f32> {
+    if buf.len() < 44 {
+        return None;
+    }
+    let sig = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+    if sig != 0x5369_5748 {
+        return None;
+    }
+    let read_off = u32::from_le_bytes(buf[32..36].try_into().ok()?) as usize;
+    let read_sz = u32::from_le_bytes(buf[36..40].try_into().ok()?) as usize;
+    let read_n = (u32::from_le_bytes(buf[40..44].try_into().ok()?) as usize).min(2048);
+    if read_sz < 292 {
+        return None;
+    }
+    let mut best: Option<(u8, f32)> = None;
+    for i in 0..read_n {
+        let off = read_off.checked_add(i.checked_mul(read_sz)?)?;
+        let e = buf.get(off..off.checked_add(292)?)?;
+        if u32::from_le_bytes(e[0..4].try_into().ok()?) != 1 {
+            continue;
+        }
+        let val = f64::from_le_bytes(e[284..292].try_into().ok()?) as f32;
+        if !val.is_finite() || !(5.0..=115.0).contains(&val) {
+            continue;
+        }
+        let label = cstr_ascii(&e[12..140]);
+        let rank = if label.eq_ignore_ascii_case("CPU Package") || label.eq_ignore_ascii_case("CPU (Tctl/Tdie)") {
+            0
+        } else if label.eq_ignore_ascii_case("Core Max") || label.eq_ignore_ascii_case("CPU Die (average)") {
+            1
+        } else if label.eq_ignore_ascii_case("CPU") || label.eq_ignore_ascii_case("CPU (Tdie)") {
+            2
+        } else {
+            continue;
+        };
+        if best.is_none_or(|(r, _)| rank < r) {
+            best = Some((rank, val));
+            if rank == 0 {
+                break;
+            }
+        }
+    }
+    best.map(|(_, v)| v)
 }

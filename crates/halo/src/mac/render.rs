@@ -457,7 +457,8 @@ pub fn run(dir: &str, args: &[String]) -> i32 {
         }
     }
     // Pill: how the floating outline moves (stills can't show it), then its own looks.
-    if crate::pill::on(theme) {
+    let (ty, th) = theme.split();
+    if crate::pill::on(ty) {
         let n = SCENES.len() + SYSTEM_SCENES.len() + 1;
         let path = out.join(format!("{n:02}-open-close-frames{suffix}.png"));
         match render_morph(&mut gfx, theme, notch, &path) {
@@ -469,7 +470,7 @@ pub fn run(dir: &str, args: &[String]) -> i32 {
         }
         for (k, scene) in PILL_SCENES.into_iter().enumerate() {
             // The status bar is a look only the Pill theme offers.
-            if scene == Scene::IdleStatus && !crate::pill::status::looks(theme).contains(&IdleStyle::Status) {
+            if scene == Scene::IdleStatus && !crate::pill::status::looks(ty, th).contains(&IdleStyle::Status) {
                 continue;
             }
             let path = out.join(format!("{:02}-{}{suffix}.png", n + 1 + k, scene.name()));
@@ -566,7 +567,7 @@ fn render_settings(gfx: &mut Gfx, section: crate::settings_window::Section, them
     let (w_px, h_px) = ((w * SCALE) as usize, (h * SCALE) as usize);
     let bmp = Bitmap::new(w_px, h_px, SCALE).ok_or("no bitmap")?;
     let mut st = AppState::new(Settings { theme, hide_in_fullscreen: !on_top, ..Settings::default() }, Store::default());
-    st.accent = crate::app::theme_accent(theme);
+    st.accent = crate::app::theme_accent(theme.split().1);
     st.ui.autostart = Some(true);
     let mut view = crate::settings_window::View::new(section);
     let frame = crate::settings_window::Frame { card: Rect::new(0.0, 0.0, w, h), own_chrome: false, top: TITLEBAR, still: true };
@@ -1409,7 +1410,7 @@ fn render_scene(gfx: &mut Gfx, scene: Scene, theme: Theme, notch: Option<Notch>,
         if let Some(n) = notch {
             g = notch::geom(&mode, st, n, g);
         }
-        let gap = if crate::pill::on(theme) { notch.map_or(Some(crate::pill::TOP_GAP), |n| notch::pill_gap(&mode, st, n)) } else { None };
+        let gap = if crate::pill::on(theme.split().0) { notch.map_or(Some(crate::pill::TOP_GAP), |n| notch::pill_gap(&mode, st, n)) } else { None };
         if hovering {
             g = if gap.is_some() { crate::pill::motion::hover_lift(g) } else { crate::island::Geom::new(g.w + 12.0, g.h + 4.0, g.r + 2.0) };
         }
@@ -1419,7 +1420,7 @@ fn render_scene(gfx: &mut Gfx, scene: Scene, theme: Theme, notch: Option<Notch>,
     // text width) and ease in over their first frames (the song handing the
     // middle to its line): draw the scene twice, a moment before the
     // picture's, so it shows them as the app does a few frames in.
-    if crate::pill::on(theme) {
+    if crate::pill::on(theme.split().0) {
         for t in [NOW_MONO - 0.4, NOW_MONO - 0.2] {
             st.now = t;
             let (g, gap) = size(&st);

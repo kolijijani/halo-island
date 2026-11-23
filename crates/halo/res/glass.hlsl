@@ -47,12 +47,20 @@ VsOut vs_main(uint id : SV_VertexID)
     return o;
 }
 
-// Distance (px) from p to the island's edge, positive inside. The top is the
-// screen's edge, not glass, so it has no rim.
+// Distance (px) from p to the island's edge, positive inside.
+// s < 0 draws a floating rounded capsule/card (Pill); s >= 0 draws a top-edge Notch.
 float inside(float2 p)
 {
     float x0 = body.x, y0 = body.y, x1 = body.z, y1 = body.w;
     float r = shape.x, s = shape.y;
+    if (s < 0.0)
+    {
+        float2 hs = 0.5 * float2(x1 - x0, y1 - y0);
+        float2 c = 0.5 * float2(x0 + x1, y0 + y1);
+        float rr = min(r, min(hs.x, hs.y));
+        float2 q = abs(p - c) - (hs - rr);
+        return rr - (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0));
+    }
     if (p.y > y1 - r && p.x < x0 + r)
         return r - length(p - float2(x0 + r, y1 - r));
     if (p.y > y1 - r && p.x > x1 - r)

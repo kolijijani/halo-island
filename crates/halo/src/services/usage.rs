@@ -592,18 +592,11 @@ impl Worker {
 }
 
 /// The services a look goes through, with their places in `ProviderId::ALL`.
-/// On a Mac, a service that starts a program (Antigravity's `agy`, seconds
-/// long) comes after all the others, so their cards don't wait for it.
-#[cfg(target_os = "macos")]
+/// A service that starts a program (Antigravity's `agy`, seconds long) comes
+/// after all the others, so their cards don't wait for it.
 fn look_order() -> impl Iterator<Item = (usize, &'static dyn Provider)> {
     let all = usage::all().into_iter().enumerate();
     all.clone().filter(|(_, p)| !p.runs_programs()).chain(all.filter(|(_, p)| p.runs_programs()))
-}
-
-/// Windows starts no program for the tab: the services in their own order.
-#[cfg(not(target_os = "macos"))]
-fn look_order() -> impl Iterator<Item = (usize, &'static dyn Provider)> {
-    usage::all().into_iter().enumerate()
 }
 
 /// A service's place in `ProviderId::ALL`, and so in the worker's list.
@@ -613,7 +606,7 @@ fn at(id: ProviderId) -> usize {
 }
 
 /// What one want gave: files (whole, the newest of a folder, a piece) as
-/// `pace` reads them, a Mac keychain item, a kept key.
+/// `pace` reads them, a Mac keychain item, a kept key, or a running process.
 fn read(w: &Want, names: &[&'static str]) -> Got {
     match w {
         Want::File { path, max } => pace::read_file(path, *max),
@@ -623,6 +616,7 @@ fn read(w: &Want, names: &[&'static str]) -> Got {
         Want::Secret(_) => Got::Missing,
         Want::Range { path, offset, len } => pace::read_range(path, *offset, *len),
         Want::Unseal { sealed, key } => unseal(&sealed.0, key.as_ref().map(|k| k.0.as_slice())),
+        Want::Process(name) => process_running(name),
     }
 }
 
@@ -764,10 +758,118 @@ fn run_program(cli: Cli, dirs: &Dirs, held: &mut bool) -> Result<Reply, NetFail>
     answer
 }
 
-/// Windows runs no program for the AI tab yet.
-#[cfg(not(target_os = "macos"))]
+/// Windows: runs `agy.exe` if installed (for Antigravity CLI quota), with no
+/// console window and below-normal priority. Returns immediately with
+/// `NetFail::Other` when `agy.exe` is not installed (no process spawned).
+#[cfg(windows)]
+fn run_program(cli: Cli, dirs: &Dirs, held: &mut bool) -> Result<Reply, NetFail> {
+    use std::io::Read;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    use windows::Win32::System::Threading::{BELOW_NORMAL_PRIORITY_CLASS, CREATE_NO_WINDOW};
+
+    if *held {
+        return Ok(Reply { status: 401, body: String::new(), retry_after_s: None });
+    }
+    let Some(exe) = find_agy_windows(dirs) else {
+        return Err(NetFail::Other("agy is not installed".into()));
+    };
+    let (args, limit): (&[&str], Duration) = match cli {
+        Cli::AgyVersion => (&["--version"], Duration::from_secs(5)),
+        Cli::AgyUsage => (&["-p", "/usage", "--output-format", "json", "--print-timeout", "20s"], Duration::from_secs(30)),
+    };
+    let (mut reader_pipe, out_w) = std::io::pipe().map_err(|_| NetFail::Other("no pipe".into()))?;
+    let err_w = out_w.try_clone().map_err(|_| NetFail::Other("no pipe".into()))?;
+    let mut child = Command::new(&exe)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out_w))
+        .stderr(Stdio::from(err_w))
+        .env("BROWSER", "nul")
+        .env("AGY_DISABLE_AUTO_UPDATE", "1")
+        .creation_flags((CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS).0)
+        .spawn()
+        .map_err(|_| NetFail::Other("agy would not start".into()))?;
+    const OUTPUT_MAX: u64 = 512 * 1024;
+    const SIGN_IN: &str = "Authentication required. Please visit the URL";
+    let reader = std::thread::spawn(move || {
+        let mut out = Vec::new();
+        let _ = (&mut reader_pipe).take(OUTPUT_MAX).read_to_end(&mut out);
+        out
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Ok(st),
+            Ok(None) if started.elapsed() >= limit => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err(NetFail::Timeout);
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(_) => break Err(NetFail::Other("agy wait failed".into())),
+        }
+    };
+    let out = reader.join().unwrap_or_default();
+    if out.windows(SIGN_IN.len()).any(|w| w == SIGN_IN.as_bytes()) {
+        *held = true;
+        return Ok(Reply { status: 401, body: String::new(), retry_after_s: None });
+    }
+    let st = status?;
+    let body = String::from_utf8_lossy(&out).into_owned();
+    Ok(Reply { status: if st.success() { 200 } else { 500 }, body, retry_after_s: None })
+}
+
+#[cfg(windows)]
+fn find_agy_windows(dirs: &Dirs) -> Option<PathBuf> {
+    let candidates = [
+        dirs.home.join(r".local\bin\agy.exe"),
+        dirs.local.join(r"Programs\antigravity\agy.exe"),
+        dirs.config.join(r"Antigravity\bin\agy.exe"),
+    ];
+    if let Some(p) = candidates.into_iter().find(|p| p.is_file()) {
+        return Some(p);
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).map(|d| d.join("agy.exe")).find(|p| p.is_file())
+}
+
+#[cfg(all(not(target_os = "macos"), not(windows)))]
 fn run_program(_cli: Cli, _dirs: &Dirs, _held: &mut bool) -> Result<Reply, NetFail> {
     Err(NetFail::Other("no program to run".into()))
+}
+
+/// Checks if a process with `name` (e.g. `Antigravity.exe`) is running on
+/// Windows. Runs only during an AI tab refresh, never at rest.
+#[cfg(windows)]
+fn process_running(name: &str) -> Got {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+    // SAFETY: standard Win32 ToolHelp snapshot enumeration, closed before return.
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return Got::Missing };
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut found = false;
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(name) {
+                    found = true;
+                    break;
+                }
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+        if found { Got::Text("running".into()) } else { Got::Missing }
+    }
+}
+
+#[cfg(not(windows))]
+fn process_running(_name: &str) -> Got {
+    Got::Missing
 }
 
 /// What an Electron app sealed, opened by Windows ([`Want::Unseal`]).

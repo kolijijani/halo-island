@@ -372,10 +372,12 @@ impl GlassPass {
         let use_copy = p.use_copy && self.copy.is_some();
         let (cw, ch) = self.copy.as_ref().map_or((1, 1), |c| (c.w, c.h));
         let b = p.body;
-        let r = p.radius.min(b.h).min(b.w / 2.0).max(0.0);
+        let max_h = if p.shoulder < 0.0 { b.h / 2.0 } else { b.h };
+        let r = p.radius.min(max_h).min(b.w / 2.0).max(0.0);
+        let sh = if p.shoulder < 0.0 { -1.0 } else { p.shoulder * scale };
         let k = Consts {
             body: [b.x * scale, b.y * scale, (b.x + b.w) * scale, (b.y + b.h) * scale],
-            shape: [r * scale, p.shoulder.max(0.0) * scale, scale, if use_copy { 1.0 } else { 0.0 }],
+            shape: [r * scale, sh, scale, if use_copy { 1.0 } else { 0.0 }],
             lens: [(p.bevel * scale).max(1.0), p.mag * scale, halo_core::glass::RIM_POWER, p.frost_mix.clamp(0.0, 1.0)],
             tint_dark: [p.ground_dark.r, p.ground_dark.g, p.ground_dark.b, p.tint_dark],
             tint_light: [p.ground_light.r, p.ground_light.g, p.ground_light.b, p.tint_light],
@@ -700,7 +702,7 @@ impl Glass {
             dispersion: 0.03,
             lens: self.lens,
             use_copy: self.use_copy && has_copy,
-            probe: self.copy.is_some(),
+            probe: self.copy.is_some() && shoulder >= 0.0,
             copy_origin: (origin.0 as f32, origin.1 as f32),
             probe_x: self.probe_px,
         };

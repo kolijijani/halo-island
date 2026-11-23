@@ -28,7 +28,7 @@ use crate::state::{AppState, PairedPhone, PhoneDrop, PhoneView};
 use crate::ui::{wid, wid_n, PillStyle, Ui, WidgetId, PILL_GAP, PILL_SMALL};
 use halo_core::geom::{palette, Color, Point, Rect};
 use halo_core::phonedrop::{fmt_bytes, QrMatrix};
-use halo_core::shelf::{display_name, extension, ShelfItem, MAX_SHELF_ITEMS};
+use halo_core::shelf::{extension, is_app_shortcut, tile_label, ShelfItem, MAX_PINNED_SHELF, MAX_SHELF_ITEMS};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -123,6 +123,7 @@ enum Action {
     Reveal(String),
     DragOut(String),
     Recheck(String),
+    TogglePin(String),
     Remove(String),
     Clear,
     Undo,
@@ -277,6 +278,13 @@ fn apply(st: &mut AppState, l: &mut Local, items: &[ShelfItem], actions: Vec<Act
                 st.cmd(Command::DragOut(vec![p]));
             }
             Action::Recheck(p) => recheck(st, l, &p, now, 0.0),
+            Action::TogglePin(p) => match st.store.shelf.toggle_pin(&p) {
+                Some(pinned) => {
+                    st.save();
+                    st.toast(if pinned { "Pinned to Shelf" } else { "Unpinned" });
+                }
+                None => st.toast(format!("Max {MAX_PINNED_SHELF} pinned")),
+            },
             Action::Remove(p) => {
                 l.undo = Some((items.to_vec(), now));
                 if st.store.shelf.remove(&p) {
@@ -285,11 +293,15 @@ fn apply(st: &mut AppState, l: &mut Local, items: &[ShelfItem], actions: Vec<Act
                 l.count = st.store.shelf.items.len();
             }
             Action::Clear => {
-                l.undo = Some((items.to_vec(), now));
-                st.store.shelf.clear();
-                st.ui.shelf_scroll = 0.0;
-                l.count = 0;
-                st.save();
+                let snap = items.to_vec();
+                let removed = st.store.shelf.clear_unpinned();
+                if removed > 0 {
+                    l.undo = Some((snap, now));
+                    st.ui.shelf_scroll = 0.0;
+                    l.count = st.store.shelf.items.len();
+                    st.save();
+                    st.toast(if removed == 1 { "Cleared 1 item".to_string() } else { format!("Cleared {removed} items") });
+                }
             }
             Action::Undo => {
                 if let Some((snapshot, _)) = l.undo.take() {
@@ -409,15 +421,43 @@ fn draw_items(
                     ui.c.icon(icon, Rect::from_center(thumb.center(), 24.0, 24.0), palette::TEXT_DIM);
                 }
             }
+            if it.pinned {
+                ui.c.stroke_rrect(thumb, THUMB_R, st.accent.with_alpha(0.35), 1.2);
+            }
         });
         let name_r = Rect::new(tile.x + 6.0, thumb.bottom() + 8.0, TILE_W - 12.0, 16.0);
-        ui.c.text(&display_name(&it.path), name_r, &TextStyle::footnote().weight(Weight::Medium).center());
+        ui.c.text(&tile_label(&it.path), name_r, &TextStyle::footnote().weight(Weight::Medium).center());
         ui.c.set_alpha(tile_a);
         let cap_r = Rect::new(name_r.x, name_r.bottom(), name_r.w, 14.0);
         if missing {
             ui.c.text("Missing", cap_r, &TextStyle::caption().weight(Weight::Medium).color(palette::TEXT_DIM).center());
         } else {
             ui.c.text(&caption(&it.path, kind), cap_r, &TextStyle::caption().color(palette::TEXT_FAINT).center());
+        }
+
+        // Pin button on top-left corner of thumbnail (always shown when pinned, hover otherwise).
+        if it.pinned || hot {
+            let pc = Point::new(thumb.x + 2.0, thumb.y + 2.0);
+            let pr = ui.button(wid_n("shelf.pin", wid(&k)), intersect(Rect::from_center(pc, 22.0, 22.0), row));
+            let fill = if it.pinned {
+                st.accent.with_alpha(if pr.hovered { 0.34 } else { 0.24 })
+            } else if pr.pressed {
+                Color::white(0.42)
+            } else if pr.hovered {
+                Color::white(0.34)
+            } else {
+                Color::white(0.22)
+            };
+            let icon_col = if it.pinned { st.accent } else { palette::TEXT };
+            let pin_k = if it.pinned { 1.0 } else { h };
+            scaled(ui, pc, pin_k, |ui| {
+                ui.c.fill_circle(pc, 11.0, palette::ISLAND);
+                ui.c.fill_circle(pc, 9.0, fill);
+                ui.c.icon(Icon::Pin, Rect::from_center(pc, 10.0, 10.0), icon_col);
+            });
+            if pr.clicked {
+                actions.push(Action::TogglePin(it.path.clone()));
+            }
         }
 
         // Remove button on hover, tucked onto the thumbnail's corner.
@@ -494,16 +534,20 @@ fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[Shelf
     let cw = ui.c.measure(&count, &cs, 200.0).0;
     ui.c.text(&count, Rect::new(head.x, head.y, cw + 4.0, head.h), &cs);
 
-    // Small utility pills on the right: Clear, plus Undo for a while after a removal.
-    let clear_w = ui.pill_width("Clear", true, true);
-    let clear_r = Rect::new(head.right() - clear_w, head.y, clear_w, PILL_SMALL);
-    if scaled(ui, clear_r.center(), e.pop(0.1), |ui| ui.pill(wid("shelf.clear"), clear_r, "Clear", Some(Icon::Trash), PillStyle::Utility)).clicked {
-        actions.push(Action::Clear);
+    // Small utility pills on the right: Clear (unpinned), plus Undo for a while after a removal.
+    let mut right = head.right();
+    if items.iter().any(|it| !it.pinned) {
+        let clear_w = ui.pill_width("Clear", true, true);
+        let clear_r = Rect::new(right - clear_w, head.y, clear_w, PILL_SMALL);
+        if scaled(ui, clear_r.center(), e.pop(0.1), |ui| ui.pill(wid("shelf.clear"), clear_r, "Clear", Some(Icon::Trash), PillStyle::Utility)).clicked {
+            actions.push(Action::Clear);
+        }
+        right = clear_r.x;
     }
-    let mut right = clear_r.x;
     if l.undo.as_ref().is_some_and(|(_, t)| st.now - t < UNDO_SECS) {
         let undo_w = ui.pill_width("Undo", true, true);
-        let undo_r = Rect::new(clear_r.x - PILL_GAP - undo_w, head.y, undo_w, PILL_SMALL);
+        let gap = if right < head.right() { PILL_GAP } else { 0.0 };
+        let undo_r = Rect::new(right - gap - undo_w, head.y, undo_w, PILL_SMALL);
         if ui.pill(wid("shelf.undo"), undo_r, "Undo", Some(Icon::Undo), PillStyle::UtilityAccent(st.accent)).clicked {
             actions.push(Action::Undo);
         }
@@ -512,7 +556,8 @@ fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[Shelf
     // Phone drop: send from or save to a phone (the panel opens below).
     if st.phone.is_none() {
         let phone_w = ui.pill_width("Phone", true, true);
-        let phone_r = Rect::new(right - PILL_GAP - phone_w, head.y, phone_w, PILL_SMALL);
+        let gap = if right < head.right() { PILL_GAP } else { 0.0 };
+        let phone_r = Rect::new(right - gap - phone_w, head.y, phone_w, PILL_SMALL);
         if scaled(ui, phone_r.center(), e.pop(0.14), |ui| ui.pill(wid("shelf.phone"), phone_r, "Phone", Some(Icon::Phone), PillStyle::Utility)).clicked {
             actions.push(Action::PhoneOpen);
         }
@@ -540,6 +585,9 @@ fn draw_header(ui: &mut Ui, st: &AppState, l: &Local, head: Rect, items: &[Shelf
 fn caption(path: &str, kind: Option<PathKind>) -> String {
     if kind == Some(PathKind::Folder) {
         return "Folder".into();
+    }
+    if is_app_shortcut(path) {
+        return "App".into();
     }
     let ext = extension(path);
     if !ext.is_empty() {

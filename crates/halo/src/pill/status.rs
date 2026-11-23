@@ -17,7 +17,7 @@ use crate::state::AppState;
 use crate::ui::Ui;
 use halo_core::datetime::{fmt_clock, fmt_date_short};
 use halo_core::geom::{palette, Color, Rect};
-use halo_core::settings::{IdleStyle, Theme};
+use halo_core::settings::{IdleStyle, NotchTheme, NotchType};
 use std::cell::Cell;
 
 /// Every resting pill is this tall, a capsule.
@@ -55,28 +55,23 @@ thread_local! {
     static WIDTH: Cell<Option<f32>> = const { Cell::new(None) };
 }
 
-/// The idle looks a theme offers, in the pickers' order. Status is the Pill
-/// theme's own: the other themes draw the clock for it. Diorama rests as
-/// its picture, with the time in it (Clock) or without (Minimal), or
-/// hidden: it has no eyes.
-pub fn looks(theme: Theme) -> &'static [IdleStyle] {
+/// The idle looks a `(notch_type, notch_theme)` offers, in the pickers' order.
+/// Status is the Pill type's own (except Pill + Diorama, which rests as its picture).
+pub fn looks(ty: NotchType, theme: NotchTheme) -> &'static [IdleStyle] {
     const ALL: [IdleStyle; 5] = [IdleStyle::Clock, IdleStyle::Eyes, IdleStyle::Minimal, IdleStyle::Hidden, IdleStyle::Status];
     const DIORAMA: [IdleStyle; 3] = [IdleStyle::Clock, IdleStyle::Minimal, IdleStyle::Hidden];
-    match theme {
-        Theme::Pill => &ALL,
-        Theme::Diorama => &DIORAMA,
-        _ => &ALL[..4],
+    match (ty, theme) {
+        (NotchType::Pill, NotchTheme::Diorama) => &DIORAMA,
+        (NotchType::Pill, _) => &ALL,
+        (NotchType::Notch, _) => &ALL[..4],
     }
 }
 
-/// The look `theme` draws for `style`, which a picker marks: outside Pill,
-/// Status shows the clock (and comes back when Pill does); in Diorama, Eyes
-/// shows the picture alone, as Minimal does (and comes back with another
-/// theme).
-pub fn shown(theme: Theme, style: IdleStyle) -> IdleStyle {
+/// The look drawn for `style`, which a picker marks.
+pub fn shown(ty: NotchType, theme: NotchTheme, style: IdleStyle) -> IdleStyle {
     match style {
-        IdleStyle::Status if theme != Theme::Pill => IdleStyle::Clock,
-        IdleStyle::Eyes if theme == Theme::Diorama => IdleStyle::Minimal,
+        IdleStyle::Status if ty != NotchType::Pill || theme == NotchTheme::Diorama => IdleStyle::Clock,
+        IdleStyle::Eyes if ty == NotchType::Pill && theme == NotchTheme::Diorama => IdleStyle::Minimal,
         _ => style,
     }
 }
@@ -210,31 +205,28 @@ mod tests {
 
     #[test]
     fn status_is_the_pill_themes_own() {
-        assert_eq!(looks(Theme::Pill).last(), Some(&IdleStyle::Status));
-        assert_eq!(shown(Theme::Pill, IdleStyle::Status), IdleStyle::Status);
-        for theme in [Theme::Classic, Theme::Halo, Theme::Glass] {
-            assert_eq!(looks(theme), &looks(Theme::Pill)[..4], "{theme:?}");
-            // They draw the clock for it, so a picker marks Clock.
-            assert_eq!(shown(theme, IdleStyle::Status), IdleStyle::Clock, "{theme:?}");
-            assert_eq!(shown(theme, IdleStyle::Eyes), IdleStyle::Eyes, "{theme:?}");
+        assert_eq!(looks(NotchType::Pill, NotchTheme::Classic).last(), Some(&IdleStyle::Status));
+        assert_eq!(shown(NotchType::Pill, NotchTheme::Classic, IdleStyle::Status), IdleStyle::Status);
+        for theme in [NotchTheme::Classic, NotchTheme::Halo, NotchTheme::Glass, NotchTheme::Diorama] {
+            assert_eq!(looks(NotchType::Notch, theme), &looks(NotchType::Pill, NotchTheme::Classic)[..4], "{theme:?}");
+            assert_eq!(shown(NotchType::Notch, theme, IdleStyle::Status), IdleStyle::Clock, "{theme:?}");
+            assert_eq!(shown(NotchType::Notch, theme, IdleStyle::Eyes), IdleStyle::Eyes, "{theme:?}");
         }
     }
 
     #[test]
     fn diorama_rests_as_its_picture_with_the_time_or_without() {
-        assert_eq!(looks(Theme::Diorama), &[IdleStyle::Clock, IdleStyle::Minimal, IdleStyle::Hidden]);
-        // Every look a picker offers is one it then marks.
-        for style in looks(Theme::Diorama) {
-            assert_eq!(shown(Theme::Diorama, *style), *style);
+        assert_eq!(looks(NotchType::Pill, NotchTheme::Diorama), &[IdleStyle::Clock, IdleStyle::Minimal, IdleStyle::Hidden]);
+        for style in looks(NotchType::Pill, NotchTheme::Diorama) {
+            assert_eq!(shown(NotchType::Pill, NotchTheme::Diorama, *style), *style);
         }
-        // Looks left over from another theme show as what the picture does.
-        assert_eq!(shown(Theme::Diorama, IdleStyle::Status), IdleStyle::Clock);
-        assert_eq!(shown(Theme::Diorama, IdleStyle::Eyes), IdleStyle::Minimal);
+        assert_eq!(shown(NotchType::Pill, NotchTheme::Diorama, IdleStyle::Status), IdleStyle::Clock);
+        assert_eq!(shown(NotchType::Pill, NotchTheme::Diorama, IdleStyle::Eyes), IdleStyle::Minimal);
     }
 
     #[test]
     fn the_bar_is_a_capsule_that_makes_room_for_the_battery() {
-        let mut st = AppState::new(Settings { theme: Theme::Pill, idle_style: IdleStyle::Status, ..Settings::default() }, Store::default());
+        let mut st = AppState::new(Settings { notch_type: NotchType::Pill, idle_style: IdleStyle::Status, ..Settings::default() }, Store::default());
         st.volume.known = true;
         st.power.has_battery = false;
         let bare = geom(&st).unwrap();

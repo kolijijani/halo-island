@@ -119,7 +119,7 @@ const PRESS_INK: f32 = 0.16;
 
 /// The page's content height, or `None` for Classic's.
 pub fn height(st: &AppState) -> Option<f32> {
-    if !super::on(st.settings.theme) {
+    if !super::on(st.settings.notch_type) {
         return None;
     }
     Some(if st.media.is_some() { H_SESSION } else { H_EMPTY })
@@ -127,7 +127,7 @@ pub fn height(st: &AppState) -> Option<f32> {
 
 /// Draw the page in `area`. `false` = the Classic page draws.
 pub fn draw(ui: &mut Ui, st: &mut AppState, area: Rect) -> bool {
-    if !super::on(st.settings.theme) {
+    if !super::on(st.settings.notch_type) {
         return false;
     }
     // Classic's animation state (art spring, lyrics scroll, lyric clock): one
@@ -197,7 +197,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     classic::follow(&mut a.art_scale, &mut a.art_vel, art_target, classic::ART_OMEGA, dt);
     let art_settled = classic::settle(&mut a.art_scale, &mut a.art_vel, art_target, 0.0005, 0.005);
     anim |= !art_settled;
-    draw_art(ui, m.art.as_ref(), Rect::new(x0, y0, ART, ART), a.art_scale, art_settled.then_some(scale));
+    draw_art(ui, m.art.as_ref(), Rect::new(x0, y0, ART, ART), accent, a.art_scale, art_settled.then_some(scale));
 
     // The player's name, the title and the artist, in a column that stops
     // short of the equalizer.
@@ -232,6 +232,7 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
     let bar_x = snap(block.x + slot + TIME_GAP);
     let bar = Rect::new(bar_x, snap(row_cy - BAR_H / 2.0), (snap(block.right() - slot - TIME_GAP) - bar_x).max(0.0), BAR_H);
     if has_dur {
+        let hover = m.can_seek && ui.hovered(Rect::new(bar.x, bar.y - 6.0, bar.w, bar.h + 12.0));
         let scrub = ui.progress_bar(wid("media_seek"), bar, tl.progress_at(now), palette::TEXT, m.can_seek);
         if scrub.began {
             // A drag starts: the player can get ready for the seek meanwhile.
@@ -242,7 +243,16 @@ fn draw_session(ui: &mut Ui, st: &mut AppState, area: Rect, a: &mut Anim, fr: &F
         }
         // While dragging, the times follow the pointer; the player only
         // seeks on release.
-        let pos = scrub.held.map_or(pos, |f| f as f64 * tl.duration_s);
+        let (progress, pos) = match scrub.held {
+            Some(f) => (f, f as f64 * tl.duration_s),
+            None => (tl.progress_at(now), pos),
+        };
+        if hover || scrub.held.is_some() {
+            let c = Point::new(bar.x + bar.w * progress, bar.y + bar.h / 2.0);
+            ui.c.fill_circle(c, 5.5, palette::TEXT);
+            let hover_f = scrub.held.or_else(|| ui.input.mouse.map(|p| ((p.x - bar.x) / bar.w.max(1.0)).clamp(0.0, 1.0))).unwrap_or(progress);
+            classic::draw_seek_tip(ui, bar, hover_f, hover_f as f64 * tl.duration_s, scale);
+        }
         let remaining = (tl.duration_s.floor() - pos.floor()).max(0.0);
         let cap = row_cy - FONT_CAP * times.size / 2.0;
         ui.c.text(&fmt_duration(pos), row(block.x, slot, cap, times.size), &times);
@@ -375,7 +385,7 @@ fn row(x: f32, w: f32, cap_top: f32, size: f32) -> Rect {
 
 /// The cover (or a blank tile) scaled about its centre by `k`; on whole
 /// pixels when `px_scale` is given (i.e. at rest).
-fn draw_art(ui: &mut Ui, art: Option<&Image>, r: Rect, k: f32, px_scale: Option<f32>) {
+fn draw_art(ui: &mut Ui, art: Option<&Image>, r: Rect, accent: Color, k: f32, px_scale: Option<f32>) {
     let mut rr = Rect::from_center(r.center(), r.w * k, r.h * k);
     if let Some(s) = px_scale {
         let (x0, y0) = (classic::snap(rr.x, s), classic::snap(rr.y, s));
@@ -384,6 +394,7 @@ fn draw_art(ui: &mut Ui, art: Option<&Image>, r: Rect, k: f32, px_scale: Option<
     let radius = ART_RADIUS * k;
     match art {
         Some(img) => {
+            classic::draw_art_glow(ui, rr, radius, accent);
             ui.c.image(img, rr, radius);
             // Hairline so dark covers keep an edge on the black card.
             ui.c.stroke_rrect(rr, radius, Color::white(0.08), 1.0);

@@ -15,7 +15,7 @@ use halo_core::svgpath::Seg;
 /// geometry so the pages follow whatever radius the card is given. `None` in
 /// the other themes: their pages draw exactly as before.
 pub(crate) fn pill_card(st: &AppState, area: Rect) -> Option<(Rect, f32)> {
-    if !crate::pill::on(st.settings.theme) {
+    if !crate::pill::on(st.settings.notch_type) {
         return None;
     }
     let r = crate::activities::geom(&crate::activities::Mode::Expanded(st.page), st).r;

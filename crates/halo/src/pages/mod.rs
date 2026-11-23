@@ -193,6 +193,30 @@ impl PageKind {
         }
     }
 
+    /// Accent tint for the tab's tile in the in-island overflow popover.
+    pub fn tint(self) -> Color {
+        match self {
+            PageKind::Media => palette::PINK,
+            PageKind::Widgets => palette::CYAN,
+            PageKind::Today => palette::RED,
+            PageKind::Shelf => palette::BLUE,
+            PageKind::Tasks => palette::ORANGE,
+            PageKind::Focus => Color::hex(0x5E5CE6),
+            PageKind::Ai => palette::PURPLE,
+            PageKind::System => Color::hex(0x636366),
+            PageKind::Games => palette::PINK,
+            PageKind::Script => Color::hex(0xA2845E),
+            PageKind::Record => palette::RED,
+            PageKind::Prayer => Color::hex(0x30B0A0),
+            PageKind::Stocks => palette::GREEN,
+            PageKind::Caffeine => Color::hex(0xA2845E),
+            PageKind::Downloads => palette::BLUE,
+            PageKind::Notifications => palette::ORANGE,
+            PageKind::Addons => Color::hex(0x0A84FF),
+            PageKind::Settings => Color::hex(0x8E8E93),
+        }
+    }
+
     fn index(self) -> usize {
         Self::ALL.iter().position(|p| *p == self).unwrap_or(0)
     }
@@ -251,7 +275,7 @@ pub fn first_tab(st: &AppState) -> PageKind {
 }
 
 fn row(st: &AppState, open: Option<PageKind>) -> Vec<PageKind> {
-    PageKind::ALL
+    let mut visible: Vec<PageKind> = PageKind::ALL
         .into_iter()
         .filter(|&p| match p {
             PageKind::Ai => st.ai_usage_on(),
@@ -268,7 +292,20 @@ fn row(st: &AppState, open: Option<PageKind>) -> Vec<PageKind> {
             p if p.hideable() => !st.tab_hidden(p) || open == Some(p),
             p => p.tabbed(),
         })
-        .collect()
+        .collect();
+    if !st.settings.tab_order.is_empty() {
+        let custom = &st.settings.tab_order;
+        visible.sort_by_key(|&p| {
+            if p == PageKind::Addons {
+                (2usize, PageKind::ALL.len())
+            } else if let Some(pos) = custom.iter().position(|k| k.eq_ignore_ascii_case(p.key())) {
+                (0usize, pos)
+            } else {
+                (1usize, p.index())
+            }
+        });
+    }
+    visible
 }
 
 /// The tab after (or before) `p` among [`tabs`], wrapping around.
@@ -322,10 +359,8 @@ pub fn next_wake(page: PageKind, st: &AppState) -> Option<f64> {
     // Halo beside the pin in his theme blinks and flicks an ear now and
     // then; asleep at night, he stays still.
     let halo = (!crate::activities::night(st)).then(|| crate::face::next_rest_move(st.now));
-    match (wake, halo) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (a, b) => a.or(b),
-    }
+    let toast = st.ui.toast.as_ref().map(|(_, until)| (until - TOAST_FADE_S).max(st.now));
+    [wake, halo, toast].into_iter().flatten().reduce(f64::min)
 }
 
 /// A page switch in progress: the page we came from, 0..1 progress, and the
@@ -353,16 +388,225 @@ const TABS_END: f32 = 0.6;
 /// `body` is the island at its final size, so nothing reflows while it opens.
 pub fn draw_expanded(ui: &mut Ui, st: &mut AppState, body: Rect, page: PageKind, transition: Option<PageTransition>) {
     if crate::pill::expanded::draw(ui, st, body, page, transition) {
+        if st.ui.quick_open {
+            draw_quick_switcher(ui, st, body);
+        }
+        draw_toast(ui, st, body);
         return;
     }
     let tr = transition.filter(|tr| tr.t < 1.0 && tr.from != page);
     let header = header_rect(body);
-    let tip = draw_header(ui, st, header, page, tr);
-    draw_pages(ui, st, body, header, page, tr);
-    // Hover labels sit on top of the page, outside the content clip.
-    if let Some(tip) = tip {
+    let (tip, popover) = draw_header(ui, st, header, page, tr);
+    if popover.is_some() || st.ui.quick_open {
+        // Draw page content inert while a modal popover or Quick Switcher is open
+        // so clicks never hit controls behind it.
+        let mut ghost_input = Input::default();
+        let mut ghost_hits = Vec::new();
+        let now = ui.now;
+        let mut ghost = Ui::new(&mut *ui.c, &mut ghost_input, &mut ghost_hits, now);
+        draw_pages(&mut ghost, st, body, header, page, tr);
+        if ghost.repaint_requested() {
+            ui.request_anim();
+        }
+    } else {
+        draw_pages(ui, st, body, header, page, tr);
+    }
+    if st.ui.quick_open {
+        draw_quick_switcher(ui, st, body);
+    } else if let Some(popover) = popover {
+        draw_popover(ui, st, body, popover);
+    } else if let Some(tip) = tip {
+        // Hover labels sit on top of the page, outside the content clip.
         draw_tip(ui, header, &tip);
     }
+    draw_toast(ui, st, body);
+}
+
+const TOAST_FADE_S: f64 = 0.30;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum QuickAction {
+    Page(PageKind),
+    NewTask,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct QuickItem {
+    pub action: QuickAction,
+    pub label: &'static str,
+    pub icon: Icon,
+    pub tint: Color,
+    pub hint: Option<&'static str>,
+}
+
+const CTRL_HINTS: [&str; 9] = ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9"];
+
+/// Matching tabs and quick actions for the `Ctrl+K` Quick Switcher.
+pub(crate) fn quick_matches(st: &AppState, query: &str) -> Vec<QuickItem> {
+    let q = query.trim().to_ascii_lowercase();
+    let mut items = Vec::new();
+    for (i, p) in tabs(st).into_iter().enumerate() {
+        items.push(QuickItem {
+            action: QuickAction::Page(p),
+            label: p.title(),
+            icon: p.icon(),
+            tint: p.tint(),
+            hint: CTRL_HINTS.get(i).copied(),
+        });
+    }
+    items.push(QuickItem {
+        action: QuickAction::Page(PageKind::Settings),
+        label: PageKind::Settings.title(),
+        icon: PageKind::Settings.icon(),
+        tint: PageKind::Settings.tint(),
+        hint: None,
+    });
+    items.push(QuickItem {
+        action: QuickAction::NewTask,
+        label: "New task",
+        icon: Icon::Plus,
+        tint: palette::GREEN,
+        hint: None,
+    });
+    if q.is_empty() {
+        items
+    } else {
+        items.into_iter().filter(|it| it.label.to_ascii_lowercase().contains(&q)).collect()
+    }
+}
+
+fn run_quick_action(ui: &mut Ui, st: &mut AppState, action: QuickAction) {
+    st.ui.quick_open = false;
+    st.ui.quick_query.clear();
+    st.ui.quick_sel = 0;
+    match action {
+        QuickAction::Page(p) => {
+            st.cmd(Command::SetPage(p));
+            ui.blur();
+        }
+        QuickAction::NewTask => {
+            st.ui.task_parent = None;
+            st.cmd(Command::SetPage(PageKind::Tasks));
+            ui.blur();
+        }
+    }
+}
+
+/// Floating `Ctrl+K` Quick Switcher inside the expanded island.
+fn draw_quick_switcher(ui: &mut Ui, st: &mut AppState, body: Rect) {
+    let scrim = ui.button(wid("quick.scrim"), body);
+    ui.c.fill_rrect(body, 20.0, Color::rgba(0.0, 0.0, 0.0, 0.34));
+
+    let items = quick_matches(st, &st.ui.quick_query);
+    let shown = items.len().clamp(1, 5);
+    let row_h = 28.0;
+    let card_w = (body.w - 40.0).min(300.0).max(180.0);
+    let card_h = 34.0 + 8.0 + shown as f32 * row_h + 12.0;
+    let card = Rect::new(body.center().x - card_w * 0.5, (body.y + 18.0).min(body.bottom() - card_h - 8.0).max(body.y + 8.0), card_w, card_h);
+
+    let card_resp = ui.button(wid("quick.card"), card);
+    ui.c.fill_rrect(card, 14.0, palette::ISLAND.with_alpha(0.96));
+    ui.c.stroke_rrect(card, 14.0, Color::white(0.14), 1.0);
+
+    // Pull Up/Down before `text_input` consumes `ui.input.keys`.
+    let mut step: isize = 0;
+    ui.input.keys.retain(|k| match k {
+        crate::ui::KeyInput::Up => {
+            step -= 1;
+            false
+        }
+        crate::ui::KeyInput::Down => {
+            step += 1;
+            false
+        }
+        _ => true,
+    });
+    if !items.is_empty() {
+        let len = items.len() as isize;
+        let cur = (st.ui.quick_sel as isize).min(len - 1);
+        st.ui.quick_sel = (cur + step).rem_euclid(len) as usize;
+    } else {
+        st.ui.quick_sel = 0;
+    }
+
+    let input_r = Rect::new(card.x + 8.0, card.y + 8.0, card.w - 16.0, 30.0);
+    let iresp = ui.text_input(wid("quick.input"), input_r, &mut st.ui.quick_query, "Jump to tab or action…", 40);
+    if iresp.changed {
+        st.ui.quick_sel = 0;
+    }
+
+    let list_top = input_r.bottom() + 6.0;
+    let mut picked: Option<QuickAction> = None;
+    if items.is_empty() {
+        ui.c.text("No matching tab", Rect::new(card.x + 14.0, list_top, card.w - 28.0, row_h), &TextStyle::footnote().color(palette::TEXT_FAINT));
+    } else {
+        let start = st.ui.quick_sel.saturating_sub(shown - 1);
+        let end = (start + shown).min(items.len());
+        for (slot, item) in items[start..end].iter().enumerate() {
+            let idx = start + slot;
+            let rr = Rect::new(card.x + 8.0, list_top + slot as f32 * row_h, card.w - 16.0, row_h);
+            let rresp = ui.button(wid_n("quick.row", idx as u64), rr);
+            if rresp.hovered {
+                st.ui.quick_sel = idx;
+            }
+            if idx == st.ui.quick_sel {
+                ui.c.fill_rrect(rr, 8.0, Color::white(0.10));
+            }
+            let icon_r = Rect::from_center(Point::new(rr.x + 14.0, rr.center().y), 14.0, 14.0);
+            ui.c.icon(item.icon, icon_r, item.tint);
+            let mut label_right = rr.right() - 8.0;
+            if let Some(hint) = item.hint {
+                let hst = TextStyle::footnote().color(palette::TEXT_FAINT).right();
+                let hw = ui.c.measure(hint, &hst, 60.0).0;
+                ui.c.text(hint, Rect::new(rr.right() - 8.0 - hw, rr.y, hw, rr.h), &hst);
+                label_right = rr.right() - 14.0 - hw;
+            }
+            ui.c.text(item.label, Rect::new(rr.x + 28.0, rr.y, (label_right - (rr.x + 28.0)).max(0.0), rr.h), &TextStyle::body().color(palette::TEXT));
+            if rresp.clicked {
+                picked = Some(item.action.clone());
+            }
+        }
+    }
+
+    if let Some(action) = picked {
+        run_quick_action(ui, st, action);
+    } else if iresp.submitted {
+        if let Some(item) = items.get(st.ui.quick_sel) {
+            run_quick_action(ui, st, item.action.clone());
+        }
+    } else if iresp.cancelled || (scrim.clicked && !card_resp.hovered) {
+        st.ui.quick_open = false;
+        st.ui.quick_query.clear();
+        st.ui.quick_sel = 0;
+        ui.blur();
+    }
+}
+
+/// Brief floating feedback pill near the bottom of the expanded island.
+fn draw_toast(ui: &mut Ui, st: &mut AppState, body: Rect) {
+    let Some((msg, until)) = st.ui.toast.clone() else { return };
+    let left = until - st.now;
+    if left <= 0.0 {
+        st.ui.toast = None;
+        return;
+    }
+    let a = if left < TOAST_FADE_S {
+        ui.request_anim();
+        (left / TOAST_FADE_S).clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    };
+    let style = TextStyle::footnote().color(palette::TEXT);
+    let tw = ui.c.measure(&msg, &style, body.w - 48.0).0;
+    let pw = (tw + 20.0).ceil();
+    let ph = 24.0;
+    let pill = Rect::new(body.center().x - pw * 0.5, body.bottom() - ph - 10.0, pw, ph);
+    let prev_a = ui.c.alpha();
+    ui.c.set_alpha(prev_a * a);
+    ui.c.fill_rrect(pill, ph * 0.5, palette::ISLAND.with_alpha(0.94));
+    ui.c.stroke_rrect(pill, ph * 0.5, Color::white(0.14), 1.0);
+    ui.c.text(&msg, Rect::new(pill.x + (pw - tw) * 0.5, pill.y, tw + 2.0, pill.h), &style);
+    ui.c.set_alpha(prev_a);
 }
 
 /// The page content's rect inside the expanded island `body`: below the
@@ -474,6 +718,7 @@ const TAB_LABEL_END: f32 = 12.0;
 const DATE_GAP: f32 = 12.0;
 const PIN_GAP: f32 = 10.0;
 const PIN: f32 = 28.0;
+const POWER: f32 = 28.0;
 const GEAR: f32 = 28.0;
 const GEAR_GAP: f32 = 2.0;
 /// His theme: Halo peeks up beside the pin, as he does beside the clock when
@@ -488,10 +733,11 @@ pub(crate) const TIP_PAD: f32 = 8.0;
 const TIP_RADIUS: f32 = 8.0;
 /// White 0.16 over the black island, made opaque so page text can't show through.
 pub(crate) const TIP_FILL: Color = Color::rgba(0.16, 0.16, 0.16, 1.0);
-/// `tab_hover` slots of the pin and Settings buttons (tabs use their place in the row).
+/// `tab_hover` slots of the pin, Power, Settings and overflow buttons (tabs use their place in the row).
 const PIN_SLOT: usize = PageKind::ALL.len();
 const GEAR_SLOT: usize = PIN_SLOT + 1;
 const MORE_SLOT: usize = GEAR_SLOT + 1;
+const POWER_SLOT: usize = MORE_SLOT + 1;
 /// Crowded tabs narrow to this, then the rest go behind "…", as wide.
 const TAB_MIN_W: f32 = 24.0;
 /// Tabs end at least this far before the pin.
@@ -547,6 +793,14 @@ fn split_row(row: Vec<PageKind>, shown: usize, page: PageKind) -> (Vec<PageKind>
 }
 /// The Settings button's widget id (the self-test clicks it).
 pub const GEAR_ID: &str = "header.gear";
+/// The Power menu button's widget id.
+pub const POWER_ID: &str = "header.power";
+
+/// An open in-island header popover waiting to be painted above the page.
+pub(crate) enum HeaderPopover {
+    Tabs(Rect, Vec<PageKind>),
+    Power(Rect),
+}
 
 /// A hover label waiting to be painted above the page.
 pub(crate) struct Tip {
@@ -568,20 +822,79 @@ fn tab_layout(ui: &mut Ui, x0: f32, tabs: &[PageKind], active: PageKind, label_s
         .collect()
 }
 
+/// All tabs that appear in Settings › Tabs for reordering: every hideable tab
+/// (including hidden ones, so they can be toggled and ordered) plus any active
+/// add-on tabs, ordered by `settings.tab_order` (defaulting to `PageKind::ALL`).
+pub fn orderable_tabs(st: &AppState) -> Vec<PageKind> {
+    let mut list: Vec<PageKind> = Vec::new();
+    let active = tabs(st);
+    for &p in PageKind::ALL.iter() {
+        if p == PageKind::Addons || !p.tabbed() {
+            continue;
+        }
+        if hideable_tabs(st).contains(&p) || active.contains(&p) {
+            list.push(p);
+        }
+    }
+    if !st.settings.tab_order.is_empty() {
+        let custom = &st.settings.tab_order;
+        list.sort_by_key(|&p| {
+            if let Some(pos) = custom.iter().position(|k| k.eq_ignore_ascii_case(p.key())) {
+                (0usize, pos)
+            } else {
+                (1usize, p.index())
+            }
+        });
+    }
+    list
+}
+
+/// Move `tab` to `target`'s slot in `settings.tab_order`, preserving hidden or disabled keys in place.
+pub fn reorder_tab(st: &mut AppState, all: &[PageKind], tab: PageKind, target: PageKind) {
+    if tab == target || tab == PageKind::Addons || target == PageKind::Addons {
+        return;
+    }
+    let mut keys: Vec<String> = Vec::new();
+    for k in &st.settings.tab_order {
+        if !k.eq_ignore_ascii_case(PageKind::Addons.key()) && !keys.iter().any(|x| x.eq_ignore_ascii_case(k)) {
+            keys.push(k.clone());
+        }
+    }
+    for &p in all {
+        if p != PageKind::Addons && !keys.iter().any(|x| x.eq_ignore_ascii_case(p.key())) {
+            keys.push(p.key().to_string());
+        }
+    }
+    let Some(from_i) = keys.iter().position(|k| k.eq_ignore_ascii_case(tab.key())) else { return };
+    let Some(to_i) = keys.iter().position(|k| k.eq_ignore_ascii_case(target.key())) else { return };
+    let item = keys.remove(from_i);
+    keys.insert(to_i, item);
+    st.settings.tab_order = keys;
+}
+
 /// Tabs on the left; pin, date and clock on the right. During a page switch
 /// the tabs re-flow, the selection pill slides and the labels cross-fade.
-/// Returns the hover label to paint once the page is drawn.
-pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKind, tr: Option<PageTransition>) -> Option<Tip> {
+/// Returns the hover label (if any) and the open overflow popover (if any)
+/// to paint once the page is drawn.
+pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKind, tr: Option<PageTransition>) -> (Option<Tip>, Option<HeaderPopover>) {
     let scale = ui.c.scale().max(0.5);
     let cy = r.center().y;
     let label_st = TextStyle::body().weight(Weight::Semibold);
     let from = tr.map_or(page, |t| t.from);
     let e = tr.map_or(1.0, |t| ease_out_cubic(t.t / TABS_END));
 
+    // Wheel over the header switches tabs when no popover is open.
+    if !st.ui.tab_more_open && !st.ui.power_menu_open {
+        let w = ui.wheel_in(r);
+        if w != 0.0 {
+            st.cmd(Command::SetPage(step_tab(page, st, w < 0.0)));
+        }
+    }
+
     // The right side first: the clock ends on the content column's right
     // edge (where every page's trailing control ends), then the date, the
-    // Settings button and the pin. Today already shows the date large, so
-    // the header leaves it out there. The tabs get what is left.
+    // Settings button, the Power button and the pin. Today already shows the
+    // date large, so the header leaves it out there. The tabs get what is left.
     let right = r.right() - 6.0;
     let time = fmt_clock(&st.local, st.settings.use_24h);
     let time_st = TextStyle::body().weight(Weight::Semibold).tabular().right();
@@ -589,13 +902,16 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     let date = fmt_date_short(&st.local);
     let date_st = TextStyle::footnote().color(palette::TEXT_DIM).right();
     let dw = ui.c.measure(&date, &date_st, 200.0).0;
-    let pin_x = |left: f32| snap(snap(left - PIN_GAP - GEAR, scale) - GEAR_GAP - PIN, scale);
+    let pin_x = |left: f32| snap(snap(snap(left - PIN_GAP - GEAR, scale) - GEAR_GAP - POWER, scale) - GEAR_GAP - PIN, scale);
     let label_w = ui.c.measure(page.title(), &label_st, 200.0).0.max(ui.c.measure(from.title(), &label_st, 200.0).0);
     let all = self::tabs(st);
     // The date's room is kept while it fades in or out too.
     let date_w = if page == PageKind::Today && from == PageKind::Today { 0.0 } else { dw };
-    let fits = fit(pin_x(right - tw) - PIN_CLEAR - r.x, all.len(), label_w, date_w, crate::face::on(st.settings.theme));
-    let (row, more) = split_row(all, fits.shown, page);
+    let fits = fit(pin_x(right - tw) - PIN_CLEAR - r.x, all.len(), label_w, date_w, crate::face::on(st.settings.notch_theme));
+    let (row, more) = split_row(all.clone(), fits.shown, page);
+    if more.is_empty() {
+        st.ui.tab_more_open = false;
+    }
     let lay_from = tab_layout(ui, r.x, &row, from, &label_st, scale, fits.tab_w, fits.label);
     let lay_to = if from == page { lay_from.clone() } else { tab_layout(ui, r.x, &row, page, &label_st, scale, fits.tab_w, fits.label) };
     let tabs: Vec<Rect> =
@@ -608,6 +924,17 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     let on_gear = |p: PageKind| if p.tabbed() { 0.0 } else { 1.0 };
     let gear_k = lerp(on_gear(from), on_gear(page), e);
 
+    // Finish an active tab drag on mouse-up.
+    let mut drag_just_ended = false;
+    if !ui.input.down {
+        if let Some((_, moved)) = st.ui.tab_drag.take() {
+            if moved {
+                drag_just_ended = true;
+                st.cmd(Command::SaveSettings);
+            }
+        }
+    }
+
     // Selection pill, gliding from the old tab to the new one. To or from
     // Settings it stays on its tab and fades while the gear takes it.
     let (a, b) = (if from.tabbed() { fi } else { pi }, if page.tabbed() { pi } else { fi });
@@ -617,21 +944,55 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     }
 
     let mut hover: Option<(usize, Rect)> = None;
+    let mut reorder_req: Option<(PageKind, PageKind)> = None;
     for (i, &p) in row.iter().enumerate() {
         let tr = tabs[i];
-        let resp = ui.button(wid_n("tab", i as u64), tr);
+        let resp = ui.button(wid_n("tab", p as u64), tr);
         let active = p == page;
-        if resp.hovered && !active {
+        let is_dragged = st.ui.tab_drag.is_some_and(|(dp, moved)| dp == p && moved);
+        if is_dragged {
+            ui.c.fill_rrect(tr, TAB_H / 2.0, Color::white(0.22));
+            ui.c.stroke_rrect(tr, TAB_H / 2.0, Color::white(0.32), 1.0);
+        } else if resp.hovered && !active {
             ui.c.fill_rrect(tr, TAB_H / 2.0, palette::SURFACE);
             hover = Some((i, tr));
         }
-        let k = if active { e } else if from.tabbed() && i == fi { 1.0 - e } else { 0.0 };
-        let ic = if resp.hovered { palette::TEXT } else { Color::lerp(palette::TEXT_FAINT, palette::TEXT, k) };
+        // Dragging a tab horizontally (> 8 DIPs) reorders it within the row.
+        if p != PageKind::Addons && !st.ui.tab_more_open && !st.ui.power_menu_open {
+            if let Some((dx, _)) = resp.drag {
+                let moved = st.ui.tab_drag.is_some_and(|(dp, m)| dp == p && m) || dx.abs() >= 8.0;
+                st.ui.tab_drag = Some((p, moved));
+                if moved {
+                    if let Some(mx) = ui.input.mouse.map(|pt| pt.x) {
+                        if let Some((ti, &target)) = row
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, &cand)| cand != PageKind::Addons)
+                            .min_by(|(ia, _), (ib, _)| {
+                                (tabs[*ia].center().x - mx).abs().total_cmp(&(tabs[*ib].center().x - mx).abs())
+                            })
+                        {
+                            if ti != i && target != p {
+                                reorder_req = Some((p, target));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let k = if active || is_dragged { e } else if from.tabbed() && i == fi { 1.0 - e } else { 0.0 };
+        let ic = if resp.hovered || is_dragged { palette::TEXT } else { Color::lerp(palette::TEXT_FAINT, palette::TEXT, k) };
         let ix = snap(tr.x + (fits.tab_w.min(tr.w) - TAB_ICON) / 2.0, scale);
         ui.c.icon(p.icon(), Rect::new(ix, snap(cy - TAB_ICON / 2.0, scale), TAB_ICON, TAB_ICON), ic);
-        if resp.clicked && !active {
+        if resp.clicked && !active && !drag_just_ended {
+            st.ui.tab_more_open = false;
+            st.ui.power_menu_open = false;
+            st.ui.power_confirm = None;
             st.cmd(Command::SetPage(p));
         }
+    }
+    if let Some((tab, target)) = reorder_req {
+        reorder_tab(st, &all, tab, target);
     }
     if fits.label && from.tabbed() && (fi != pi || !page.tabbed()) {
         draw_tab_label(ui, from, tabs[fi], &label_st, 1.0 - e);
@@ -639,20 +1000,30 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     if fits.label && page.tabbed() {
         draw_tab_label(ui, page, tabs[pi], &label_st, e);
     }
-    // The tabs past the room: "…" lists them in a menu of Windows' own.
+    // The tabs past the room: "…" toggles an in-island popover grid.
     let more_r = Rect::new(snap(tabs_end + TAB_GAP, scale), cy - TAB_H / 2.0, TAB_MIN_W, TAB_H);
+    let mut popover = None;
     if !more.is_empty() {
         let resp = ui.button(wid("header.more"), more_r);
-        if resp.hovered {
+        if st.ui.tab_more_open {
+            ui.c.fill_rrect(more_r, TAB_H / 2.0, Color::white(0.14));
+        } else if resp.hovered {
             ui.c.fill_rrect(more_r, TAB_H / 2.0, palette::SURFACE);
             hover = Some((MORE_SLOT, more_r));
         }
-        let dot = if resp.hovered { palette::TEXT } else { palette::TEXT_FAINT };
+        let dot = if st.ui.tab_more_open || resp.hovered { palette::TEXT } else { palette::TEXT_FAINT };
         for i in -1..=1 {
             ui.c.fill_circle(Point::new(more_r.center().x + i as f32 * 5.0, cy), 1.6, dot);
         }
         if resp.clicked {
-            st.cmd(Command::TabMenu(more.clone()));
+            st.ui.tab_more_open = !st.ui.tab_more_open;
+            st.ui.power_menu_open = false;
+            st.ui.power_confirm = None;
+            st.ui.tab_more_since = ui.now;
+            ui.request_anim();
+        }
+        if st.ui.tab_more_open {
+            popover = Some(HeaderPopover::Tabs(more_r, more.clone()));
         }
     }
 
@@ -668,6 +1039,7 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
     }
 
     let gear_r = Rect::new(snap(left - PIN_GAP - GEAR, scale), cy - GEAR / 2.0, GEAR, GEAR);
+    let power_r = Rect::new(snap(gear_r.x - GEAR_GAP - POWER, scale), cy - POWER / 2.0, POWER, POWER);
     let pin_r = Rect::new(pin_x(left), cy - PIN / 2.0, PIN, PIN);
     let halo_cx = pin_r.x - HALO_GAP - HALO_W / 2.0;
     if fits.face {
@@ -679,7 +1051,7 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         }
         crate::face::peek(ui.c, &frame, halo_cx, cy + 9.0, HALO_W, r.y);
     }
-    // The pin and Settings always show: `fit` left them their room.
+    // The pin, Power and Settings always show: `fit` left them their room.
     {
         let pinned = st.pinned;
         let (icon, color) = if pinned { (Icon::PinFill, st.accent) } else { (Icon::Pin, palette::TEXT_FAINT) };
@@ -688,7 +1060,31 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
             hover = Some((PIN_SLOT, pin_r));
         }
         if resp.clicked {
+            st.ui.tab_more_open = false;
+            st.ui.power_menu_open = false;
+            st.ui.power_confirm = None;
             st.cmd(Command::SetPinned(!pinned));
+        }
+    }
+    // Power menu: opens an in-island popover with Shut down, Restart, Sleep, Lock.
+    {
+        if st.ui.power_menu_open {
+            ui.c.fill_rrect(power_r, POWER / 2.0, Color::white(0.14));
+        }
+        let color = if st.ui.power_menu_open { palette::TEXT } else { palette::TEXT_FAINT };
+        let resp = ui.icon_button(wid(POWER_ID), power_r, Icon::Power, color, 15.0);
+        if resp.hovered && !st.ui.power_menu_open {
+            hover = Some((POWER_SLOT, power_r));
+        }
+        if resp.clicked {
+            st.ui.power_menu_open = !st.ui.power_menu_open;
+            st.ui.power_confirm = None;
+            st.ui.tab_more_open = false;
+            st.ui.power_menu_since = ui.now;
+            ui.request_anim();
+        }
+        if st.ui.power_menu_open {
+            popover = Some(HeaderPopover::Power(power_r));
         }
     }
     // Settings: the gear is lit like a selected tab while its page shows,
@@ -705,6 +1101,9 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
             hover = Some((GEAR_SLOT, gear_r));
         }
         if resp.clicked {
+            st.ui.tab_more_open = false;
+            st.ui.power_menu_open = false;
+            st.ui.power_confirm = None;
             if page == PageKind::Settings {
                 let back = st.ui.before_settings.take().filter(|p| row.contains(p) || more.contains(p)).unwrap_or(row[0]);
                 st.cmd(Command::SetPage(back));
@@ -715,31 +1114,260 @@ pub(crate) fn draw_header(ui: &mut Ui, st: &mut AppState, r: Rect, page: PageKin
         }
     }
 
-    // Hover labels: after a short dwell over an inactive tab, the pin or the gear.
+    // Hover labels: after a short dwell over an inactive tab, the pin, Power or the gear.
     let now = ui.now;
     st.ui.tab_hover = match (hover, st.ui.tab_hover) {
         (Some((i, _)), Some((j, t0))) if i == j => Some((j, t0)),
         (Some((i, _)), _) => Some((i, now)),
         (None, _) => None,
     };
-    let (slot, anchor) = hover?;
-    let since = now - st.ui.tab_hover.map_or(now, |h| h.1);
-    if since < TIP_DELAY + TIP_FADE {
-        ui.request_anim();
+    let tip = (|| -> Option<Tip> {
+        let (slot, anchor) = hover?;
+        let since = now - st.ui.tab_hover.map_or(now, |h| h.1);
+        if since < TIP_DELAY + TIP_FADE {
+            ui.request_anim();
+        }
+        let alpha = ((since - TIP_DELAY) / TIP_FADE).clamp(0.0, 1.0) as f32;
+        if alpha <= 0.0 {
+            return None;
+        }
+        let text = match row.get(slot) {
+            Some(p) => p.title(),
+            None if slot == GEAR_SLOT && page == PageKind::Settings => "Close settings",
+            None if slot == GEAR_SLOT => "Settings",
+            None if slot == POWER_SLOT => "Power",
+            None if slot == MORE_SLOT => "More tabs",
+            None if st.pinned => "Unpin",
+            None => "Keep open",
+        };
+        Some(Tip { anchor, text, alpha })
+    })();
+    (tip, popover)
+}
+
+pub(crate) fn draw_popover(ui: &mut Ui, st: &mut AppState, body: Rect, popover: HeaderPopover) {
+    match popover {
+        HeaderPopover::Tabs(anchor, items) => draw_tab_popover(ui, st, body, anchor, &items),
+        HeaderPopover::Power(anchor) => draw_power_popover(ui, st, body, anchor),
     }
-    let alpha = ((since - TIP_DELAY) / TIP_FADE).clamp(0.0, 1.0) as f32;
-    if alpha <= 0.0 {
-        return None;
+}
+
+fn trigger_power_action(st: &mut AppState, now: f64, action: crate::commands::PowerAction) {
+    st.ui.power_menu_open = false;
+    st.ui.power_confirm = None;
+    if now < st.ui.power_busy_until {
+        return;
     }
-    let text = match row.get(slot) {
-        Some(p) => p.title(),
-        None if slot == GEAR_SLOT && page == PageKind::Settings => "Close settings",
-        None if slot == GEAR_SLOT => "Settings",
-        None if slot == MORE_SLOT => "More tabs",
-        None if st.pinned => "Unpin",
-        None => "Keep open",
+    st.ui.power_busy_until = now + 3.0;
+    st.cmd(Command::Power(action));
+    st.cmd(Command::Collapse);
+}
+
+/// In-island power menu popover: Shut down, Restart, Sleep, Lock.
+/// Destructive actions (Shut down, Restart) switch to an inline confirmation
+/// step before firing; Sleep and Lock run immediately.
+pub(crate) fn draw_power_popover(ui: &mut Ui, st: &mut AppState, body: Rect, anchor: Rect) {
+    use crate::commands::PowerAction;
+
+    let scale = ui.c.scale().max(0.5);
+    const POP_PAD: f32 = 8.0;
+    const TILE_W: f32 = 86.0;
+    const TILE_H: f32 = 54.0;
+    const TILE_GAP: f32 = 4.0;
+    const POP_R: f32 = 16.0;
+    const POP_DUR: f64 = 0.22;
+
+    let confirming = st.ui.power_confirm;
+    let (pop_w, pop_h) = if confirming.is_some() {
+        (208.0, 112.0)
+    } else {
+        (2.0 * TILE_W + TILE_GAP + 2.0 * POP_PAD, 2.0 * TILE_H + TILE_GAP + 2.0 * POP_PAD)
     };
-    Some(Tip { anchor, text, alpha })
+    let x = (anchor.center().x - pop_w / 2.0).clamp(body.x + 12.0, (body.right() - 12.0 - pop_w).max(body.x + 12.0));
+    let y = (anchor.bottom() + 4.0).min((body.bottom() - 8.0 - pop_h).max(body.y + 42.0));
+    let pop_r = Rect::new(snap(x, scale), snap(y, scale), snap(pop_w, scale), snap(pop_h, scale));
+
+    // Clicking outside the popover (and outside the Power toggle button) dismisses it.
+    if ui.input.just_pressed {
+        if let Some(p) = ui.input.press_pos {
+            if !pop_r.contains(p) && !anchor.contains(p) {
+                st.ui.power_menu_open = false;
+                st.ui.power_confirm = None;
+                return;
+            }
+        }
+    }
+
+    let anim_t = if entrance::still(st) || st.in_selftest {
+        1.0
+    } else {
+        let elapsed = (ui.now - st.ui.power_menu_since).max(0.0);
+        if elapsed < POP_DUR {
+            ui.request_anim();
+        }
+        (elapsed / POP_DUR).clamp(0.0, 1.0) as f32
+    };
+    let k = ease_out_cubic(anim_t);
+    let sc = 0.94 + 0.06 * k;
+
+    let m = ui.c.save_transform();
+    let origin = Point::new(pop_r.center().x, pop_r.y);
+    ui.c.scale_about(origin, sc);
+    ui.c.with_alpha(k, |c| {
+        c.fill_rrect(pop_r, POP_R, Color::rgba(0.14, 0.14, 0.16, 0.98));
+        c.stroke_rrect(pop_r, POP_R, Color::white(0.12), 1.0);
+    });
+
+    if let Some(action) = confirming {
+        let (icon, tint) = match action {
+            PowerAction::Shutdown => (Icon::Power, palette::RED),
+            PowerAction::Restart => (Icon::Reset, palette::ORANGE),
+            PowerAction::Sleep => (Icon::Moon, palette::BLUE),
+            PowerAction::Lock => (Icon::Lock, palette::PURPLE),
+        };
+        let pad = 12.0;
+        let badge = Rect::new(snap(pop_r.x + pad, scale), snap(pop_r.y + pad, scale), 26.0, 26.0);
+        ui.c.fill_rrect(badge, 8.0, tint);
+        ui.c.icon(icon, Rect::from_center(badge.center(), 14.0, 14.0), palette::ON_ACCENT);
+
+        let tx = badge.right() + 10.0;
+        let tw = (pop_r.right() - pad - tx).max(40.0);
+        ui.c.text(action.confirm_prompt(), Rect::new(tx, pop_r.y + pad - 1.0, tw, 18.0), &TextStyle::body().weight(Weight::Semibold));
+        ui.c.text("Unsaved work may be lost.", Rect::new(tx, pop_r.y + pad + 17.0, tw, 15.0), &TextStyle::caption().color(palette::TEXT_DIM));
+
+        let btn_h = 28.0;
+        let btn_gap = 8.0;
+        let btn_w = (pop_r.w - 2.0 * pad - btn_gap) / 2.0;
+        let btn_y = snap(pop_r.bottom() - pad - btn_h, scale);
+        let cancel_r = Rect::new(snap(pop_r.x + pad, scale), btn_y, snap(btn_w, scale), btn_h);
+        let confirm_r = Rect::new(snap(cancel_r.right() + btn_gap, scale), btn_y, snap(btn_w, scale), btn_h);
+
+        let c_resp = ui.button(wid("power.confirm.cancel"), cancel_r);
+        let c_fill = if c_resp.pressed { palette::SURFACE_HOVER } else if c_resp.hovered { Color::white(0.14) } else { palette::SURFACE };
+        ui.c.fill_rrect(cancel_r, 8.0, c_fill);
+        ui.c.text("Cancel", cancel_r, &TextStyle::caption().weight(Weight::Semibold).center());
+        if c_resp.clicked {
+            st.ui.power_confirm = None;
+        }
+
+        let ok_resp = ui.button(wid("power.confirm.ok"), confirm_r);
+        let ok_fill = if ok_resp.pressed { tint.with_alpha(0.80) } else if ok_resp.hovered { tint.with_alpha(0.92) } else { tint };
+        ui.c.fill_rrect(confirm_r, 8.0, ok_fill);
+        ui.c.text(action.label(), confirm_r, &TextStyle::caption().weight(Weight::Semibold).color(palette::ON_ACCENT).center());
+        if ok_resp.clicked {
+            trigger_power_action(st, ui.now, action);
+        }
+    } else {
+        const ITEMS: [(PowerAction, Icon, Color); 4] = [
+            (PowerAction::Shutdown, Icon::Power, palette::RED),
+            (PowerAction::Restart, Icon::Reset, palette::ORANGE),
+            (PowerAction::Sleep, Icon::Moon, palette::BLUE),
+            (PowerAction::Lock, Icon::Lock, palette::PURPLE),
+        ];
+        for (idx, &(action, icon, tint)) in ITEMS.iter().enumerate() {
+            let col = idx % 2;
+            let row = idx / 2;
+            let tx = pop_r.x + POP_PAD + col as f32 * (TILE_W + TILE_GAP);
+            let ty = pop_r.y + POP_PAD + row as f32 * (TILE_H + TILE_GAP);
+            let tr = Rect::new(snap(tx, scale), snap(ty, scale), TILE_W, TILE_H);
+            let resp = ui.button(wid_n("power.item", idx as u64), tr);
+            if resp.hovered {
+                let fill = if resp.pressed { palette::SURFACE_HOVER } else { palette::SURFACE };
+                ui.c.fill_rrect(tr, 10.0, fill);
+            }
+            let badge = Rect::from_center(Point::new(tr.center().x, tr.y + 18.0), 26.0, 26.0);
+            ui.c.fill_rrect(badge, 8.0, tint);
+            ui.c.icon(icon, Rect::from_center(badge.center(), 14.0, 14.0), palette::ON_ACCENT);
+            let lbl_col = if resp.hovered { palette::TEXT } else { Color::white(0.84) };
+            let lbl_r = Rect::new(tr.x + 2.0, tr.y + 35.0, tr.w - 4.0, 15.0);
+            ui.c.text(action.label(), lbl_r, &TextStyle::caption().color(lbl_col).center());
+            if resp.clicked {
+                if action.needs_confirm() {
+                    st.ui.power_confirm = Some(action);
+                } else {
+                    trigger_power_action(st, ui.now, action);
+                }
+            }
+        }
+    }
+    ui.c.restore_transform(m);
+}
+
+/// In-island overflow popover for crowded tabs behind "…": a dark rounded card
+/// with tinted icon tiles and English labels, replacing the classic Win32 popup menu.
+pub(crate) fn draw_tab_popover(ui: &mut Ui, st: &mut AppState, body: Rect, anchor: Rect, items: &[PageKind]) {
+    if items.is_empty() {
+        return;
+    }
+    let scale = ui.c.scale().max(0.5);
+    const POP_PAD: f32 = 8.0;
+    const TILE_W: f32 = 80.0;
+    const TILE_H: f32 = 52.0;
+    const TILE_GAP: f32 = 4.0;
+    const POP_R: f32 = 16.0;
+    const POP_DUR: f64 = 0.22;
+
+    let cols = items.len().clamp(1, 3);
+    let rows = items.len().div_ceil(cols);
+    let pop_w = cols as f32 * TILE_W + (cols - 1) as f32 * TILE_GAP + 2.0 * POP_PAD;
+    let pop_h = rows as f32 * TILE_H + (rows - 1) as f32 * TILE_GAP + 2.0 * POP_PAD;
+    let x = (anchor.center().x - pop_w / 2.0).clamp(body.x + 12.0, (body.right() - 12.0 - pop_w).max(body.x + 12.0));
+    let y = (anchor.bottom() + 4.0).min((body.bottom() - 8.0 - pop_h).max(body.y + 42.0));
+    let pop_r = Rect::new(snap(x, scale), snap(y, scale), snap(pop_w, scale), snap(pop_h, scale));
+
+    // Clicking outside the popover (and outside the "…" toggle button) dismisses it.
+    if ui.input.just_pressed {
+        if let Some(p) = ui.input.press_pos {
+            if !pop_r.contains(p) && !anchor.contains(p) {
+                st.ui.tab_more_open = false;
+                return;
+            }
+        }
+    }
+
+    let anim_t = if entrance::still(st) || st.in_selftest {
+        1.0
+    } else {
+        let elapsed = (ui.now - st.ui.tab_more_since).max(0.0);
+        if elapsed < POP_DUR {
+            ui.request_anim();
+        }
+        (elapsed / POP_DUR).clamp(0.0, 1.0) as f32
+    };
+    let k = ease_out_cubic(anim_t);
+    let sc = 0.94 + 0.06 * k;
+
+    let m = ui.c.save_transform();
+    let origin = Point::new(pop_r.center().x, pop_r.y);
+    ui.c.scale_about(origin, sc);
+    ui.c.with_alpha(k, |c| {
+        c.fill_rrect(pop_r, POP_R, Color::rgba(0.14, 0.14, 0.16, 0.98));
+        c.stroke_rrect(pop_r, POP_R, Color::white(0.12), 1.0);
+    });
+
+    for (idx, &p) in items.iter().enumerate() {
+        let col = idx % cols;
+        let row = idx / cols;
+        let tx = pop_r.x + POP_PAD + col as f32 * (TILE_W + TILE_GAP);
+        let ty = pop_r.y + POP_PAD + row as f32 * (TILE_H + TILE_GAP);
+        let tr = Rect::new(snap(tx, scale), snap(ty, scale), TILE_W, TILE_H);
+        let resp = ui.button(wid_n("tab.more.item", p as u64), tr);
+        if resp.hovered {
+            let fill = if resp.pressed { palette::SURFACE_HOVER } else { palette::SURFACE };
+            ui.c.fill_rrect(tr, 10.0, fill);
+        }
+        let badge = Rect::from_center(Point::new(tr.center().x, tr.y + 18.0), 26.0, 26.0);
+        ui.c.fill_rrect(badge, 8.0, p.tint());
+        ui.c.icon(p.icon(), Rect::from_center(badge.center(), 14.0, 14.0), palette::ON_ACCENT);
+        let lbl_col = if resp.hovered { palette::TEXT } else { Color::white(0.84) };
+        let lbl_r = Rect::new(tr.x + 2.0, tr.y + 34.0, tr.w - 4.0, 15.0);
+        ui.c.text(p.title(), lbl_r, &TextStyle::caption().color(lbl_col).center());
+        if resp.clicked {
+            st.ui.tab_more_open = false;
+            st.cmd(Command::SetPage(p));
+        }
+    }
+    ui.c.restore_transform(m);
 }
 
 /// A tab's label, faded by `alpha` and cut (not ellipsized) at the tab's
@@ -885,13 +1513,24 @@ mod tests {
         assert!(PageKind::ALL.iter().all(|p| p.tab_index() <= PageKind::Settings.tab_index()));
     }
 
+    #[test]
+    fn tab_order_reorders_tabs_while_keeping_addons_last() {
+        use PageKind::*;
+        let mut st = state();
+        st.settings.tab_order = vec!["focus".into(), "tasks".into(), "media".into()];
+        assert_eq!(tabs(&st), [Focus, Tasks, Media, Today, Shelf, Addons]);
+        let all = tabs(&st);
+        reorder_tab(&mut st, &all, Shelf, Focus);
+        assert_eq!(tabs(&st), [Shelf, Focus, Tasks, Media, Today, Addons]);
+    }
+
     /// The header row as `draw_header` lays it out at an island `width`
     /// wide (Settings › Width when open, 480 to 900), the clock `clock_w`
     /// wide: tabs, "…" and the pin's left edge.
     fn header_at(width: f32, n: usize, label_w: f32, date_w: f32, face: bool, clock_w: f32) -> (Fit, f32, f32) {
         let r = header_rect(Rect::new(0.0, 0.0, width, 300.0));
         let right = r.right() - 6.0 - clock_w;
-        let pin_x = right - PIN_GAP - GEAR - GEAR_GAP - PIN;
+        let pin_x = right - PIN_GAP - GEAR - GEAR_GAP - POWER - GEAR_GAP - PIN;
         let f = fit(pin_x - PIN_CLEAR - r.x, n, label_w, date_w, face);
         let label = if f.label { TAB_LABEL_X + label_w + TAB_LABEL_END + 1.0 - f.tab_w } else { 0.0 };
         let tabs_end = r.x + f.shown as f32 * (f.tab_w + TAB_GAP) - TAB_GAP + label;
@@ -1164,5 +1803,48 @@ mod tests {
         st.update.sheet = true;
         let sheet = content_height(PageKind::Settings, &st);
         assert!(row <= content_height(PageKind::System, &st) && sheet <= row, "{row} {sheet}");
+    }
+
+    #[test]
+    fn power_menu_confirm_rules_and_double_fire_guard() {
+        use crate::commands::PowerAction;
+        assert!(PowerAction::Shutdown.needs_confirm());
+        assert!(PowerAction::Restart.needs_confirm());
+        assert!(!PowerAction::Sleep.needs_confirm());
+        assert!(!PowerAction::Lock.needs_confirm());
+
+        let mut st = state();
+        st.ui.power_menu_open = true;
+        st.ui.power_confirm = Some(PowerAction::Shutdown);
+        trigger_power_action(&mut st, 10.0, PowerAction::Shutdown);
+        assert!(!st.ui.power_menu_open);
+        assert!(st.ui.power_confirm.is_none());
+        assert_eq!(st.cmds.iter().filter(|c| matches!(c, Command::Power(_))).count(), 1);
+        // A second trigger immediately after must not fire again.
+        trigger_power_action(&mut st, 10.1, PowerAction::Shutdown);
+        assert_eq!(st.cmds.iter().filter(|c| matches!(c, Command::Power(_))).count(), 1);
+    }
+
+    #[test]
+    fn quick_switcher_filters_tabs_and_actions() {
+        let st = state();
+        let all = quick_matches(&st, "");
+        assert!(all.iter().any(|i| i.action == QuickAction::Page(PageKind::Tasks)));
+        assert!(all.iter().any(|i| i.action == QuickAction::Page(PageKind::Settings)));
+        assert!(all.iter().any(|i| i.action == QuickAction::NewTask));
+        assert_eq!(all[0].hint, Some("Ctrl+1"));
+
+        let filtered = quick_matches(&st, "task");
+        assert!(filtered.iter().any(|i| i.action == QuickAction::NewTask));
+        assert!(filtered.iter().all(|i| i.label.to_ascii_lowercase().contains("task")));
+    }
+
+    #[test]
+    fn toast_schedules_fade_wake_without_polling() {
+        let mut st = state();
+        st.now = 100.0;
+        st.toast("Copied");
+        let w = next_wake(PageKind::Media, &st).expect("wake");
+        assert!(w <= 102.2 - TOAST_FADE_S + 0.01);
     }
 }

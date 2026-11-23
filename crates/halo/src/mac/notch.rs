@@ -96,7 +96,7 @@ const PEEK_HALO_W: f32 = 22.0;
 const HALO_WATCH: f64 = 2.5;
 
 pub fn fit(m: &Mode, st: &AppState) -> Fit {
-    if pill::on(st.settings.theme) {
+    if pill::on(st.settings.notch_type) {
         return pill_fit(m, st);
     }
     match m {
@@ -133,7 +133,7 @@ fn pill_fit(m: &Mode, st: &AppState) -> Fit {
 
 /// The Pill theme floats `m` below the menu bar instead of hanging it from the notch.
 pub fn floats(m: &Mode, st: &AppState) -> bool {
-    pill::on(st.settings.theme) && fit(m, st) == Fit::Below
+    pill::on(st.settings.notch_type) && fit(m, st) == Fit::Below
 }
 
 /// Where the Pill theme's island floats in `m` around notch `n`: `TOP_GAP`
@@ -168,7 +168,7 @@ fn ear(m: &Mode, st: &AppState) -> f32 {
         Mode::Idle if st.settings.idle_style == IdleStyle::Eyes => PEEK_EAR,
         Mode::Idle => {
             let clock = if st.settings.use_24h { 64.0 } else { 84.0 };
-            if face::on(st.settings.theme) {
+            if face::on(st.settings.notch_theme) {
                 clock + 6.0
             } else {
                 clock
@@ -305,7 +305,7 @@ pub fn draw_ears(ui: &mut Ui, st: &mut AppState, m: &Mode, body: Rect, n: Notch)
     let right = Rect::new(body.right() - ear_w, body.y, ear_w, body.h);
     match m {
         Mode::Idle => {
-            if face::on(st.settings.theme) {
+            if face::on(st.settings.notch_theme) {
                 // Halo rests in the left ear and watches the cursor.
                 let look = ui.input.mouse.map(|p| (p.x - body.center().x) / (body.w / 2.0));
                 let (frame, moving) = face::rest(st.now, st.local.hour < 5, look);
@@ -379,7 +379,7 @@ fn draw_peek(ui: &mut Ui, st: &mut AppState, body: Rect, n: Notch) {
     }
     let look = peek_look(st, spot, now);
     let x = body.center().x + spot.x;
-    if face::on(st.settings.theme) {
+    if face::on(st.settings.notch_theme) {
         let (frame, moving) = face::rest(now, st.local.hour < 5, look.map(|l| l.0));
         if moving {
             ui.request_anim();
@@ -394,7 +394,7 @@ fn draw_peek(ui: &mut Ui, st: &mut AppState, body: Rect, n: Notch) {
 /// Where the peeking eyes (Halo, in his theme) are at `now`, from the
 /// island's top centre, and whether they are on their way across.
 fn peek_spot(st: &AppState, n: Notch, now: f64) -> (Point, bool) {
-    let w = if face::on(st.settings.theme) { PEEK_HALO_W } else { EYES_W };
+    let w = if face::on(st.settings.notch_theme) { PEEK_HALO_W } else { EYES_W };
     let (along, moving) = st.ui.peek.along(now);
     (Point::new(along * (n.w / 2.0 + PEEK_GAP + w / 2.0), n.h / 2.0), moving)
 }
@@ -404,7 +404,7 @@ fn peek_spot(st: &AppState, n: Notch, now: f64) -> (Point, bool) {
 /// moves, and not while he sleeps.
 fn peek_look(st: &AppState, spot: Point, now: f64) -> Option<(f32, f32)> {
     let p = &st.ui.peek;
-    if face::on(st.settings.theme) && (st.local.hour < 5 || !p.moved_within(now, HALO_WATCH)) {
+    if face::on(st.settings.notch_theme) && (st.local.hour < 5 || !p.moved_within(now, HALO_WATCH)) {
         return None;
     }
     p.pointer.map(|at| peek::gaze(spot, at))

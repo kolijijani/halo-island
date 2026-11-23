@@ -43,7 +43,7 @@ use crate::state::AppState;
 use crate::ui::{wid, CursorKind, Ui};
 use halo_core::datetime::days_from_civil;
 use halo_core::geom::Rect;
-use halo_core::settings::{IdleStyle, Theme};
+use halo_core::settings::{IdleStyle, NotchTheme, NotchType};
 use std::cell::{Cell, RefCell};
 use studio_diorama::{Badge, Clock, Moment, View};
 
@@ -161,8 +161,8 @@ thread_local! {
 
 /// The theme the island draws in this frame (`pill::geom` says so for every
 /// frame, open or closed), to know when Diorama was just picked.
-pub fn note_theme(theme: Theme) {
-    if theme != Theme::Diorama {
+pub fn note_theme(theme: NotchTheme) {
+    if theme != NotchTheme::Diorama {
         PICKED.with(|p| p.set(true));
     }
 }
@@ -187,10 +187,10 @@ pub fn settle() {
     LEFT.with(|l| l.set(None));
 }
 
-/// The resting pill is the picture: in the Diorama theme, whatever the
+/// The resting pill is the picture: in the Pill + Diorama combo, whatever the
 /// idle look, unless it is Hidden.
 pub fn shows(st: &AppState) -> bool {
-    st.settings.theme == Theme::Diorama && st.settings.idle_style != IdleStyle::Hidden
+    st.settings.notch_type == NotchType::Pill && st.settings.notch_theme == NotchTheme::Diorama && st.settings.idle_style != IdleStyle::Hidden
 }
 
 /// The theme shows its night: the glass ball rests on the tree, where the
@@ -521,7 +521,7 @@ mod tests {
     use halo_core::store::Store;
 
     fn state(hour: u8, minute: u8) -> AppState {
-        let mut st = AppState::new(Settings { theme: Theme::Diorama, ..Settings::default() }, Store::default());
+        let mut st = AppState::new(Settings { notch_type: NotchType::Pill, notch_theme: NotchTheme::Diorama, ..Settings::default() }, Store::default());
         st.local = LocalDateTime { year: 2026, month: 11, day: 10, hour, minute, second: 30 };
         st.power = PowerState { has_battery: false, percent: 100, charging: false, on_ac: true, saver: false };
         st
@@ -547,10 +547,13 @@ mod tests {
         st.settings.idle_style = IdleStyle::Hidden;
         assert_eq!(geom(&st), None);
         st.settings.idle_style = IdleStyle::Clock;
-        for theme in [Theme::Classic, Theme::Halo, Theme::Glass, Theme::Pill] {
-            st.settings.theme = theme;
+        for theme in [NotchTheme::Classic, NotchTheme::Halo, NotchTheme::Glass] {
+            st.settings.notch_theme = theme;
             assert_eq!(geom(&st), None, "{theme:?}");
         }
+        st.settings.notch_theme = NotchTheme::Diorama;
+        st.settings.notch_type = NotchType::Notch;
+        assert_eq!(geom(&st), None, "Notch x Diorama");
     }
 
     #[test]
@@ -619,8 +622,8 @@ mod tests {
         // Another theme drew, then Diorama again: it rolls in from the far end.
         settle();
         at(0.0, 300.0);
-        note_theme(Theme::Classic);
-        note_theme(Theme::Diorama);
+        note_theme(NotchTheme::Classic);
+        note_theme(NotchTheme::Diorama);
         assert_eq!(at(0.0, 310.0), (1.0, true));
         assert_eq!(at(0.0, 310.0 + ROLL), (0.0, false));
         settle();

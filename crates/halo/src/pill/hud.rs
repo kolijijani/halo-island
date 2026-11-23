@@ -85,9 +85,10 @@ enum Gesture {
 /// What this pop-up does as it shows, and whether its disc is lit.
 fn gesture(k: &HudKind) -> (Gesture, bool) {
     match k {
-        HudKind::Volume { .. } | HudKind::LowBattery { .. } => (Gesture::Still, false),
+        HudKind::Volume { .. } | HudKind::Brightness { .. } | HudKind::LowBattery { .. } => (Gesture::Still, false),
         HudKind::Charging { plugged, .. } => (if *plugged { Gesture::Pop } else { Gesture::Settle }, false),
         HudKind::Bluetooth { connected, .. } => (if *connected { Gesture::Pop } else { Gesture::Settle }, *connected),
+        HudKind::Mic { .. } => (Gesture::Pop, true),
         k => {
             let on = crate::activities::toggle_glyph(k).1;
             (if on { Gesture::Pop } else { Gesture::Settle }, on)
@@ -168,8 +169,10 @@ impl Motion {
         }
         self.kind = Some(hud.kind.clone());
         self.until = hud.until;
-        if let HudKind::Volume { level, muted } = hud.kind {
-            self.level.set_target(if muted { 0.0 } else { level });
+        match hud.kind {
+            HudKind::Volume { level, muted } => self.level.set_target(if muted { 0.0 } else { level }),
+            HudKind::Brightness { level } => self.level.set_target(level),
+            _ => {}
         }
         if self.still || saver {
             for s in [&mut self.scale, &mut self.lift, &mut self.lit, &mut self.level] {
@@ -259,7 +262,7 @@ pub(crate) fn glyph(ui: &mut Ui, r: Rect, icon: Icon, color: Color, p: &Pose) {
 
 pub fn geom(t: HudTag, st: &AppState) -> Option<Geom> {
     let w = match t {
-        HudTag::Volume => VOLUME_W,
+        HudTag::Volume | HudTag::Brightness => VOLUME_W,
         HudTag::Charging | HudTag::LowBattery => BATTERY_W,
         HudTag::Bluetooth => bluetooth_w(st),
         HudTag::Toggle => toggle_w(st),
@@ -271,20 +274,25 @@ pub fn draw(ui: &mut Ui, st: &mut AppState, _t: HudTag, body: Rect) -> bool {
     // As in Classic, a pop-up whose time is up draws nothing while its pill morphs away.
     let Some(hud) = st.hud.clone() else { return true };
     let p = st.ui.hud.frame(ui, &hud, st.power.saver);
-    // The glow lies under everything else: the bolt's green, else the accent.
+    // The glow lies under everything else: the bolt's green, mic red/green, else the accent.
     if let Some(t) = p.glow {
-        let color = if matches!(hud.kind, HudKind::Charging { .. }) { palette::GREEN } else { st.accent };
+        let color = match hud.kind {
+            HudKind::Charging { .. } | HudKind::Mic { muted: false } => palette::GREEN,
+            HudKind::Mic { muted: true } => palette::RED,
+            _ => st.accent,
+        };
         media::pulse(ui, body, color, t);
     }
     match hud.kind {
         HudKind::Volume { level, muted } => volume(ui, body, level, muted, p.level),
+        HudKind::Brightness { level } => brightness(ui, body, level, p.level),
         HudKind::Charging { percent, plugged } => {
             let (icon, color, label) = if plugged { (Icon::Bolt, palette::GREEN, "Charging") } else { (Icon::Battery, palette::TEXT, "On battery") };
             power(ui, body, icon, color, label, percent, plugged, &p);
         }
         HudKind::LowBattery { percent } => power(ui, body, Icon::Battery, palette::RED, "Low battery", percent, false, &p),
         HudKind::Bluetooth { name, connected, battery, audio } => bluetooth(ui, st, body, &name, connected, battery, audio, &p),
-        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. }) => toggle(ui, st, body, &k, &p),
+        k @ (HudKind::CapsLock { .. } | HudKind::Wifi { .. } | HudKind::Mic { .. }) => toggle(ui, st, body, &k, &p),
     }
     true
 }
@@ -330,6 +338,25 @@ fn volume(ui: &mut Ui, body: Rect, level: f32, muted: bool, shown: f32) {
         }
     }
     let value = if muted { "Muted".to_string() } else { format!("{}%", (level * 100.0).round() as i32) };
+    ui.c.text(&value, Rect::new(right - slot - 4.0, body.y, slot + 4.0, body.h), &vs.right());
+}
+
+/// Brightness: the sun glyph, the gliding bar and the percentage.
+fn brightness(ui: &mut Ui, body: Rect, level: f32, shown: f32) {
+    let cy = body.center().y;
+    ui.c.icon(Icon::Sun, Rect::new(body.x + GLYPH_X, cy - GLYPH / 2.0, GLYPH, GLYPH), palette::TEXT);
+    let vs = value_style();
+    let slot = ui.c.measure("100%", &vs, 200.0).0;
+    let right = body.right() - VALUE_INSET;
+    let (x0, x1) = (body.x + TRACK_X, right - slot - VALUE_GAP);
+    if x1 - x0 >= TRACK_H {
+        let bar = Rect::new(x0, snap(ui, cy - TRACK_H / 2.0), x1 - x0, TRACK_H);
+        ui.c.fill_rrect(bar, TRACK_H / 2.0, TRACK);
+        if shown > 0.0 {
+            ui.c.fill_rrect(Rect::new(bar.x, bar.y, (bar.w * shown).max(TRACK_H), bar.h), TRACK_H / 2.0, FILL);
+        }
+    }
+    let value = format!("{}%", (level * 100.0).round() as i32);
     ui.c.text(&value, Rect::new(right - slot - 4.0, body.y, slot + 4.0, body.h), &vs.right());
 }
 
@@ -418,7 +445,12 @@ fn toggle(ui: &mut Ui, st: &AppState, body: Rect, k: &HudKind, p: &Pose) {
     let cy = body.center().y;
     let c = Point::new(body.x + body.h / 2.0, cy);
     let icon = crate::activities::toggle_glyph(k).0;
-    disc(ui, c, DISC / 2.0, icon, DISC_GLYPH, st.accent, ink_on(st.accent), p);
+    let fill = match k {
+        HudKind::Mic { muted: true } => palette::RED,
+        HudKind::Mic { muted: false } => palette::GREEN,
+        _ => st.accent,
+    };
+    disc(ui, c, DISC / 2.0, icon, DISC_GLYPH, fill, ink_on(fill), p);
     let (title, state) = k.words();
     let (name_st, state_st) = (label_style(), TextStyle::body().color(palette::TEXT_DIM));
     let sw = ui.c.measure(&state, &state_st, 400.0).0;

@@ -59,6 +59,7 @@ fn main() {
                 PeerEvent::Hello { .. } => json!({ "type": "hello", "phone": phone }),
                 PeerEvent::Progress { done, total, .. } => json!({ "type": "progress", "phone": phone, "done": done, "total": total }),
                 PeerEvent::Received { paths } => json!({ "type": "received", "phone": phone, "paths": paths }),
+                PeerEvent::Clip { text } => json!({ "type": "clip", "phone": phone, "text": text }),
                 PeerEvent::Failed { reason, .. } => json!({ "type": "failed", "phone": phone, "reason": reason }),
                 PeerEvent::Ended { connected } => json!({ "type": "ended", "phone": phone, "connected": connected }),
             },

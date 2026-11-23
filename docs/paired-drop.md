@@ -127,6 +127,8 @@ The phone makes the offer with one data channel labelled `halo-drop`
 | PC | `{"t":"hello","v":1,"name":"RTX-5090-Astral","auto":true,"shelf":[{"id":0,"name":"a.pdf","size":274000}]}` | `auto`: files land without asking |
 | PC | `{"t":"shelf","files":[...]}` | the Shelf changed |
 | phone | `{"t":"send","files":[{"name":"IMG_1.jpg","size":123}]}` | 1-500 files, at most 64 GB together |
+| phone | `{"t":"clip","text":"https://..."}` | quick text or link (up to 4,000 chars) copied straight to the PC's clipboard |
+| PC | `{"t":"copied"}` | the clip is on the PC's clipboard |
 | PC | `{"t":"ok"}` or `{"t":"no","why":"busy"\|"too-many"\|"too-large"\|"declined"}` | |
 | phone | binary frames | every file's bytes in the order listed, nothing in between; the announced sizes split the stream. Frames of at most 64 KB (16 KB recommended) |
 | PC | `{"t":"got","n":<bytes so far>}` | progress, at most every 250 ms |

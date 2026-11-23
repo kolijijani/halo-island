@@ -30,7 +30,7 @@ use crate::ui::{wid, wid_n, CursorKind, Hit, Input, MouseButton, PillStyle, Ui, 
 use crate::version::VERSION;
 use halo_core::caffeine;
 use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::settings::{IdleStyle, MonitorChoice, PrayerFollow, PrayerSound, Theme};
+use halo_core::settings::{IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -46,11 +46,13 @@ const PAD: f32 = 28.0;
 const TITLE_Y: f32 = 22.0;
 const TITLE_H: f32 = 30.0;
 const CONTENT_Y: f32 = 70.0;
-/// Sidebar rows.
-const NAV_Y: f32 = 64.0;
-const NAV_H: f32 = 32.0;
+/// Sidebar search box and section rows.
+const SEARCH_Y: f32 = 54.0;
+const SEARCH_H: f32 = 26.0;
+const NAV_Y: f32 = 90.0;
+const NAV_H: f32 = 30.0;
 const NAV_GAP: f32 = 2.0;
-const NAV_TILE: f32 = 22.0;
+const NAV_TILE: f32 = 21.0;
 /// Rows: one line, or a label over a dim line.
 const ROW_H: f32 = 40.0;
 const ROW_H_SUB: f32 = 52.0;
@@ -67,11 +69,12 @@ const SEG_PAD: f32 = 11.0;
 const KNOB_INSET: f32 = 2.0;
 const STEP_BTN: f32 = 26.0;
 const STEP_VALUE_W: f32 = 84.0;
-/// The Appearance section's theme cards: three to a row, each a column of
-/// the content wide, so the rows end where the groups under them do.
-const THEME_COLS: usize = 3;
-const THEME_CARD_H: f32 = 154.0;
-const THEME_PREVIEW_H: f32 = 74.0;
+/// The Appearance section's type & theme cards: two to a row, preview on the
+/// left and name + description on the right, fitting without scrolling.
+const THEME_COLS: usize = 2;
+const THEME_CARD_H: f32 = 84.0;
+const THEME_PREVIEW_W: f32 = 136.0;
+const THEME_PREVIEW_H: f32 = 64.0;
 const THEME_GAP: f32 = 12.0;
 /// A card's line of words wraps at this measure, not at the card's width:
 /// here the longer lines break into two fuller ones, where the whole width
@@ -310,8 +313,11 @@ pub enum Key {
     HudBluetooth,
     HudCaps,
     HudWifi,
+    HudBrightness,
+    HudMic,
     RememberPage,
     StartPage,
+    ResetTabOrder,
     /// The Today page's news source (`halo_core::news::PRESETS`).
     NewsFeed,
     Tab(PageKind),
@@ -374,7 +380,9 @@ pub enum Block {
     Group(Option<&'static str>, Vec<Item>),
     /// This copy's version, Check now, and a new version when there is one.
     Version,
-    /// The themes as cards with a small picture of each.
+    /// The notch shapes (Notch / Pill) with live preview of the current theme.
+    NotchTypes,
+    /// The themes as cards with a live preview of the current notch type.
     Themes,
     /// The Add-ons page itself.
     Addons,
@@ -391,6 +399,22 @@ pub enum Act {
     Pick(usize),
     Step(i32),
     Press,
+    Preview,
+}
+
+/// Sample pop-up for the Preview button on each Pop-ups row.
+fn preview_hud(key: Key) -> Option<crate::state::HudKind> {
+    use crate::state::HudKind;
+    Some(match key {
+        Key::HudVolume => HudKind::Volume { level: 0.68, muted: false },
+        Key::HudPower => HudKind::Charging { percent: 76, plugged: true },
+        Key::HudBluetooth => HudKind::Bluetooth { name: "AirPods Pro".into(), connected: true, battery: Some(82), audio: true },
+        Key::HudCaps => HudKind::CapsLock { on: true },
+        Key::HudWifi => HudKind::Wifi { connected: true, ssid: Some("Home Wi-Fi".into()), internet: true },
+        Key::HudBrightness => HudKind::Brightness { level: 0.72 },
+        Key::HudMic => HudKind::Mic { muted: true },
+        _ => return None,
+    })
 }
 
 const WATER_EVERY: [(u32, &str); 4] = [(0, "Off"), (45, "45 min"), (60, "Hourly"), (90, "90 min")];
@@ -443,12 +467,15 @@ const SOUNDS: [(PrayerSound, &str); 4] = {
 };
 /// Whose times and Hijri dates (the Prayer page's place picker has the same).
 const FOLLOWS: [(PrayerFollow, &str); 1] = [(PrayerFollow::Jakim, "Malaysia")];
-const THEMES: [(Theme, &str, &str); 5] = [
-    (Theme::Classic, "Classic", "A black island at the top edge"),
-    (Theme::Halo, "Halo", "Halo lives in the island"),
-    (Theme::Glass, "Glass", "Frosted glass over your screen"),
-    (Theme::Pill, "Pill", "Floats just below the top edge"),
-    (Theme::Diorama, "Diorama", "A little place that keeps your day"),
+const NOTCH_TYPES: [(NotchType, &str, &str); 2] = [
+    (NotchType::Notch, "Notch", "Hangs from the top edge"),
+    (NotchType::Pill, "Pill", "Floats below the top edge"),
+];
+const THEMES: [(NotchTheme, &str, &str); 4] = [
+    (NotchTheme::Classic, "Classic", "Clean black or system look"),
+    (NotchTheme::Halo, "Halo", "Halo lives in the island"),
+    (NotchTheme::Glass, "Glass", "Frosted glass over your screen"),
+    (NotchTheme::Diorama, "Diorama", "A little place that keeps your day"),
 ];
 /// Start with Windows, or at login on a Mac (its menu bar says so).
 const AUTOSTART: (&str, &str) = if cfg!(target_os = "macos") {
@@ -478,10 +505,10 @@ fn nearest(list: &[(u32, &str)], ms: u32) -> Option<usize> {
     list.iter().enumerate().min_by_key(|(_, (v, _))| v.abs_diff(ms)).map(|(i, _)| i)
 }
 
-fn idle_name(s: IdleStyle, theme: Theme) -> &'static str {
+fn idle_name(s: IdleStyle, theme: NotchTheme) -> &'static str {
     match s {
         IdleStyle::Clock => "Clock",
-        IdleStyle::Eyes if theme == Theme::Halo => "Halo",
+        IdleStyle::Eyes if theme == NotchTheme::Halo => "Halo",
         IdleStyle::Eyes => "Eyes",
         IdleStyle::Minimal => "Minimal",
         IdleStyle::Hidden => "Hidden",
@@ -543,17 +570,15 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
             blocks
         }
         Section::Appearance => {
-            let looks = status::looks(s.theme);
-            let look_names = looks.iter().map(|l| idle_name(*l, s.theme)).collect();
-            let shown = status::shown(s.theme, s.idle_style);
+            let looks = status::looks(s.notch_type, s.notch_theme);
+            let look_names = looks.iter().map(|l| idle_name(*l, s.notch_theme)).collect();
+            let shown = status::shown(s.notch_type, s.notch_theme, s.idle_style);
             let mut rest = vec![item(Key::IdleLook, "Idle look", Some("What the closed island shows"), Ctl::Choice(look_names, looks.iter().position(|l| *l == shown)))];
             // Halo's eyes are Windows' so far (`activities::mascot_shows`).
             if cfg!(windows) {
                 rest.push(switch(Key::Mascot, "Halo Mascot", Some("Halo's eyes rest in place of the clock"), s.mascot));
             }
-            // No caption: the idle look's own line says what the group is,
-            // and with the mascot's row the section still fits the window.
-            vec![Block::Themes, Block::Group(None, rest)]
+            vec![Block::NotchTypes, Block::Themes, Block::Group(None, rest)]
         }
         Section::Island => {
             // The Mac's island goes where the notch is; the game readout is Windows'.
@@ -600,10 +625,12 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
             Some("The island shows a pop-up for"),
             vec![
                 switch(Key::HudVolume, "Volume", Some("When you change the volume or mute"), s.hud_volume),
+                switch(Key::HudBrightness, "Brightness", Some("When display brightness changes"), s.hud_brightness),
                 switch(Key::HudPower, "Charger and battery", Some("When you plug in, unplug or run low"), s.hud_power),
                 switch(Key::HudBluetooth, "Bluetooth", Some("When headphones and other devices connect"), s.hud_bluetooth),
                 switch(Key::HudCaps, "Caps Lock", Some("When it turns on or off"), s.hud_caps),
                 switch(Key::HudWifi, "Wi-Fi", Some("When you join or leave a network"), s.hud_wifi),
+                switch(Key::HudMic, "Microphone", Some("When your microphone is muted or unmuted"), s.hud_mic),
             ],
         )],
         Section::Tabs => {
@@ -614,15 +641,30 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
             if !s.remember_page {
                 open.push(item(Key::StartPage, "Opens on", None, Ctl::Stepper(start_name.to_string())));
             }
-            // Notifications only in a copy that can read them; off, nothing listens.
-            let tabs = crate::pages::hideable_tabs(st)
-                .iter()
-                .map(|&p| {
-                    let sub = (p == PageKind::Notifications).then_some("Messages from WhatsApp, Telegram and your phone");
-                    item(Key::Tab(p), p.title(), sub, Ctl::Switch(Some(!st.tab_hidden(p))))
+            // All reorderable tabs in the user's order: hideable tabs get switches;
+            // enabled add-on tabs can also be dragged into any position.
+            let tabs: Vec<Item> = crate::pages::orderable_tabs(st)
+                .into_iter()
+                .map(|p| {
+                    if p.hideable() {
+                        let sub = (p == PageKind::Notifications).then_some("Messages from WhatsApp, Telegram and your phone");
+                        item(Key::Tab(p), p.title(), sub, Ctl::Switch(Some(!st.tab_hidden(p))))
+                    } else {
+                        item(Key::Tab(p), p.title(), Some("Add-on tab"), Ctl::Switch(None))
+                    }
                 })
                 .collect();
-            vec![Block::Group(Some("When the island opens"), open), Block::Group(Some("Tabs in the island"), tabs), Block::Note("Halo and the add-ons' pages always have a tab.")]
+            let order_sub = if s.tab_order.is_empty() {
+                "Using the default tab order"
+            } else {
+                "Restore the default tab order"
+            };
+            vec![
+                Block::Group(Some("When the island opens"), open),
+                Block::Group(Some("Tabs in the island"), tabs),
+                Block::Group(Some("Tab order"), vec![item(Key::ResetTabOrder, "Reset to default", Some(order_sub), Ctl::Button("Reset"))]),
+                Block::Note("Drag rows above or tabs in the island header to reorder them. Add-ons always stays at the end."),
+            ]
         }
         Section::Addons => vec![Block::Addons],
         Section::Focus => {
@@ -772,10 +814,12 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Music, "Timing", Key::LyricsOffset),
     (Section::Music, "Show what's playing", Key::MediaActivity),
     (Section::Popups, "Volume", Key::HudVolume),
+    (Section::Popups, "Brightness", Key::HudBrightness),
     (Section::Popups, "Charger and battery", Key::HudPower),
     (Section::Popups, "Bluetooth", Key::HudBluetooth),
     (Section::Popups, "Caps Lock", Key::HudCaps),
     (Section::Popups, "Wi-Fi", Key::HudWifi),
+    (Section::Popups, "Microphone", Key::HudMic),
     (Section::Tabs, "Open where you left off", Key::RememberPage),
     (Section::Tabs, "Opens on", Key::StartPage),
     (Section::Tabs, "Music", Key::Tab(PageKind::Media)),
@@ -784,6 +828,7 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Tabs, "Tasks", Key::Tab(PageKind::Tasks)),
     (Section::Tabs, "Focus", Key::Tab(PageKind::Focus)),
     (Section::Tabs, "Notifications", Key::Tab(PageKind::Notifications)),
+    (Section::Tabs, "Tab order", Key::ResetTabOrder),
     (Section::Focus, "Focus", Key::FocusMin),
     (Section::Focus, "Short break", Key::ShortBreak),
     (Section::Focus, "Long break", Key::LongBreak),
@@ -890,7 +935,13 @@ fn step_half_life(h: f32, d: i32) -> f32 {
 /// Carry out `act` on the row `key`. Settings save through
 /// `Command::SaveSettings`, as the island's pages save them.
 pub fn apply(st: &mut AppState, key: Key, act: Act) {
-    let theme = st.settings.theme;
+    if act == Act::Preview {
+        if let Some(hud) = preview_hud(key) {
+            st.cmd(Command::PreviewHud(hud));
+        }
+        return;
+    }
+    let (notch_type, notch_theme) = (st.settings.notch_type, st.settings.notch_theme);
     let s = &mut st.settings;
     let step = if let Act::Step(d) = act { d } else { 0 };
     match key {
@@ -949,7 +1000,7 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         Key::SystemHistory => s.system_history = !s.system_history,
         Key::Mascot => s.mascot = !s.mascot,
         Key::IdleLook => {
-            let looks = status::looks(theme);
+            let looks = status::looks(notch_type, notch_theme);
             match act {
                 Act::Pick(i) if i < looks.len() => s.idle_style = looks[i],
                 _ => return,
@@ -972,7 +1023,13 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
             Act::Pick(i) if i < FULLSCREEN.len() => s.hide_in_fullscreen = FULLSCREEN[i].0,
             _ => return,
         },
-        Key::GameStats => s.game_stats = !s.game_stats,
+        Key::GameStats => {
+            if !s.pro {
+                st.notify(Icon::Lock, palette::YELLOW, "Game overlay is Halo Pro", "Activate Halo Pro in Settings to show FPS, GPU and CPU over games", 5.0, None);
+                return;
+            }
+            s.game_stats = !s.game_stats;
+        }
         Key::GamePeek => s.game_peek = !s.game_peek,
         Key::Lyrics => s.lyrics = !s.lyrics,
         Key::Pronunciation => s.lyrics_pronunciation = !s.lyrics_pronunciation,
@@ -980,10 +1037,13 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         // + shows the lines later, as people hear a late line.
         Key::LyricsOffset => s.lyrics_offset_ms = (s.lyrics_offset_ms - step * OFFSET_STEP).clamp(-5000, 5000),
         Key::HudVolume => s.hud_volume = !s.hud_volume,
+        Key::HudBrightness => s.hud_brightness = !s.hud_brightness,
         Key::HudPower => s.hud_power = !s.hud_power,
         Key::HudBluetooth => s.hud_bluetooth = !s.hud_bluetooth,
         Key::HudCaps => s.hud_caps = !s.hud_caps,
         Key::HudWifi => s.hud_wifi = !s.hud_wifi,
+        Key::HudMic => s.hud_mic = !s.hud_mic,
+        Key::ResetTabOrder => s.tab_order.clear(),
         Key::RememberPage => s.remember_page = !s.remember_page,
         Key::StartPage => {
             let pages = start_pages(st);
@@ -1009,6 +1069,9 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
             st.news = Default::default();
         }
         Key::Tab(p) => {
+            if !p.hideable() {
+                return;
+            }
             let hidden = &mut s.hidden_tabs;
             match hidden.iter().position(|k| k == p.key()) {
                 Some(i) => {
@@ -1092,6 +1155,8 @@ pub struct View {
     pub input: Input,
     hits: Vec<Hit>,
     pub section: Section,
+    /// Sidebar quick-search query (empty = show `section`).
+    pub query: String,
     scroll: Scroll,
     motion: Motion,
     /// Something it shows changed: draw it again.
@@ -1120,12 +1185,20 @@ struct Scroll {
 
 impl View {
     pub fn new(section: Section) -> Self {
-        View { input: Input::default(), hits: Vec::new(), section, scroll: Scroll::default(), motion: Motion::default(), dirty: true, moving: false }
+        View { input: Input::default(), hits: Vec::new(), section, query: String::new(), scroll: Scroll::default(), motion: Motion::default(), dirty: true, moving: false }
+    }
+
+    /// Focus the sidebar search box (Ctrl+F).
+    pub fn focus_search(&mut self) {
+        self.input.focused = Some(wid("settingswin.search"));
+        self.input.caret = self.query.chars().count();
+        self.dirty = true;
     }
 
     /// Show `section`, from outside the window (it opens on it): no glide,
     /// it's there at once.
     pub fn show_section(&mut self, section: Section) {
+        self.query.clear();
         if section != self.section {
             self.section = section;
             self.scroll = Scroll::default();
@@ -1223,8 +1296,9 @@ impl View {
         hits.clear();
         {
             let mut ui = Ui::new(c, &mut self.input, &mut hits, now);
-            match draw(&mut ui, st, self.section, frame, light, &mut self.scroll, &mut self.motion) {
+            match draw(&mut ui, st, self.section, &mut self.query, frame, light, &mut self.scroll, &mut self.motion) {
                 Some(Nav::Section(s)) => {
+                    self.query.clear();
                     self.section = s;
                     self.scroll = Scroll::default();
                     self.motion.leave_section();
@@ -1385,9 +1459,41 @@ enum Nav {
     Close,
 }
 
-/// The whole window: the card, the sidebar and the section. Returns the
-/// section picked in the sidebar, or the close button.
-fn draw(ui: &mut Ui, st: &mut AppState, section: Section, frame: Frame, light: bool, sc: &mut Scroll, m: &mut Motion) -> Option<Nav> {
+/// Matching settings across every visible section for `query` (case-insensitive word match).
+fn search_blocks(st: &AppState, query: &str) -> (Vec<Block>, Vec<Section>) {
+    let words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
+    if words.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut matched_secs = Vec::new();
+    for sec in sections(st) {
+        let sec_low = sec.title().to_lowercase();
+        let mut items = Vec::new();
+        for b in blocks(sec, st) {
+            if let Block::Group(gtitle, rows) = b {
+                let g_low = gtitle.unwrap_or("").to_lowercase();
+                for it in rows {
+                    let lbl = it.label.to_lowercase();
+                    let sub = it.sub.as_deref().unwrap_or("").to_lowercase();
+                    if words.iter().all(|w| lbl.contains(w) || sub.contains(w) || sec_low.contains(w) || g_low.contains(w)) {
+                        items.push(it);
+                    }
+                }
+            }
+        }
+        if !items.is_empty() {
+            matched_secs.push(sec);
+            out.push(Block::Group(Some(sec.title()), items));
+        }
+    }
+    (out, matched_secs)
+}
+
+/// The whole window: the card, the sidebar and the section (or search results).
+/// Returns the section picked in the sidebar, or the close button.
+#[allow(clippy::too_many_arguments)]
+fn draw(ui: &mut Ui, st: &mut AppState, section: Section, query: &mut String, frame: Frame, light: bool, sc: &mut Scroll, m: &mut Motion) -> Option<Nav> {
     let card = frame.card;
     let sf = surfaces(light);
     // Windows' borderless window: its own shadow and rounded corners.
@@ -1415,9 +1521,18 @@ fn draw(ui: &mut Ui, st: &mut AppState, section: Section, frame: Frame, light: b
         ui.c.stroke_rrect(card.inset(px / 2.0, px / 2.0), RADIUS, EDGE, px);
     }
 
-    let picked = draw_sidebar(ui, st, side, section, frame.top, m);
+    let q_before = query.clone();
+    let searching_now = !query.trim().is_empty();
+    let (search_res, matched_secs) = if searching_now { search_blocks(st, query) } else { (Vec::new(), Vec::new()) };
+    let picked = draw_sidebar(ui, st, side, section, query, &matched_secs, frame.top, m);
+    if *query != q_before {
+        sc.at = 0.0;
+        sc.to = 0.0;
+    }
+    let searching = !query.trim().is_empty();
     let content = Rect::new(side.right() + PAD, card.y, card.right() - side.right() - 2.0 * PAD, card.h);
-    ui.c.text(section.title(), Rect::new(content.x, card.y + TITLE_Y, content.w - 40.0, TITLE_H), &TextStyle::new(22.0).weight(Weight::Bold));
+    let heading = if searching { format!("Results for \"{}\"", query.trim()) } else { section.title().to_string() };
+    ui.c.text(&heading, Rect::new(content.x, card.y + TITLE_Y, content.w - 40.0, TITLE_H), &TextStyle::new(22.0).weight(Weight::Bold));
     let close = frame.own_chrome && draw_close(ui, card, m);
 
     let view = Rect::new(content.x - PAD / 2.0, card.y + CONTENT_Y, content.w + PAD, card.bottom() - CONTENT_Y - card.y - 1.0);
@@ -1445,8 +1560,19 @@ fn draw(ui: &mut Ui, st: &mut AppState, section: Section, frame: Frame, light: b
     ui.c.clip(view);
     let mut y = view.y - sc.at;
     let x = content.x;
-    for (bi, b) in blocks(section, st).into_iter().enumerate() {
-        y = draw_block(ui, st, &b, bi, Rect::new(x, y, content.w, 0.0), view, &sf, m);
+    let shown_blocks = if searching {
+        if *query == q_before { search_res } else { search_blocks(st, query).0 }
+    } else {
+        blocks(section, st)
+    };
+    if searching && shown_blocks.is_empty() {
+        let msg = format!("No settings match \"{}\"", query.trim());
+        ui.c.text(&msg, Rect::new(x, y + 32.0, content.w, 22.0), &TextStyle::body().color(palette::TEXT_DIM).center());
+        y += 64.0;
+    } else {
+        for (bi, b) in shown_blocks.into_iter().enumerate() {
+            y = draw_block(ui, st, &b, bi, Rect::new(x, y, content.w, 0.0), view, &sf, m);
+        }
     }
     ui.c.unclip();
     sc.content_h = y + sc.at - view.y;
@@ -1457,7 +1583,7 @@ fn draw(ui: &mut Ui, st: &mut AppState, section: Section, frame: Frame, light: b
     if close {
         return Some(Nav::Close);
     }
-    picked.filter(|p| *p != section).map(Nav::Section)
+    picked.filter(|p| searching || *p != section).map(Nav::Section)
 }
 
 /// The close button at the card's top right (Windows). True when clicked.
@@ -1482,26 +1608,48 @@ fn draw_close(ui: &mut Ui, card: Rect, m: &mut Motion) -> bool {
     resp.clicked
 }
 
-/// The sidebar: the halo mascot's tile and the window's name, then a row per section
-/// (About at the bottom). The highlight glides to the section picked.
+/// The sidebar: the halo mascot's tile, the window's name, a quick search box,
+/// then a row per section (About at the bottom). The highlight glides to the section picked.
 /// `top`: room for the Mac's window buttons.
-fn draw_sidebar(ui: &mut Ui, st: &mut AppState, side: Rect, section: Section, top: f32, m: &mut Motion) -> Option<Section> {
-    let icon_c = Point::new(side.x + 20.0 + 12.0, side.y + top + 32.0);
-    halo_mascot(ui.c, icon_c, 24.0);
-    ui.c.text("Advanced settings", Rect::new(icon_c.x + 20.0, side.y + top + 20.0, side.w - 60.0, 24.0), &TextStyle::headline());
+#[allow(clippy::too_many_arguments)]
+fn draw_sidebar(ui: &mut Ui, st: &mut AppState, side: Rect, section: Section, query: &mut String, matched: &[Section], top: f32, m: &mut Motion) -> Option<Section> {
+    let icon_c = Point::new(side.x + 20.0 + 12.0, side.y + top + 28.0);
+    halo_mascot(ui.c, icon_c, 22.0);
+    ui.c.text("Advanced settings", Rect::new(icon_c.x + 19.0, side.y + top + 16.0, side.w - 60.0, 24.0), &TextStyle::headline());
+
+    // Quick search box under the title.
+    let search_r = Rect::new(side.x + 12.0, side.y + top + SEARCH_Y, side.w - 24.0, SEARCH_H);
+    let clear_w = if query.is_empty() { 0.0 } else { 22.0 };
+    let field_r = Rect::new(search_r.x, search_r.y, (search_r.w - clear_w).max(40.0), search_r.h);
+    let sresp = ui.text_input_row(wid("settingswin.search"), field_r, query, "Search settings", 48, st.accent, Some(Icon::Search));
+    if sresp.cancelled {
+        query.clear();
+        ui.blur();
+    }
+    if !query.is_empty() {
+        let cr = Rect::new(search_r.right() - 20.0, search_r.center().y - 10.0, 20.0, 20.0);
+        if ui.icon_button(wid("settingswin.search.clear"), cr, Icon::Close, palette::TEXT_DIM, 11.0).clicked {
+            query.clear();
+            ui.blur();
+        }
+    }
+
+    let searching = !query.trim().is_empty();
     let list = sections(st);
     let about_at = side.bottom() - 12.0 - NAV_H;
     let row_y = |i: usize, s: Section| if s == Section::About { about_at } else { side.y + top + NAV_Y + i as f32 * (NAV_H + NAV_GAP) };
-    // The highlight, under the rows.
+    // The highlight, under the rows (hidden while viewing search results).
     let sel_key = mkey(wid("settingswin.nav.sel"), K_Y);
-    if let Some(i) = list.iter().position(|s| *s == section) {
-        let to = row_y(i, section);
-        let y = m.slide(sel_key, to, SLIDE);
-        let r = Rect::new(side.x + 10.0, y, side.w - 20.0, NAV_H);
-        if y != to {
-            m.cover(span(r, Rect::new(r.x, to, r.w, r.h)));
+    if !searching {
+        if let Some(i) = list.iter().position(|s| *s == section) {
+            let to = row_y(i, section);
+            let y = m.slide(sel_key, to, SLIDE);
+            let r = Rect::new(side.x + 10.0, y, side.w - 20.0, NAV_H);
+            if y != to {
+                m.cover(span(r, Rect::new(r.x, to, r.w, r.h)));
+            }
+            ui.c.fill_rrect(r, 8.0, Color::white(0.12));
         }
-        ui.c.fill_rrect(r, 8.0, Color::white(0.12));
     }
     let mut picked = None;
     for (i, s) in list.iter().enumerate() {
@@ -1511,7 +1659,8 @@ fn draw_sidebar(ui: &mut Ui, st: &mut AppState, side: Rect, section: Section, to
         if resp.clicked {
             picked = Some(*s);
         }
-        let on = *s == section;
+        let on = !searching && *s == section;
+        let dim = searching && !matched.contains(s);
         let to = if on { 0.0 } else if resp.pressed { 0.09 } else if resp.hovered { 0.05 } else { 0.0 };
         let wash = m.fade(mkey(id, K_WASH), to, WASH);
         if wash != to {
@@ -1521,15 +1670,18 @@ fn draw_sidebar(ui: &mut Ui, st: &mut AppState, side: Rect, section: Section, to
             ui.c.fill_rrect(r, 8.0, Color::white(wash));
         }
         let tile = Rect::new(r.x + 8.0, r.center().y - NAV_TILE / 2.0, NAV_TILE, NAV_TILE);
-        if *s == Section::About {
-            halo_mascot(ui.c, tile.center(), NAV_TILE);
-        } else {
-            ui.c.fill_rrect(tile, 6.0, s.tint());
-            ui.c.icon(s.icon(), Rect::from_center(tile.center(), 14.0, 14.0), palette::ON_ACCENT);
-        }
-        let tx = tile.right() + 10.0;
-        let style = TextStyle::body().weight(if on { Weight::Semibold } else { Weight::Regular }).color(if on { palette::TEXT } else { Color::white(0.82) });
-        ui.c.text(s.title(), Rect::new(tx, r.y, (r.right() - tx - 6.0).max(0.0), r.h), &style);
+        let row_alpha = if dim { 0.38 } else { 1.0 };
+        ui.c.with_alpha(row_alpha, |c| {
+            if *s == Section::About {
+                halo_mascot(c, tile.center(), NAV_TILE);
+            } else {
+                c.fill_rrect(tile, 6.0, s.tint());
+                c.icon(s.icon(), Rect::from_center(tile.center(), 13.0, 13.0), palette::ON_ACCENT);
+            }
+            let tx = tile.right() + 10.0;
+            let style = TextStyle::body().weight(if on { Weight::Semibold } else { Weight::Regular }).color(if on { palette::TEXT } else { Color::white(0.82) });
+            c.text(s.title(), Rect::new(tx, r.y, (r.right() - tx - 6.0).max(0.0), r.h), &style);
+        });
     }
     picked
 }
@@ -1563,7 +1715,8 @@ fn block_h(st: &AppState, b: &Block) -> f32 {
                 72.0
             }
         }
-        Block::Themes => GROUP_TITLE_H + theme_cards_h(),
+        Block::NotchTypes => GROUP_TITLE_H + cards_h(NOTCH_TYPES.len()),
+        Block::Themes => GROUP_TITLE_H + cards_h(THEMES.len()),
         Block::Addons => crate::pages::addons::height(st),
         Block::Note(_) => 18.0,
         Block::ProKey => pro_key_h(st),
@@ -1594,21 +1747,26 @@ fn draw_block(ui: &mut Ui, st: &mut AppState, b: &Block, bi: usize, at: Rect, vi
             }
             let card = Rect::new(r.x, y, r.w, r.bottom() - y);
             fill_group(ui, card, sf.group);
-            let accent = st.accent;
-            let px = 1.0 / ui.c.scale().max(0.5);
-            for (i, it) in items.iter().enumerate() {
-                let rh = row_h(it);
-                let row = Rect::new(card.x, y, card.w, rh);
-                if i > 0 {
-                    ui.c.fill_rect(Rect::new(row.x + ROW_PAD, row.y, row.w - ROW_PAD, px), RULE);
+            if !items.is_empty() && items.iter().all(|it| matches!(it.key, Key::Tab(_))) {
+                draw_tab_order_group(ui, st, card, items, view, m);
+            } else {
+                let accent = st.accent;
+                let px = 1.0 / ui.c.scale().max(0.5);
+                for (i, it) in items.iter().enumerate() {
+                    let rh = row_h(it);
+                    let row = Rect::new(card.x, y, card.w, rh);
+                    if i > 0 {
+                        ui.c.fill_rect(Rect::new(row.x + ROW_PAD, row.y, row.w - ROW_PAD, px), RULE);
+                    }
+                    if let Some(act) = draw_row(ui, it, (bi, i), row, view, accent, (i == 0, i + 1 == items.len()), m) {
+                        apply(st, it.key, act);
+                    }
+                    y += rh;
                 }
-                if let Some(act) = draw_row(ui, it, (bi, i), row, view, accent, (i == 0, i + 1 == items.len()), m) {
-                    apply(st, it.key, act);
-                }
-                y += rh;
             }
         }
         Block::Version => draw_version(ui, st, r, view, sf),
+        Block::NotchTypes => draw_notch_types(ui, st, r, view, sf, m),
         Block::Themes => draw_themes(ui, st, r, view, sf, m),
         Block::Addons => crate::pages::addons::draw(ui, st, r),
         Block::Note(t) => ui.c.text(t, Rect::new(r.x + 2.0, r.y, r.w, r.h), &TextStyle::footnote().color(palette::TEXT_FAINT)),
@@ -1770,6 +1928,135 @@ fn is_license_code(s: &str) -> bool {
     groups.len() == 5 && groups[0] == "HALO" && groups[1..].iter().all(|g| g.len() == 5 && g.bytes().all(|b| b"ABCDEFGHJKMNPQRSTUVWXYZ23456789".contains(&b)))
 }
 
+/// Draggable list of tabs in Settings › Tabs: drag any row vertically to
+/// reorder `settings.tab_order`, or click a hideable row to toggle visibility.
+fn draw_tab_order_group(ui: &mut Ui, st: &mut AppState, card: Rect, items: &[Item], view: Rect, m: &mut Motion) {
+    let mut drag_just_ended = false;
+    if !ui.input.down {
+        if let Some((_, moved)) = st.ui.settings_tab_drag.take() {
+            if moved {
+                drag_just_ended = true;
+                st.cmd(Command::SaveSettings);
+            }
+        }
+    }
+
+    let pages: Vec<PageKind> = items
+        .iter()
+        .filter_map(|it| match it.key {
+            Key::Tab(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+    let mut rects: Vec<Rect> = Vec::with_capacity(items.len());
+    let mut y = card.y;
+    for it in items {
+        let rh = row_h(it);
+        rects.push(Rect::new(card.x, y, card.w, rh));
+        y += rh;
+    }
+
+    let accent = st.accent;
+    let px = 1.0 / ui.c.scale().max(0.5);
+    let mut reorder_req: Option<(PageKind, PageKind)> = None;
+    let mut toggle_req: Option<PageKind> = None;
+
+    for (i, it) in items.iter().enumerate() {
+        let Key::Tab(p) = it.key else { continue };
+        let row = rects[i];
+        let ends = (i == 0, i + 1 == items.len());
+        if i > 0 {
+            ui.c.fill_rect(Rect::new(row.x + ROW_PAD, row.y, row.w - ROW_PAD, px), RULE);
+        }
+        // Key the widget by PageKind so dragging follows the tab across live swaps.
+        let rid = wid_n("settingswin.tabrow", p as u64);
+        let resp = match visible(row, view) {
+            Some(hit) => ui.button(rid, hit),
+            None => Default::default(),
+        };
+        if let Some((_, dy)) = resp.drag {
+            let moved = st.ui.settings_tab_drag.is_some_and(|(dp, mv)| dp == p && mv) || dy.abs() >= 6.0;
+            st.ui.settings_tab_drag = Some((p, moved));
+            if moved {
+                if let Some(my) = ui.input.mouse.map(|pt| pt.y) {
+                    if let Some((ti, &target)) = pages
+                        .iter()
+                        .enumerate()
+                        .min_by(|(ia, _), (ib, _)| (rects[*ia].center().y - my).abs().total_cmp(&(rects[*ib].center().y - my).abs()))
+                    {
+                        if ti != i && target != p {
+                            reorder_req = Some((p, target));
+                        }
+                    }
+                }
+            }
+        }
+        let is_dragged = st.ui.settings_tab_drag.is_some_and(|(dp, mv)| dp == p && mv);
+        if is_dragged {
+            fill_row(ui, row, Color::white(0.12), ends);
+            ui.c.stroke_rrect(row.inset(1.0, 1.0), 8.0, Color::white(0.28), 1.0);
+        } else {
+            let to = if resp.pressed { 0.07 } else if resp.hovered { 0.04 } else { 0.0 };
+            let wash = m.fade(mkey(rid, K_WASH), to, WASH);
+            if wash != to {
+                m.cover(row);
+            }
+            if wash > 0.0 {
+                fill_row(ui, row, Color::white(wash), ends);
+            }
+        }
+
+        let inner = row.inset(ROW_PAD, 0.0);
+        let cy = row.center().y;
+        // 6-dot drag grip on the left.
+        let grip_col = if is_dragged || resp.hovered { palette::TEXT_DIM } else { palette::TEXT_FAINT };
+        for col in 0..2 {
+            for r_dot in -1..=1 {
+                let gx = inner.x + 2.0 + col as f32 * 4.5;
+                let gy = cy + r_dot as f32 * 4.5;
+                ui.c.fill_circle(Point::new(gx, gy), 1.15, grip_col);
+            }
+        }
+        // Tinted mini icon badge for the tab.
+        let badge = Rect::new(inner.x + 16.0, cy - 10.0, 20.0, 20.0);
+        ui.c.fill_rrect(badge, 6.0, p.tint());
+        ui.c.icon(p.icon(), Rect::from_center(badge.center(), 11.0, 11.0), palette::ON_ACCENT);
+
+        // Visibility switch on the right.
+        let ctl_x = inner.right() - SWITCH_W;
+        if let Ctl::Switch(on) = &it.ctl {
+            let to = if *on == Some(true) || on.is_none() { 1.0 } else { 0.0 };
+            let k = m.fade(mkey(rid, K_ON), to, SWITCHING);
+            let sw = Rect::new(ctl_x, cy - SWITCH_H / 2.0, SWITCH_W, SWITCH_H);
+            if k != to {
+                m.cover(sw.inset(-1.0, -1.0));
+            }
+            let alpha = if on.is_some() { 1.0 } else { 0.45 };
+            ui.c.with_alpha(alpha, |c| draw_switch_at(c, sw, k, accent));
+        }
+
+        let tx = badge.right() + 10.0;
+        let tw = (ctl_x - 16.0 - tx).max(0.0);
+        match &it.sub {
+            Some(sub) => {
+                ui.c.text(&it.label, Rect::new(tx, cy - 19.0, tw, 19.0), &TextStyle::body());
+                ui.c.text(sub, Rect::new(tx, cy + 1.0, tw, 17.0), &TextStyle::footnote().color(palette::TEXT_DIM));
+            }
+            None => ui.c.text(&it.label, Rect::new(tx, row.y, tw, row.h), &TextStyle::body()),
+        }
+
+        if resp.clicked && p.hideable() && !drag_just_ended && !is_dragged {
+            toggle_req = Some(p);
+        }
+    }
+
+    if let Some((tab, target)) = reorder_req {
+        crate::pages::reorder_tab(st, &pages, tab, target);
+    } else if let Some(p) = toggle_req {
+        apply(st, Key::Tab(p), Act::Toggle);
+    }
+}
+
 /// One row: its label (and dim line), and its control. Returns what a
 /// click did. `ends`: the row is the card's first, its last.
 #[allow(clippy::too_many_arguments)]
@@ -1787,6 +2074,7 @@ fn draw_row(ui: &mut Ui, it: &Item, at: (usize, usize), row: Rect, view: Rect, a
         Ctl::Button(label) => ui.pill_width(label, true, true),
     };
     let ctl_x = inner.right() - ctl_w;
+    let mut label_right = ctl_x - 16.0;
     match &it.ctl {
         Ctl::Switch(on) => {
             // The whole row toggles, as on the island's Settings page.
@@ -1805,6 +2093,18 @@ fn draw_row(ui: &mut Ui, it: &Item, at: (usize, usize), row: Rect, view: Rect, a
             }
             if resp.clicked {
                 act = Some(Act::Toggle);
+            }
+            // Pop-ups rows carry a compact live Preview pill beside the switch.
+            if preview_hud(it.key).is_some() {
+                let pv_h = 24.0;
+                let pv_w = ui.pill_width("Preview", true, true).min(86.0);
+                let pv_r = Rect::new(ctl_x - 10.0 - pv_w, row.center().y - pv_h / 2.0, pv_w, pv_h);
+                label_right = pv_r.x - 12.0;
+                if visible(pv_r, view).is_some_and(|v| v.h >= pv_r.h - 0.5) {
+                    if ui.pill(id("preview"), pv_r, "Preview", Some(Icon::Play), PillStyle::Utility).clicked {
+                        act = Some(Act::Preview);
+                    }
+                }
             }
             // The knob slides and the track takes the colour as it goes.
             let to = if *on == Some(true) { 1.0 } else { 0.0 };
@@ -1848,14 +2148,15 @@ fn draw_row(ui: &mut Ui, it: &Item, at: (usize, usize), row: Rect, view: Rect, a
             ui.c.text(value, vr, &TextStyle::body().weight(Weight::Semibold).tabular().center());
         }
         Ctl::Button(label) => {
+            let icon = if it.key == Key::ResetTabOrder { Icon::Reset } else { Icon::Open };
             let r = Rect::new(ctl_x, row.center().y - PILL_SMALL / 2.0, ctl_w, PILL_SMALL);
             let clicked = match visible(r, view).filter(|v| v.h >= r.h - 0.5) {
-                Some(_) => ui.pill(id("button"), r, label, Some(Icon::Open), PillStyle::Utility).clicked,
+                Some(_) => ui.pill(id("button"), r, label, Some(icon), PillStyle::Utility).clicked,
                 None => {
                     let mut none = Input::default();
                     let mut no_hits = Vec::new();
                     let mut ghost = Ui::new(&mut *ui.c, &mut none, &mut no_hits, 0.0);
-                    ghost.pill(0, r, label, Some(Icon::Open), PillStyle::Utility);
+                    ghost.pill(0, r, label, Some(icon), PillStyle::Utility);
                     false
                 }
             };
@@ -1865,7 +2166,7 @@ fn draw_row(ui: &mut Ui, it: &Item, at: (usize, usize), row: Rect, view: Rect, a
         }
     }
     // The label, and the dim line under it.
-    let tw = (ctl_x - 16.0 - inner.x).max(0.0);
+    let tw = (label_right - inner.x).max(0.0);
     match &it.sub {
         Some(sub) => {
             let cy = row.center().y;
@@ -2039,14 +2340,13 @@ fn draw_version(ui: &mut Ui, st: &mut AppState, r: Rect, view: Rect, sf: &Surfac
     }
 }
 
-/// How tall the theme cards are together: as many rows as they fill.
-fn theme_cards_h() -> f32 {
-    let rows = THEMES.len().div_ceil(THEME_COLS) as f32;
+/// How tall `n` cards are together: as many rows of [`THEME_COLS`] as they fill.
+fn cards_h(n: usize) -> f32 {
+    let rows = n.div_ceil(THEME_COLS) as f32;
     rows * THEME_CARD_H + (rows - 1.0).max(0.0) * THEME_GAP
 }
 
-/// The `i`-th theme's card in the block `r` (under its caption): rows of
-/// [`THEME_COLS`] from the left, the last row as far as the themes go.
+/// The `i`-th card in a picker block `r` (under its caption).
 fn theme_card(r: Rect, i: usize) -> Rect {
     let cols = THEME_COLS as f32;
     let w = ((r.w - (cols - 1.0) * THEME_GAP) / cols).floor();
@@ -2054,72 +2354,106 @@ fn theme_card(r: Rect, i: usize) -> Rect {
     Rect::new(r.x + col * (w + THEME_GAP), r.y + GROUP_TITLE_H + row * (THEME_CARD_H + THEME_GAP), w, THEME_CARD_H)
 }
 
-/// The themes, a card each, three to a row: a small screen with the island
-/// on it as the theme draws it, the name and a line. The ring and the tick
-/// fade to the theme picked.
-fn draw_themes(ui: &mut Ui, st: &mut AppState, r: Rect, view: Rect, sf: &Surfaces, m: &mut Motion) {
-    ui.c.text("Theme", Rect::new(r.x + 2.0, r.y, r.w, GROUP_TITLE_H - 6.0), &TextStyle::footnote().weight(Weight::Semibold).color(palette::TEXT_DIM));
+#[allow(clippy::too_many_arguments)]
+fn draw_picker_card(
+    ui: &mut Ui,
+    c: Rect,
+    view: Rect,
+    id: u64,
+    on: bool,
+    locked: bool,
+    name: &str,
+    line: &str,
+    ty: NotchType,
+    th: NotchTheme,
+    accent: Color,
+    sf: &Surfaces,
+    m: &mut Motion,
+) -> bool {
+    let resp = match visible(c, view) {
+        Some(hit) => ui.button(id, hit),
+        None => Default::default(),
+    };
+    let label = if locked { format!("{name} (Pro)") } else { name.to_string() };
+    fill_group(ui, c, sf.group);
+    let lit_to = if resp.pressed { 1.0 } else if resp.hovered { 0.6 } else { 0.0 };
+    let lit = m.fade(mkey(id, K_WASH), lit_to, WASH);
+    if lit > 0.0 {
+        let over = if lit > 0.6 { sf.group_press } else { sf.group_hover };
+        ui.c.unthemed(|cv| cv.fill_rrect(c, GROUP_R, over.mul_alpha((lit / 0.6).min(1.0))));
+    }
+    let ring_to = if on { 1.0 } else { 0.0 };
+    let ring = m.fade(mkey(id, K_ON), ring_to, SWITCHING);
+    if lit != lit_to || ring != ring_to {
+        m.cover(c.inset(-2.0, -2.0));
+    }
+    if ring > 0.0 {
+        ui.c.stroke_rrect(c.inset(1.0, 1.0), GROUP_R - 1.0, accent.mul_alpha(ring), 2.0);
+    }
+    let screen = Rect::new(c.x + 10.0, c.y + 10.0, THEME_PREVIEW_W, THEME_PREVIEW_H);
+    ui.c.unthemed(|cv| draw_combo_preview(cv, ty, th, screen));
+    let tx = screen.right() + 12.0;
+    let ty_text = c.y + 12.0;
+    let tw = (c.right() - 10.0 - tx).max(0.0);
+    let title_w = (tw - if on { 20.0 } else { 0.0 }).max(0.0);
+    ui.c.text(&label, Rect::new(tx, ty_text, title_w, 19.0), &TextStyle::body().weight(Weight::Semibold));
+    ui.c.text(line, Rect::new(tx, ty_text + 22.0, tw.min(THEME_LINE_W), 34.0), &TextStyle::footnote().color(palette::TEXT_DIM).wrap().top());
+    if ring > 0.0 {
+        let dot = Point::new(c.right() - 18.0, ty_text + 9.5);
+        ui.c.with_alpha(ring, |cv| {
+            cv.fill_circle(dot, 8.0, accent);
+            cv.icon(Icon::Check, Rect::from_center(dot, 10.0, 10.0), palette::ON_ACCENT);
+        });
+    }
+    resp.clicked
+}
+
+/// Independent notch type picker (Notch / Pill) with live preview of the current theme.
+fn draw_notch_types(ui: &mut Ui, st: &mut AppState, r: Rect, view: Rect, sf: &Surfaces, m: &mut Motion) {
+    ui.c.text("Notch type", Rect::new(r.x + 2.0, r.y, r.w, GROUP_TITLE_H - 6.0), &TextStyle::footnote().weight(Weight::Semibold).color(palette::TEXT_DIM));
     let accent = st.accent;
+    let cur_theme = st.settings.notch_theme;
     let mut picked = None;
-    for (i, (theme, name, line)) in THEMES.iter().enumerate() {
+    for (i, (ty, name, line)) in NOTCH_TYPES.iter().enumerate() {
         let c = theme_card(r, i);
-        let id = wid_n("settingswin.theme", i as u64);
-        let resp = match visible(c, view) {
-            Some(hit) => ui.button(id, hit),
-            None => Default::default(),
-        };
-        let locked = !theme.free() && !st.settings.pro;
-        let name = if locked { theme_locked_label(*theme, name) } else { name.to_string() };
-        let on = st.settings.theme == *theme;
-        fill_group(ui, c, sf.group);
-        let lit_to = if resp.pressed { 1.0 } else if resp.hovered { 0.6 } else { 0.0 };
-        let lit = m.fade(mkey(id, K_WASH), lit_to, WASH);
-        if lit > 0.0 {
-            let over = if lit > 0.6 { sf.group_press } else { sf.group_hover };
-            ui.c.unthemed(|cv| cv.fill_rrect(c, GROUP_R, over.mul_alpha((lit / 0.6).min(1.0))));
-        }
-        let ring_to = if on { 1.0 } else { 0.0 };
-        let ring = m.fade(mkey(id, K_ON), ring_to, SWITCHING);
-        if lit != lit_to || ring != ring_to {
-            m.cover(c.inset(-2.0, -2.0));
-        }
-        if ring > 0.0 {
-            ui.c.stroke_rrect(c.inset(1.0, 1.0), GROUP_R - 1.0, accent.mul_alpha(ring), 2.0);
-        }
-        let screen = Rect::new(c.x + 10.0, c.y + 10.0, c.w - 20.0, THEME_PREVIEW_H);
-        ui.c.unthemed(|cv| draw_theme_preview(cv, *theme, screen));
-        let tx = c.x + 12.0;
-        let ty = screen.bottom() + 10.0;
-        let tw = c.w - 24.0 - if on { 20.0 } else { 0.0 };
-        ui.c.text(&name, Rect::new(tx, ty, tw, 19.0), &TextStyle::body().weight(Weight::Semibold));
-        ui.c.text(line, Rect::new(tx, ty + 20.0, (c.w - 24.0).min(THEME_LINE_W), 34.0), &TextStyle::footnote().color(palette::TEXT_DIM).wrap().top());
-        if ring > 0.0 {
-            let dot = Point::new(c.right() - 20.0, ty + 9.5);
-            ui.c.with_alpha(ring, |cv| {
-                cv.fill_circle(dot, 8.0, accent);
-                cv.icon(Icon::Check, Rect::from_center(dot, 10.0, 10.0), palette::ON_ACCENT);
-            });
-        }
-        if resp.clicked {
-            picked = Some(*theme);
+        let id = wid_n("settingswin.notch_type", i as u64);
+        let locked = !ty.free() && !st.settings.pro;
+        if draw_picker_card(ui, c, view, id, st.settings.notch_type == *ty, locked, name, line, *ty, cur_theme, accent, sf, m) {
+            picked = Some(*ty);
         }
     }
-    if let Some(t) = picked.filter(|t| *t != st.settings.theme) {
-        // Glass, Pill and Diorama are Halo Pro's: without Pro the theme
-        // stays as it is and a notice says so.
-        if !t.free() && !st.settings.pro {
-            st.notify(crate::icons::Icon::Lock, palette::YELLOW, "That theme is Halo Pro", "Activate Halo Pro in Settings to use Glass, Pill and Diorama", 5.0, None);
+    if let Some(ty) = picked.filter(|t| *t != st.settings.notch_type) {
+        if !ty.free() && !st.settings.pro {
+            st.notify(crate::icons::Icon::Lock, palette::YELLOW, "That notch type is Halo Pro", "Activate Halo Pro in Settings to use the floating Pill", 5.0, None);
         } else {
-            st.settings.theme = t;
+            st.settings.notch_type = ty;
             st.cmd(Command::SaveSettings);
         }
     }
 }
 
-/// A locked theme's name in a picker, while Pro is off.
-fn theme_locked_label(t: Theme, name: &str) -> String {
-    let _ = t;
-    format!("{name} (Halo Pro)")
+/// Independent theme picker with live preview of the current notch type.
+fn draw_themes(ui: &mut Ui, st: &mut AppState, r: Rect, view: Rect, sf: &Surfaces, m: &mut Motion) {
+    ui.c.text("Theme", Rect::new(r.x + 2.0, r.y, r.w, GROUP_TITLE_H - 6.0), &TextStyle::footnote().weight(Weight::Semibold).color(palette::TEXT_DIM));
+    let accent = st.accent;
+    let cur_type = st.settings.notch_type;
+    let mut picked = None;
+    for (i, (theme, name, line)) in THEMES.iter().enumerate() {
+        let c = theme_card(r, i);
+        let id = wid_n("settingswin.theme", i as u64);
+        let locked = !theme.free() && !st.settings.pro;
+        if draw_picker_card(ui, c, view, id, st.settings.notch_theme == *theme, locked, name, line, cur_type, *theme, accent, sf, m) {
+            picked = Some(*theme);
+        }
+    }
+    if let Some(t) = picked.filter(|t| *t != st.settings.notch_theme) {
+        if !t.free() && !st.settings.pro {
+            st.notify(crate::icons::Icon::Lock, palette::YELLOW, "That theme is Halo Pro", "Activate Halo Pro in Settings to use Glass and Diorama", 5.0, None);
+        } else {
+            st.settings.notch_theme = t;
+            st.cmd(Command::SaveSettings);
+        }
+    }
 }
 
 thread_local! {
@@ -2165,49 +2499,53 @@ fn diorama_spot(screen: Rect, px: (u32, u32), scale: f32) -> Rect {
     Rect::new(snap(screen.center().x - w / 2.0), snap(screen.y + DIORAMA_FLOAT), w, h)
 }
 
-/// A theme's island on a small screen: hanging from its top edge, glass,
-/// with Halo's eyes, floating below it, or floating there as Diorama's
-/// picture. Drawn as it is, in either mode.
-fn draw_theme_preview(c: &mut Canvas, theme: Theme, screen: Rect) {
+/// Live preview of any `(NotchType, NotchTheme)` combination on a small screen.
+fn draw_combo_preview(c: &mut Canvas, ty: NotchType, theme: NotchTheme, screen: Rect) {
     c.clip(screen);
     c.fill_rrect(screen, 7.0, WALLPAPER);
     c.fill_rrect(Rect::new(screen.x, screen.y + screen.h * 0.55, screen.w, screen.h), 7.0, Color::hex(0x56679C));
     let cx = screen.center().x;
     let clock = TextStyle::caption().weight(Weight::Semibold).tabular().center();
-    match theme {
-        Theme::Classic | Theme::Halo | Theme::Glass => {
-            let body = Rect::new(cx - 34.0, screen.y, 68.0, 20.0);
-            let (fill, border) = match theme {
-                Theme::Glass => (Color::white(0.30), Some(Color::white(0.45))),
-                _ => (palette::ISLAND, None),
-            };
-            c.notch(body, 9.0, 5.0, fill, border);
-            if theme == Theme::Halo {
-                // Halo's eyes peek over the island's edge.
-                for dx in [-6.0, 6.0] {
-                    c.fill_rrect(Rect::from_center(Point::new(cx + dx, body.center().y), 5.0, 8.0), 2.5, palette::ORANGE);
-                }
-            } else {
-                c.text("10:08", body, &clock.color(palette::TEXT));
+    if ty == NotchType::Pill && theme == NotchTheme::Diorama {
+        let scale = c.scale();
+        let (image, old) = diorama_image(scale);
+        if let Some(old) = old {
+            c.forget_image(&old);
+        }
+        let body = diorama_spot(screen, (image.width, image.height), scale);
+        c.fill_rrect(body.offset(0.0, 2.0), body.h / 2.0, Color::black(0.25));
+        c.image_exact(&image, body, body.h / 2.0);
+        c.unclip();
+        return;
+    }
+    let (fill, border, ink) = match theme {
+        NotchTheme::Classic => (palette::ISLAND, (ty == NotchType::Pill).then_some(Color::white(0.14)), palette::TEXT),
+        NotchTheme::Halo => (Color::hex(0xFFF1DE), Some(Color::rgba(0.55, 0.30, 0.10, 0.25)), Color::hex(0x2B1B10)),
+        NotchTheme::Glass => (Color::white(0.30), Some(Color::white(0.45)), palette::TEXT),
+        NotchTheme::Diorama => (Color::hex(0xF8F3E7), Some(Color::hex(0xBFB49C)), Color::hex(0x14173A)),
+    };
+    let body = match ty {
+        NotchType::Notch => {
+            let b = Rect::new(cx - 34.0, screen.y, 68.0, 20.0);
+            c.notch(b, 9.0, 5.0, fill, border);
+            b
+        }
+        NotchType::Pill => {
+            let b = Rect::new(cx - 36.0, screen.y + THEME_FLOAT, 72.0, 20.0);
+            c.fill_rrect(b.offset(0.0, 2.0), 10.0, Color::black(0.25));
+            c.fill_rrect(b, 10.0, fill);
+            if let Some(bc) = border {
+                c.stroke_rrect(b, 10.0, bc, 1.0);
             }
+            b
         }
-        Theme::Pill => {
-            let body = Rect::new(cx - 36.0, screen.y + THEME_FLOAT, 72.0, 20.0);
-            c.fill_rrect(body.offset(0.0, 2.0), 10.0, Color::black(0.25));
-            c.fill_rrect(body, 10.0, palette::ISLAND);
-            c.text("10:08", body, &clock.color(palette::TEXT));
+    };
+    if theme == NotchTheme::Halo {
+        for dx in [-6.0, 6.0] {
+            c.fill_rrect(Rect::from_center(Point::new(cx + dx, body.center().y), 5.0, 8.0), 2.5, palette::ORANGE);
         }
-        Theme::Diorama => {
-            // The picture itself, with the time in its sky.
-            let scale = c.scale();
-            let (image, old) = diorama_image(scale);
-            if let Some(old) = old {
-                c.forget_image(&old);
-            }
-            let body = diorama_spot(screen, (image.width, image.height), scale);
-            c.fill_rrect(body.offset(0.0, 2.0), body.h / 2.0, Color::black(0.25));
-            c.image_exact(&image, body, body.h / 2.0);
-        }
+    } else {
+        c.text("10:08", body, &clock.color(ink));
     }
     c.unclip();
 }
@@ -2252,8 +2590,10 @@ mod tests {
                 let saved = st.cmds.iter().any(|c| matches!(c, Command::SaveSettings));
                 let opens = st.cmds.iter().any(|c| matches!(c, Command::OpenPath(_) | Command::OpenUrl(_) | Command::ShowWhatsNew));
                 match it.key {
-                    // Start with Windows waits for its reading; the buttons open things.
+                    // Start with Windows waits for its reading; the buttons open things;
+                    // GameStats without Pro notifies instead of toggling and getting reverted.
                     Key::Autostart => assert!(st.cmds.is_empty()),
+                    Key::GameStats if !st.settings.pro => assert!(st.notice.is_some()),
                     Key::DataFolder | Key::ReleaseNotes | Key::LyricsCredit => assert!(opens, "{:?}", it.key),
                     _ => assert!(saved, "{:?} didn't save", it.key),
                 }
@@ -2286,6 +2626,7 @@ mod tests {
         };
         let mut start_page = full();
         start_page.settings.remember_page = false;
+        start_page.settings.tab_order = vec!["focus".into(), "media".into()];
         let mut no_widgets = full();
         no_widgets.settings.widgets.clear();
         let states = [full(), start_page, no_widgets, state()];
@@ -2474,6 +2815,33 @@ mod tests {
     }
 
     #[test]
+    fn tab_order_persists_preserves_order_when_hidden_and_resets_to_default() {
+        let mut st = state();
+        let default_order = crate::pages::tabs(&st);
+        let orderable = crate::pages::orderable_tabs(&st);
+        // Reorder Focus to the front.
+        crate::pages::reorder_tab(&mut st, &orderable, PageKind::Focus, PageKind::Media);
+        assert_eq!(st.settings.tab_order.first().map(String::as_str), Some("focus"));
+        // Persists across settings JSON round-trip (app restart).
+        let json = serde_json::to_string(&st.settings).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.tab_order, st.settings.tab_order);
+        let mut restarted = AppState::new(loaded, Store::default());
+        assert_eq!(crate::pages::tabs(&restarted)[0], PageKind::Focus);
+        // Hiding a tab keeps all remaining tabs in the user's order.
+        apply(&mut restarted, Key::Tab(PageKind::Today), Act::Toggle);
+        let after_hide = crate::pages::tabs(&restarted);
+        assert!(!after_hide.contains(&PageKind::Today));
+        assert_eq!(after_hide[..4], [PageKind::Focus, PageKind::Media, PageKind::Shelf, PageKind::Tasks]);
+        // Reset-to-default option exists and restores default order.
+        assert!(row(Section::Tabs, &restarted, Key::ResetTabOrder).is_some());
+        apply(&mut restarted, Key::Tab(PageKind::Today), Act::Toggle);
+        apply(&mut restarted, Key::ResetTabOrder, Act::Press);
+        assert!(restarted.settings.tab_order.is_empty());
+        assert_eq!(crate::pages::tabs(&restarted), default_order);
+    }
+
+    #[test]
     fn prayer_has_a_section_only_while_its_add_on_is_on() {
         let st = state();
         assert!(!sections(&st).contains(&Section::Prayer));
@@ -2619,14 +2987,14 @@ mod tests {
             _ => Vec::new(),
         };
         assert!(!looks(&st).contains(&"Status"));
-        st.settings.theme = Theme::Pill;
+        st.settings.notch_type = NotchType::Pill;
         assert!(looks(&st).contains(&"Status"));
-        st.settings.theme = Theme::Halo;
+        st.settings.notch_type = NotchType::Notch;
+        st.settings.notch_theme = NotchTheme::Halo;
         assert!(looks(&st).contains(&"Halo"));
-        // Diorama rests as its picture: with the time, alone, or hidden. It
-        // draws its clock for a status bar picked in Pill, and the picture
-        // alone for eyes picked elsewhere.
-        st.settings.theme = Theme::Diorama;
+        // Pill + Diorama rests as its picture: with the time, alone, or hidden.
+        st.settings.notch_type = NotchType::Pill;
+        st.settings.notch_theme = NotchTheme::Diorama;
         st.settings.idle_style = IdleStyle::Status;
         assert_eq!(looks(&st), ["Clock", "Minimal", "Hidden"]);
         assert_eq!(row(Section::Appearance, &st, Key::IdleLook).map(|i| i.ctl), Some(Ctl::Choice(looks(&st), Some(0))));
@@ -2642,22 +3010,19 @@ mod tests {
         assert!(st.cmds.is_empty() && st.settings.idle_style == IdleStyle::Minimal);
     }
 
-    /// Where a theme comes in the pickers. No `_` arm: a theme added to the
-    /// enum stops this compiling until it has a place, and then the test
-    /// below asks for its card.
-    fn place(t: Theme) -> usize {
+    fn place(t: NotchTheme) -> usize {
         match t {
-            Theme::Classic => 0,
-            Theme::Halo => 1,
-            Theme::Glass => 2,
-            Theme::Pill => 3,
-            Theme::Diorama => 4,
+            NotchTheme::Classic => 0,
+            NotchTheme::Halo => 1,
+            NotchTheme::Glass => 2,
+            NotchTheme::Diorama => 3,
         }
     }
 
     #[test]
     fn every_theme_has_a_card_in_the_pickers_order() {
-        assert_eq!(THEMES.map(|t| t.1), ["Classic", "Halo", "Glass", "Pill", "Diorama"]);
+        assert_eq!(NOTCH_TYPES.map(|t| t.1), ["Notch", "Pill"]);
+        assert_eq!(THEMES.map(|t| t.1), ["Classic", "Halo", "Glass", "Diorama"]);
         for (i, (theme, name, line)) in THEMES.iter().enumerate() {
             assert_eq!(place(*theme), i, "{name}");
             assert!(!line.is_empty(), "{name} says what it is");
@@ -2665,42 +3030,34 @@ mod tests {
     }
 
     #[test]
-    fn the_theme_cards_sit_three_to_a_row_as_wide_as_the_content() {
-        // The content column: the card less the sidebar and the padding.
+    fn the_theme_cards_sit_two_to_a_row_as_wide_as_the_content() {
         let r = Rect::new(SIDEBAR_W + PAD, CONTENT_Y, CARD_W - SIDEBAR_W - 2.0 * PAD, block_h(&state(), &Block::Themes));
         let cards: Vec<Rect> = (0..THEMES.len()).map(|i| theme_card(r, i)).collect();
-        // Five themes: three, then two, the same size.
-        assert_eq!(cards.iter().filter(|c| c.y == cards[0].y).count(), 3);
-        assert_eq!(cards.iter().filter(|c| c.y == cards[3].y).count(), 2);
+        assert_eq!(cards.iter().filter(|c| c.y == cards[0].y).count(), 2);
+        assert_eq!(cards.iter().filter(|c| c.y == cards[2].y).count(), 2);
         assert_eq!(r.h, GROUP_TITLE_H + 2.0 * THEME_CARD_H + THEME_GAP);
         for (i, c) in cards.iter().enumerate() {
-            assert_eq!((c.w, c.h), (180.0, THEME_CARD_H), "card {i}");
+            assert_eq!((c.w, c.h), (276.0, THEME_CARD_H), "card {i}");
             assert!(c.x >= r.x && c.right() <= r.right() && c.y >= r.y + GROUP_TITLE_H && c.bottom() <= r.bottom(), "card {i} leaves the block: {c:?}");
             for (j, d) in cards[..i].iter().enumerate() {
                 let apart = c.x >= d.right() + THEME_GAP || d.x >= c.right() + THEME_GAP || c.y >= d.bottom() + THEME_GAP || d.y >= c.bottom() + THEME_GAP;
                 assert!(apart, "cards {j} and {i} touch");
             }
         }
-        // A row ends where the groups under the cards do, and the second
-        // starts under the first.
-        assert_eq!((cards[0].x, cards[2].right(), cards[3].x), (r.x, r.right(), r.x));
-        // Every card's line keeps its measure, and its little screen has
-        // room for the widest island drawn on it with air either side.
-        assert!(cards[0].w - 24.0 >= THEME_LINE_W);
-        assert!(cards[0].w - 20.0 >= DIORAMA_CARD_W + 2.0 * 16.0);
+        assert_eq!((cards[0].x, cards[1].right(), cards[2].x), (r.x, r.right(), r.x));
+        assert!(THEME_PREVIEW_W >= DIORAMA_CARD_W + 16.0);
     }
 
     #[test]
     fn appearance_fits_the_window_at_its_full_height_without_scrolling() {
         let mut st = state();
-        // In every theme: Pill's fifth idle look is one more choice in its
-        // row, not one more row.
-        for (theme, _, _) in THEMES {
-            st.settings.theme = theme;
-            let content: f32 = blocks(Section::Appearance, &st).iter().map(|b| block_h(&st, b) + GROUP_GAP).sum();
-            // What the card shows under its title, less the room the scroll
-            // keeps under the last block.
-            assert!(content + 16.0 <= CARD_H - CONTENT_Y - 1.0, "{theme:?}: {content}");
+        for (ty, _, _) in NOTCH_TYPES {
+            for (theme, _, _) in THEMES {
+                st.settings.notch_type = ty;
+                st.settings.notch_theme = theme;
+                let content: f32 = blocks(Section::Appearance, &st).iter().map(|b| block_h(&st, b) + GROUP_GAP).sum();
+                assert!(content + 16.0 <= CARD_H - CONTENT_Y - 1.0, "{ty:?} x {theme:?}: {content}");
+            }
         }
     }
 
@@ -2834,5 +3191,19 @@ mod tests {
         assert_eq!(offset_text(0), "On time");
         assert_eq!(offset_text(300), "−0.3 s");
         assert_eq!(offset_text(-1200), "+1.2 s");
+    }
+
+    #[test]
+    fn search_finds_settings_across_sections_and_popups_preview() {
+        let mut st = state();
+        let (found, secs) = search_blocks(&st, "brightness");
+        assert_eq!(secs, vec![Section::Popups]);
+        assert_eq!(found.len(), 1);
+        let (_, secs_mic) = search_blocks(&st, "microphone");
+        assert_eq!(secs_mic, vec![Section::Popups]);
+        apply(&mut st, Key::HudBrightness, Act::Preview);
+        assert!(matches!(st.cmds.last(), Some(Command::PreviewHud(crate::state::HudKind::Brightness { .. }))));
+        apply(&mut st, Key::HudMic, Act::Preview);
+        assert!(matches!(st.cmds.last(), Some(Command::PreviewHud(crate::state::HudKind::Mic { muted: true }))));
     }
 }

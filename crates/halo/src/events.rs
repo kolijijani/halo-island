@@ -118,6 +118,10 @@ pub enum AppEvent {
     AppleMusic(AppleMusicStatus),
     /// Master volume changed (0..=1).
     Volume { level: f32, muted: bool },
+    /// Default microphone mute state changed (`services::audio`).
+    Mic { muted: bool },
+    /// Screen brightness changed (0..=1; `services::power`).
+    Brightness { level: f32 },
     Power(PowerState),
     Bluetooth { name: String, connected: bool, battery: Option<u8>, audio: bool },
     /// Wi-Fi joined, left or another network (`services::network`).

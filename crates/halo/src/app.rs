@@ -33,7 +33,7 @@ use halo_core::pairdrop::{MeetEvent, PeerEvent};
 use halo_core::phonedrop::{Event as PhoneEvent, QrMatrix};
 use halo_core::prayer::{Due, PlaceList, Prayer, PrayerMoment};
 use halo_core::mascot::Pose;
-use halo_core::settings::{IdleStyle, PrayerSound, Settings, Theme};
+use halo_core::settings::{IdleStyle, NotchTheme, PrayerSound, Settings};
 use halo_core::settings::MonitorChoice;
 use halo_core::store::{load_json, save_json_atomic, LoadOutcome, Store};
 use std::cell::{Cell, RefCell};
@@ -543,6 +543,10 @@ pub struct App {
     caps_listens: bool,
     /// Caps Lock as followed from raw input (`halo_core::popups::CapsLock`).
     caps: halo_core::popups::CapsLock,
+    /// First microphone mute report seeds state silently (no pop-up at start).
+    mic_known: bool,
+    /// Last display brightness reported by `WM_POWERBROADCAST` (None until seeded).
+    last_brightness: Option<f32>,
     /// Windows' Animation effects are off (Settings › Accessibility ›
     /// Visual effects): pop-ups and the island's morphs land at once.
     reduce_motion: bool,
@@ -683,14 +687,14 @@ impl App {
         st.now = clock::mono();
         st.local = clock::local_now();
         st.unix = clock::unix_now();
-        st.accent = theme_accent(st.settings.theme);
+        st.accent = theme_accent(st.settings.notch_theme);
         // Notifications only where Windows lets this copy read them (the Store copy).
         // Classic is Halo's light or dark pill, as Windows apps are set.
         st.app_light = services::apps_use_light_theme();
         st.notify_can = crate::autostart::packaged();
         let mode = Mode::Idle;
         let mut island = Island::new(activities::geom(&mode, &st));
-        island.set_floating(pill::on(st.settings.theme).then_some(pill::TOP_GAP));
+        island.set_floating(pill::on(st.settings.notch_type).then_some(pill::TOP_GAP));
         let clock = FrameClock::start(SendHwnd::new(hwnd), monitor.handle);
         let taskbar_created_msg = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
         // Halo Island Recorder installed: the Record tab can show (one registry read).
@@ -782,6 +786,8 @@ impl App {
             mascot_listens: false,
             caps_listens: false,
             caps: Default::default(),
+            mic_known: false,
+            last_brightness: None,
             reduce_motion: crate::settings_host::animations_off(),
             locked: false,
             display_off: false,
@@ -1380,9 +1386,28 @@ impl App {
                 self.request_frame();
                 Some(LRESULT(0))
             }
+            WM_MBUTTONUP => {
+                // Collapsed zero-expand gesture: middle-click toggles play/pause.
+                let p = self.mouse_dip(lp);
+                if !self.expanded && !self.over_shadow(p) && self.st.media.as_ref().is_some_and(|m| m.can_play_pause) {
+                    if let Some(svc) = self.services.as_ref() {
+                        svc.media_cmd(MediaCmd::PlayPause);
+                    }
+                    self.request_frame();
+                }
+                Some(LRESULT(0))
+            }
             WM_MOUSEWHEEL => {
                 let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16 as f32 / WHEEL_DELTA as f32;
-                self.input.wheel += delta;
+                if !self.expanded && self.hovering {
+                    // Collapsed zero-expand gesture: wheel adjusts master volume
+                    // directly (triggers the Volume HUD via Core Audio callback).
+                    if let Some(svc) = self.services.as_ref() {
+                        svc.adjust_volume(delta * 0.04);
+                    }
+                } else {
+                    self.input.wheel += delta;
+                }
                 self.request_frame();
                 Some(LRESULT(0))
             }
@@ -1421,8 +1446,41 @@ impl App {
                 Some(LRESULT(0))
             }
             WM_KEYDOWN => {
+                let vk = VIRTUAL_KEY(wp.0 as u16);
+                let ctrl = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+                let shift = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
+                if self.expanded && ctrl {
+                    if vk == VK_K {
+                        self.st.ui.quick_open = !self.st.ui.quick_open;
+                        self.st.ui.quick_query.clear();
+                        self.st.ui.quick_sel = 0;
+                        if self.st.ui.quick_open {
+                            self.focus_text();
+                            self.input.focused = Some(wid("quick.input"));
+                            self.input.caret = 0;
+                        } else {
+                            self.blur_text();
+                        }
+                        self.request_frame();
+                        return Some(LRESULT(0));
+                    }
+                    if vk == VK_TAB {
+                        let next = pages::step_tab(self.st.page, &self.st, !shift);
+                        self.set_page(next);
+                        self.request_frame();
+                        return Some(LRESULT(0));
+                    }
+                    if (0x31..=0x39).contains(&vk.0) {
+                        let idx = (vk.0 - 0x31) as usize;
+                        if let Some(&p) = pages::tabs(&self.st).get(idx) {
+                            self.set_page(p);
+                            self.request_frame();
+                        }
+                        return Some(LRESULT(0));
+                    }
+                }
                 if self.text_focus {
-                    let k = match VIRTUAL_KEY(wp.0 as u16) {
+                    let k = match vk {
                         VK_BACK => Some(KeyInput::Backspace),
                         VK_DELETE => Some(KeyInput::Delete),
                         VK_RETURN => Some(KeyInput::Enter),
@@ -1433,7 +1491,7 @@ impl App {
                         VK_DOWN => Some(KeyInput::Down),
                         VK_HOME => Some(KeyInput::Home),
                         VK_END => Some(KeyInput::End),
-                        VK_V if unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0 => {
+                        VK_V if ctrl => {
                             if let Some(text) = services::clipboard::read_text(self.hwnd) {
                                 for c in text.chars().filter(|c| !c.is_control()) {
                                     self.input.keys.push(KeyInput::Char(c));
@@ -1469,9 +1527,9 @@ impl App {
                     // Classic follows Windows' light and dark mode.
                     self.st.app_light = self.glass.app_light;
                 }
-                if msg == WM_SETTINGCHANGE && self.st.settings.theme == Theme::Glass {
-                    self.st.accent = theme_accent(Theme::Glass);
-                } else if msg == WM_SETTINGCHANGE && !face::on(self.st.settings.theme) && self.st.settings.theme != Theme::Diorama {
+                if msg == WM_SETTINGCHANGE && self.st.settings.notch_theme == NotchTheme::Glass {
+                    self.st.accent = theme_accent(NotchTheme::Glass);
+                } else if msg == WM_SETTINGCHANGE && !face::on(self.st.settings.notch_theme) && self.st.settings.notch_theme != NotchTheme::Diorama {
                     if let Some(a) = services::system_accent() {
                         self.st.accent = a;
                     }
@@ -1534,6 +1592,9 @@ impl App {
             WM_POWERBROADCAST => {
                 if let Some(on) = services::power::display_state_change(wp, lp) {
                     self.display_off = !on;
+                }
+                if let Some(level) = services::power::brightness_change(wp, lp) {
+                    self.on_event(AppEvent::Brightness { level });
                 }
                 let p = services::power::query();
                 self.on_event(AppEvent::Power(p));
@@ -1646,6 +1707,7 @@ impl App {
             let now = self.st.now;
             let Some(w) = self.settings_win.as_mut() else { return };
             let before = w.view.section;
+            let notice_before = self.st.notice.as_ref().map(|n| n.until);
             let out = w.paint(&mut self.st, now, None, false);
             let after = w.view.section;
             if out.close {
@@ -1656,9 +1718,12 @@ impl App {
             if after != before && after == Section::Addons {
                 self.halo_account(HaloCmd::CheckPro);
             }
+            let notice_added = self.st.notice.as_ref().map(|n| n.until) != notice_before && self.st.notice.is_some();
             let ran = !self.st.cmds.is_empty();
             if ran {
                 self.run_commands(deferred);
+                self.request_frame();
+            } else if notice_added {
                 self.request_frame();
             }
             let dirty = self.settings_win.as_ref().is_some_and(|w| w.view.dirty);
@@ -1755,6 +1820,11 @@ impl App {
                 self.paint_settings(deferred);
                 Some(LRESULT(0))
             }
+            WM_CAPTURECHANGED => {
+                w.view.input.down = false;
+                w.view.input.pressed_id = None;
+                Some(LRESULT(0))
+            }
             WM_MOUSEWHEEL => {
                 let raw = ((wp.0 >> 16) & 0xffff) as u16 as i16 as i32;
                 let delta = raw as f32 / WHEEL_DELTA as f32;
@@ -1820,6 +1890,9 @@ impl App {
                     };
                     w.view.input.keys.extend(k);
                     w.view.dirty = true;
+                    self.paint_settings(deferred);
+                } else if ctrl && wp.0 == b'F' as usize {
+                    w.view.focus_search();
                     self.paint_settings(deferred);
                 } else if wp.0 == VK_ESCAPE.0 as usize || (ctrl && wp.0 == b'W' as usize) {
                     self.close_settings_window();
@@ -2221,11 +2294,17 @@ impl App {
         self.sync_halo();
         // Caps Lock's pop-up: the keyboard's raw input only while it is on.
         self.sync_raw_input();
+        if before.hud_mic != self.st.settings.hud_mic {
+            self.mic_known = false;
+            if let Some(svc) = self.services.as_ref() {
+                svc.set_mic_watch(self.st.settings.hud_mic);
+            }
+        }
         // Show over games and Hide in full-screen apps follow each other.
         self.st.settings.pair_game_stats(before);
         let now = &self.st.settings;
-        if before.theme != now.theme {
-            self.st.accent = theme_accent(now.theme);
+        if before.notch_theme != now.notch_theme {
+            self.st.accent = theme_accent(now.notch_theme);
         }
         if before.hide_in_fullscreen != now.hide_in_fullscreen {
             // Apply at once: show the island over the full-screen app, or hide it.
@@ -2309,9 +2388,23 @@ impl App {
             }
             self.peek_game(if self.st.settings.game_peek { "peeks picked" } else { "picked to stay" });
         }
-        // The AI tab's heads-up notices: its worker reads every few minutes only while they're on.
-        if before.usage.notices != self.st.settings.usage.notices {
+        // The AI tab's heads-up notices: its worker reads every few minutes only while they're on,
+        // and carries the near threshold and 24-hour clock format.
+        if before.usage.notices != self.st.settings.usage.notices
+            || before.usage.near_pct != self.st.settings.usage.near_pct
+            || before.use_24h != self.st.settings.use_24h
+        {
             self.set_usage_watch();
+        }
+        // Apply "Open where you left off" / "Opens on" immediately while collapsed, and keep the
+        // active page valid if the user hid its tab.
+        if !self.expanded
+            && !self.st.settings.remember_page
+            && (before.remember_page || before.start_page != self.st.settings.start_page)
+        {
+            self.st.page = self.resolved_start_page();
+        } else if self.st.page != PageKind::Settings && !pages::tabs(&self.st).contains(&self.st.page) {
+            self.st.page = self.resolved_start_page();
         }
         // The display the island hangs on, or its width when open (the
         // Settings window has both).
@@ -2478,6 +2571,19 @@ impl App {
                 self.st.volume = crate::state::VolumeState { level, muted, known: true };
                 if !first && self.st.settings.hud_volume {
                     self.st.show_hud(HudKind::Volume { level, muted }, 1.6);
+                }
+            }
+            AppEvent::Mic { muted } => {
+                let first = !self.mic_known;
+                self.mic_known = true;
+                if !first && self.st.settings.hud_mic && !self.locked && !self.display_off {
+                    self.st.offer_popup(HudKind::Mic { muted });
+                }
+            }
+            AppEvent::Brightness { level } => {
+                let prev = self.last_brightness.replace(level);
+                if prev.is_some_and(|p| (p - level).abs() > 0.004) && self.st.settings.hud_brightness && !self.locked && !self.display_off {
+                    self.st.show_hud(HudKind::Brightness { level }, 1.6);
                 }
             }
             AppEvent::Power(p) => {
@@ -2707,6 +2813,12 @@ impl App {
         }
     }
 
+    fn resolved_start_page(&self) -> PageKind {
+        let tabs = pages::tabs(&self.st);
+        let p = PageKind::from_key(&self.st.settings.start_page);
+        if tabs.contains(&p) { p } else { pages::first_tab(&self.st) }
+    }
+
     fn expand(&mut self) {
         if !self.expanded {
             self.expanded = true;
@@ -2720,7 +2832,9 @@ impl App {
             if self.st.rec_live() && self.st.record_on() {
                 self.st.page = PageKind::Record;
             } else if self.st.page == PageKind::Record && !self.st.record_on() {
-                self.st.page = pages::first_tab(&self.st);
+                self.st.page = self.resolved_start_page();
+            } else if self.st.page != PageKind::Settings && !pages::tabs(&self.st).contains(&self.st.page) {
+                self.st.page = self.resolved_start_page();
             }
             if self.st.page == PageKind::Notifications {
                 self.notify_cmd(NotifyCmd::Check);
@@ -2757,8 +2871,16 @@ impl App {
             self.st.halo_account.reveal = false;
             self.st.halo_account.day = halo_account::DayPick::Today;
             self.st.halo_account.scroll = 0.0;
-            // Settings closes with the island: it opens again on the page it was opened from.
-            if self.st.page == PageKind::Settings {
+            self.st.ui.tab_more_open = false;
+            self.st.ui.power_menu_open = false;
+            self.st.ui.power_confirm = None;
+            self.st.ui.tab_drag = None;
+            // When "Open where you left off" is off, reset to the configured start page for the
+            // next open; otherwise close Settings back to the page it was opened from.
+            if !self.st.settings.remember_page {
+                self.st.ui.before_settings = None;
+                self.st.page = self.resolved_start_page();
+            } else if self.st.page == PageKind::Settings {
                 self.st.page = self.st.ui.before_settings.take().filter(|p| pages::tabs(&self.st).contains(p)).unwrap_or_else(|| pages::first_tab(&self.st));
             }
             self.st.update.sheet = false;
@@ -3429,7 +3551,7 @@ impl App {
     fn geom_for(&self, m: &Mode) -> Geom {
         let mut g = activities::geom(m, &self.st);
         // The theme builder's corners, at rest (Halo Pro, Classic).
-        let custom = self.st.settings.custom_look.filter(|_| self.st.settings.pro && self.st.settings.theme == Theme::Classic);
+        let custom = self.st.settings.custom_look.filter(|_| self.st.settings.pro && self.st.settings.notch_theme == NotchTheme::Classic);
         if let (Some(c), Mode::Idle | Mode::Activity(_)) = (custom, m) {
             g.r = c.radius.clamp(2.0, g.h / 2.0);
         }
@@ -3439,7 +3561,7 @@ impl App {
             _ => false,
         };
         if liftable && self.hovering && !self.expanded {
-            if pill::on(self.st.settings.theme) {
+            if pill::on(self.st.settings.notch_type) {
                 // Floating, it swells evenly about its middle and stays a capsule.
                 pill::motion::hover_lift(g)
             } else {
@@ -3774,7 +3896,7 @@ impl App {
         // Glass: copy the screen under the window while the GPU draws (the
         // self-test brings its own backdrop), then draw this frame's glass
         // before the frame starts. The look follows the glass, light or dark.
-        let glass_theme = self.st.settings.theme == Theme::Glass;
+        let glass_theme = self.st.settings.notch_theme == NotchTheme::Glass;
         let window_px = RECT { left: self.surface.x, top: self.surface.y, right: self.surface.x + sw, bottom: self.surface.y + sh };
         // Only while someone can see it: not while hidden, locked or the display
         // is off. Not over a full-screen app either: copying a game's screen
@@ -3792,7 +3914,8 @@ impl App {
         let mut glass_moving = false;
         let glass = if glass_theme && !hidden_idle {
             let small = !matches!(mode, Mode::Expanded(_));
-            let (light, p, moving) = self.glass.frame(body, geom.r, SHOULDER, small, now, dt, scale, &mut self.gfx);
+            let shoulder = if floating { -1.0 } else { SHOULDER };
+            let (light, p, moving) = self.glass.frame(body, geom.r, shoulder, small, now, dt, scale, &mut self.gfx);
             glass_moving = moving;
             self.gfx.set_look(halo_core::look::glass(light));
             self.gfx.prepare_glass(&p, canvas_px);
@@ -4113,7 +4236,7 @@ impl App {
         // locked or the display is off, so they rest then (the lock and
         // display events ask for a frame, which picks them up again).
         let singing = self.mode == Mode::Activity(activities::Activity::Media);
-        let watched = visible && !((pill::on(self.st.settings.theme) || singing) && (self.locked || self.display_off));
+        let watched = visible && !((pill::on(self.st.settings.notch_type) || singing) && (self.locked || self.display_off));
         if let Some(t) = activities::next_wake(&self.mode, &self.st).filter(|_| watched) {
             consider(t);
         }
@@ -4506,6 +4629,9 @@ impl App {
     }
 
     fn set_page(&mut self, p: PageKind) {
+        self.st.ui.quick_open = false;
+        self.st.ui.quick_query.clear();
+        self.st.ui.quick_sel = 0;
         if p != self.st.page {
             self.st.page = p;
             self.st.ui.addon_about = None;
@@ -4597,9 +4723,15 @@ impl App {
                 }
                 Command::ClipBack(t) => {
                     crate::services::clipboard::set_text(self.helper, &t);
+                    self.st.toast("Copied");
                     self.st.notify(Icon::Clipboard, palette::BLUE, "Copied again", "", 2.0, None);
                 }
                 Command::PreviewAdzan => self.preview_adzan(),
+                Command::PreviewHud(kind) => {
+                    let secs = AppState::popup_secs(&kind);
+                    self.st.show_hud(kind, secs);
+                    self.request_frame();
+                }
                 Command::OpenSettings => self.show_settings(deferred),
                 Command::ShowWhatsNew => self.open_sheet(crate::pages::settings::Sheet::WhatsNew),
                 Command::SaveStore => unsafe {
@@ -4628,6 +4760,9 @@ impl App {
                     }
                 }
                 Command::Collapse => self.collapse(),
+                Command::Power(action) => {
+                    services::power::execute(action);
+                }
                 Command::Play(s) => services::sound::play(s),
                 Command::OpenUrl(u) => shell::open(&u),
                 Command::RedeemLicense(code) => {
@@ -4891,6 +5026,22 @@ impl App {
                 self.st.chime();
                 self.maybe_schedule_collapse();
             }
+            PhoneEvent::Clip { from, text } => {
+                crate::services::clipboard::set_text(self.helper, &text);
+                if self.st.settings.clips {
+                    let cap = if self.st.settings.pro { 50 } else { 5 };
+                    self.st.clips.push(&text, cap);
+                }
+                pd.outcome = Some((format!("Copied text from {from}"), true, until));
+                pinfo!("phone drop: text copied from {from}");
+                let preview: String = text.lines().next().unwrap_or("").chars().take(48).collect();
+                if self.expanded {
+                    self.st.toast(format!("Copied from {from}"));
+                } else {
+                    self.st.notify(Icon::Clipboard, palette::BLUE, format!("Copied from {from}"), preview, 4.0, None);
+                }
+                self.st.chime();
+            }
             PhoneEvent::Failed { from, reason, detail, .. } => {
                 pd.transfer = None;
                 pd.outcome = Some((format!("Nothing kept from {from}. {reason}."), false, until));
@@ -5030,6 +5181,21 @@ impl App {
                     }
                     self.st.chime();
                     self.maybe_schedule_collapse();
+                }
+                PeerEvent::Clip { text } => {
+                    crate::services::clipboard::set_text(self.helper, &text);
+                    if self.st.settings.clips {
+                        let cap = if self.st.settings.pro { 50 } else { 5 };
+                        self.st.clips.push(&text, cap);
+                    }
+                    pinfo!("pair drop: text copied from a paired phone");
+                    let preview: String = text.lines().next().unwrap_or("").chars().take(48).collect();
+                    if self.expanded {
+                        self.st.toast(format!("Copied from {phone}"));
+                    } else {
+                        self.st.notify(Icon::Clipboard, palette::BLUE, format!("Copied from {phone}"), preview, 4.0, None);
+                    }
+                    self.st.chime();
                 }
                 PeerEvent::Failed { reason, detail } => {
                     pwarn!("pair drop: a send from a paired phone failed: {reason} {detail}");
@@ -5350,12 +5516,12 @@ impl App {
 
 /// Halo's orange in his theme, Diorama's own (which its day and night looks
 /// paint as theirs), Windows' accent colour otherwise.
-fn theme_accent(theme: Theme) -> Color {
+fn theme_accent(theme: NotchTheme) -> Color {
     if face::on(theme) {
         face::ORANGE
-    } else if theme == Theme::Diorama {
+    } else if theme == NotchTheme::Diorama {
         halo_core::look::DIORAMA_ACCENT
-    } else if theme == Theme::Glass {
+    } else if theme == NotchTheme::Glass {
         services::system_accent_base().unwrap_or(palette::BLUE)
     } else {
         services::system_accent().unwrap_or(palette::BLUE)
@@ -5366,13 +5532,13 @@ fn theme_accent(theme: Theme) -> Color {
 /// Returns (repaint, anim, focus, live) as requested by the drawing code.
 #[allow(clippy::too_many_arguments)]
 /// How far below the top edge the island floats: Halo's mini handle at
-/// `HANDLE_GAP` over a maximized window, the Pill theme at its gap, or
+/// `HANDLE_GAP` over a maximized window, the Pill type at its gap, or
 /// hanging from the edge.
 fn island_gap(st: &AppState, mode: Mode) -> Option<f32> {
     if mode == Mode::Aside {
         Some(activities::HANDLE_GAP)
     } else {
-        pill::on(st.settings.theme).then_some(pill::TOP_GAP)
+        pill::on(st.settings.notch_type).then_some(pill::TOP_GAP)
     }
 }
 

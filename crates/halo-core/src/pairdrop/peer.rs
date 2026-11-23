@@ -77,6 +77,8 @@ pub enum PeerEvent {
     Progress { file: usize, files: usize, done: u64, total: u64 },
     /// Every file arrived and is in the inbox, in the order sent.
     Received { paths: Vec<PathBuf> },
+    /// Quick text or link sent straight to the PC's clipboard.
+    Clip { text: String },
     /// A send broke off; nothing from it was kept.
     Failed { reason: String, detail: String },
     /// The link is gone; `connected` = it ever worked.
@@ -440,6 +442,10 @@ impl Session {
                     }
                     Err(b) => self.broke(b, emit),
                 }
+            }
+            FromPhone::Clip { text } => {
+                self.text(transfer::copied());
+                emit(PeerEvent::Clip { text });
             }
             FromPhone::Get { id } => {
                 if self.outgoing.is_some() {
