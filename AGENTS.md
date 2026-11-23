@@ -53,3 +53,21 @@ On a tag, the `mac` workflow's `sign` job signs the DMG with the Developer ID, h
 Every deploy of the website also carries `kolijijani.github.io/halo-island/latest.json`, the signed file every copy of the app reads to learn that a new version is out ([docs/updates.md](docs/updates.md)). It describes GitHub's latest release, so a release updates it without a step of yours. The `UPDATE_FEED_KEY` secret that signs it stays in the `release` environment, like the Mac signing secrets: never print it or move it.
 
 To try the release path without releasing, run `ci` by hand with `release_dry_run` on (`gh workflow run ci.yml --ref <branch> -f release_dry_run=true`). It runs every job a tag runs and publishes nothing: no tag, release or issue, and no website deploy. Its summary says what a tag would publish and what would happen to the website.
+
+## Working beside another agent (the shared ledger)
+
+Two agents work on this repo at once: **Qi-Cha** (`qc`, the maintainer's assistant on the VPS) and **Antigravity** (`ag`, on the maintainer's PC). They never share a disk, so git and one ledger keep them apart.
+
+`docs/ledger.jsonl` is **the** list of jobs. It is append-only JSON events, one per line — never edit or reorder lines, never rewrite another agent's line. `python3 tools/ledger.py list` prints the folded state. Don't keep a second todo list in a scratch file, a chat message or your own notes; if a job isn't in the ledger it will be dropped.
+
+Before you touch code:
+
+1. `git pull --rebase`
+2. `python3 tools/ledger.py list --open`
+3. `python3 tools/ledger.py claim <id> --who ag` — this also creates the branch name `ag/<id>`.
+
+If the claim answers `OVERLAP`, another agent already owns it. Stop and pick a different item; do not "help" on their files. One item per branch, branch named after its id, push it early, PR titled `<id>: <title>`. Report the item id in every commit message that lands it.
+
+When you finish: `python3 tools/ledger.py done <id> --who ag --commit <sha> --note "what changed"`. If you find new work while you're in there: `python3 tools/ledger.py add "<short title>" --who ag`. If you're stuck on something only the maintainer can decide: `python3 tools/ledger.py block <id> --who ag --note "<the question>"`.
+
+`python3 tools/ledger.py check` before you finish: it fails on a job two agents own, the same job listed twice, and a claim nobody touched for 72 hours (that one means the claim went dead — say so rather than taking it silently).
