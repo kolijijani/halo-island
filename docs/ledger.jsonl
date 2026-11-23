@@ -34,3 +34,5 @@
 {"id": "C5", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
 {"id": "C6", "ev": "blocked", "owner": "qc", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
 {"id": "C6", "ev": "dropped", "who": "qc", "note": "owner 23 Nov: assumed done in 0.2.5x — reopen if it resurfaces", "ts": 1795403848}
+{"id": "release-next-version-cut-version-notes-w", "ev": "open", "title": "Release next version - cut version, notes, website, tag", "owner": "", "who": "qc", "ref": "", "note": "owner 23 Nov: Antigravity cuts, Qi-Cha verifies; tag only when owner says release", "ts": 1795448987}
+{"id": "release-next-version-verify-before-tag", "ev": "open", "title": "Release next version - verify before tag", "owner": "", "who": "qc", "ref": "", "note": "owner 23 Nov: Qi-Cha runs ci release_dry_run and reads it before the tag is pushed", "ts": 1795448987}
