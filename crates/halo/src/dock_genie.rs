@@ -10,7 +10,9 @@ use halo_core::geom::Rect;
 use halo_core::look;
 use windows::core::{w, Result, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+use windows::Win32::Graphics::Dwm::{
+    DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED,
+};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, SetStretchBltMode, StretchBlt, BI_RGB,
     BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HALFTONE, HDC, HGDIOBJ, SRCCOPY,
@@ -228,6 +230,77 @@ fn dib_info(w: i32, h: i32) -> BITMAPINFO {
     }
 }
 
+/// Query the restored (normal) screen bounds of `hwnd` even while it is minimized (`IsIconic`).
+pub fn restored_window_rect(hwnd: HWND) -> Option<RECT> {
+    unsafe {
+        if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
+            return None;
+        }
+        let mut wp = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        GetWindowPlacement(hwnd, &mut wp).ok()?;
+        let rc = wp.rcNormalPosition;
+        if rc.right - rc.left >= 16 && rc.bottom - rc.top >= 16 {
+            Some(rc)
+        } else {
+            None
+        }
+    }
+}
+
+/// Minimize `hwnd` with Windows DWM's built-in transition disabled so only our Genie plays.
+pub fn minimize_window_no_dwm(hwnd: HWND) {
+    unsafe {
+        if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
+            return;
+        }
+        let off: BOOL = BOOL(1);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &off as *const BOOL as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+        let _ = ShowWindow(hwnd, SW_MINIMIZE);
+        let on: BOOL = BOOL(0);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &on as *const BOOL as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+    }
+}
+
+/// Restore `hwnd` instantly at the end of a Genie restore animation without a second DWM animation.
+pub fn restore_window_no_dwm(hwnd: HWND) {
+    unsafe {
+        if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
+            return;
+        }
+        let off: BOOL = BOOL(1);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &off as *const BOOL as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let _ = SetForegroundWindow(hwnd);
+        let on: BOOL = BOOL(0);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            &on as *const BOOL as *const _,
+            std::mem::size_of::<BOOL>() as u32,
+        );
+    }
+}
+
 pub struct DockGenie {
     gfx: Option<Gfx>,
     hwnd: HWND,
@@ -238,10 +311,14 @@ pub struct DockGenie {
     dir: GenieDir,
     elapsed: f32,
     shown: bool,
+    restore_target: Option<HWND>,
 }
 
 impl Drop for DockGenie {
     fn drop(&mut self) {
+        if let Some(target) = self.restore_target.take() {
+            restore_window_no_dwm(target);
+        }
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
         self.gfx = None;
         unsafe {
@@ -319,7 +396,15 @@ impl DockGenie {
             dir,
             elapsed: 0.0,
             shown: false,
+            restore_target: None,
         })
+    }
+
+    /// Attach a minimized window to be restored at the exact end of `GenieDir::Restore`
+    /// so the real window never appears underneath while the Genie is still expanding.
+    pub fn with_restore_target(mut self, target: HWND) -> Self {
+        self.restore_target = Some(target);
+        self
     }
 
     /// Advance and paint one frame. Returns `false` when the animation finishes
@@ -328,6 +413,9 @@ impl DockGenie {
         self.elapsed += dt.clamp(0.0, 0.05);
         let t = (self.elapsed / GENIE_DURATION).clamp(0.0, 1.0);
         if t >= 1.0 {
+            if let Some(target) = self.restore_target.take() {
+                restore_window_no_dwm(target);
+            }
             return false;
         }
         let (x, y, w, h) = self.at;

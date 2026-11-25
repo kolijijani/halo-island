@@ -2034,6 +2034,35 @@ impl<'a> Canvas<'a> {
         self.image_as(img, r, radius, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
     }
 
+    /// Draw an image aspect-fitted (`contain`) into `r` using high-quality cubic
+    /// interpolation on GPU (`ID2D1DeviceContext`) for razor-sharp HiDPI app icons.
+    pub fn image_hq(&mut self, img: &Image, r: Rect) {
+        if img.width == 0 || img.height == 0 || r.w <= 0.0 || r.h <= 0.0 {
+            return;
+        }
+        let Ok(bmp) = self.g.bitmap_for(img) else { return };
+        let (iw, ih) = (img.width as f32, img.height as f32);
+        let s = (r.w / iw).min(r.h / ih);
+        let (dw, dh) = (iw * s, ih * s);
+        let dst = Rect::new(r.x + (r.w - dw) * 0.5, r.y + (r.h - dh) * 0.5, dw, dh);
+        let d = rectf(dst);
+        let src = rectf(Rect::new(0.0, 0.0, iw, ih));
+        unsafe {
+            if let Ok(dc) = self.g.rt.cast::<ID2D1DeviceContext>() {
+                dc.DrawBitmap(
+                    &bmp,
+                    Some(&d),
+                    self.alpha,
+                    D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
+                    Some(&src),
+                    None,
+                );
+            } else {
+                self.g.rt.DrawBitmap(&bmp, Some(&d), self.alpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, Some(&src));
+            }
+        }
+    }
+
     /// Draw an image that was painted for exactly the pixels `r` covers
     /// (the Diorama theme's picture), each pixel as it is. `image` smooths
     /// between pixels, which a GPU does a hair off even at one to one;

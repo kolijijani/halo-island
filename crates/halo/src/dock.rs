@@ -727,6 +727,11 @@ impl Dock {
         }
     }
 
+    /// Return the cached window thumbnail for `hwnd`, if captured when minimized.
+    pub fn app_thumb(&self, hwnd: HWND) -> Option<Image> {
+        self.apps.iter().find(|a| a.hwnd == hwnd).and_then(|a| a.thumb.clone())
+    }
+
     fn current_scales(&self) -> Vec<f32> {
         self.scales.iter().map(|s| s.value).collect()
     }
@@ -1491,7 +1496,7 @@ fn draw_minimized_window_tile(
     let br = (badge.w * 0.28).clamp(3.5, 6.5);
     c.fill_rrect(badge.offset(0.0, 1.5), br, Color::black(0.45));
     if let Some(img) = app.icon.as_ref() {
-        c.image(img, badge, br);
+        c.image_hq(img, badge);
     } else {
         let badge_bg = if light { Color::white(0.94) } else { Color::hex(0x1E293B) };
         c.fill_rrect(badge, br, badge_bg);
@@ -1613,37 +1618,36 @@ fn draw_dock(
                         } else {
                             slot.accent
                         };
-                        let fill_a = if is_press { 0.34 } else if is_hover { 0.26 } else { 0.18 };
+                        let fill_a = if is_press { 0.96 } else if is_hover { 0.92 } else { 0.86 };
                         c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
-                        // Top inner bevel sheen + subtle bottom depth
+                        // Top inner bevel sheen + subtle bottom depth (macOS Sequoia rich squircle tile)
                         let tile_segs = crate::pill::shape::segments(tile, tr);
                         c.fill_path_fade(
                             &tile_segs,
                             Color::white(1.0),
                             tile.y,
-                            tile.y + tile.h * 0.5,
-                            if light { 0.26 } else { 0.16 },
+                            tile.y + tile.h * 0.55,
+                            0.34,
                             0.0,
                         );
                         c.fill_path_fade(
                             &tile_segs,
                             Color::black(1.0),
-                            tile.y + tile.h * 0.65,
+                            tile.y + tile.h * 0.52,
                             tile.bottom(),
                             0.0,
-                            if light { 0.06 } else { 0.14 },
+                            0.26,
                         );
                         let tile_rim = if is_hover {
-                            slot_acc.with_alpha(0.68)
-                        } else if light {
-                            Color::black(0.11)
+                            Color::white(0.52)
                         } else {
-                            Color::white(0.18)
+                            Color::white(0.28)
                         };
                         c.stroke_rrect(tile, tr, tile_rim, 1.0);
 
-                        let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                        c.icon(slot.icon, icon_box, theme_ink);
+                        let icon_box = tile.inset(tile.w * 0.22, tile.h * 0.22);
+                        c.icon(slot.icon, icon_box.offset(0.0, 1.0), Color::black(0.28));
+                        c.icon(slot.icon, icon_box, Color::white(0.97));
                     }
 
                     match slot.action {
@@ -1692,14 +1696,19 @@ fn draw_dock(
 
                     if app.minimized {
                         draw_minimized_window_tile(c, tile, app, theme_ink, theme_accent, light, is_hover);
+                    } else if let Some(img) = app.icon.as_ref() {
+                        // Crisp full-bleed app icon with soft drop-shadow (.dock-icon-img in mockup)
+                        draw_squircle_shadow(c, tile.inset(2.0, 2.0), tr, light);
+                        c.image_hq(img, tile.inset(0.5, 0.5));
+                        if is_hover {
+                            c.stroke_rrect(tile, tr, theme_accent.with_alpha(0.42), 1.0);
+                        }
                     } else {
                         draw_squircle_shadow(c, tile, tr, light);
                         let back = if is_hover {
                             if light { Color::black(0.10) } else { Color::white(0.18) }
                         } else if app.focused {
                             if light { Color::black(0.07) } else { Color::white(0.12) }
-                        } else if app.icon.is_some() {
-                            if light { Color::black(0.04) } else { Color::white(0.07) }
                         } else if light {
                             Color::black(0.08)
                         } else {
@@ -1715,13 +1724,8 @@ fn draw_dock(
                             if light { 0.20 } else { 0.12 },
                             0.0,
                         );
-                        if let Some(img) = app.icon.as_ref() {
-                            let img_box = tile.inset(tile.w * 0.10, tile.h * 0.10);
-                            c.image(img, img_box, (tr - 2.0).max(4.0));
-                        } else {
-                            let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                            c.icon(Icon::AppWindow, icon_box, theme_ink);
-                        }
+                        let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+                        c.icon(Icon::AppWindow, icon_box, theme_ink);
                         let r_c = if is_hover {
                             theme_accent.with_alpha(0.64)
                         } else if app.focused {

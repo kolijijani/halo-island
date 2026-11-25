@@ -25,7 +25,21 @@ use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVE
 use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-const ICON_PX: u32 = 48;
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn PrivateExtractIconsW(
+        szfilename: *const u16,
+        niconindex: i32,
+        cxicon: i32,
+        cyicon: i32,
+        phicon: *mut HICON,
+        piconid: *mut u32,
+        nicons: u32,
+        flags: u32,
+    ) -> u32;
+}
+
+const ICON_PX: u32 = 128;
 const MAX_ICON_CACHE: usize = 64;
 const MAX_APPS: usize = 24;
 
@@ -372,23 +386,55 @@ fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>) -> Option<Image> {
     unsafe {
         let mut owned = false;
         let mut hicon = HICON::default();
+        let mut from_hi_res = false;
 
-        for kind in [ICON_BIG, ICON_SMALL2, ICON_SMALL] {
-            let mut res = 0usize;
-            if SendMessageTimeoutW(
-                hwnd,
-                WM_GETICON,
-                WPARAM(kind as usize),
-                LPARAM(0),
-                SMTO_ABORTIFHUNG,
-                40,
-                Some(&mut res),
-            )
-            .0 != 0
-                && res != 0
-            {
-                hicon = HICON(res as *mut _);
-                break;
+        // 1. Prefer high-resolution 256×256 / 128×128 icon embedded directly in the executable
+        // so Windows uses the crisp 256×256 PNG frame instead of the legacy 32×32 WM_GETICON.
+        if let Some(path) = exe_path {
+            if !path.to_ascii_lowercase().ends_with("applicationframehost.exe") {
+                let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+                for px in [256i32, 128, 64] {
+                    let mut out = HICON::default();
+                    let mut id = 0u32;
+                    let n = PrivateExtractIconsW(
+                        wide.as_ptr(),
+                        0,
+                        px,
+                        px,
+                        &mut out,
+                        &mut id,
+                        1,
+                        0,
+                    );
+                    if n != 0 && n != u32::MAX && !out.is_invalid() {
+                        hicon = out;
+                        owned = true;
+                        from_hi_res = px >= 128;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to live window icon (UWP / dynamic window icons).
+        if hicon.is_invalid() {
+            for kind in [ICON_BIG, ICON_SMALL2, ICON_SMALL] {
+                let mut res = 0usize;
+                if SendMessageTimeoutW(
+                    hwnd,
+                    WM_GETICON,
+                    WPARAM(kind as usize),
+                    LPARAM(0),
+                    SMTO_ABORTIFHUNG,
+                    40,
+                    Some(&mut res),
+                )
+                .0 != 0
+                    && res != 0
+                {
+                    hicon = HICON(res as *mut _);
+                    break;
+                }
             }
         }
 
@@ -399,6 +445,7 @@ fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>) -> Option<Image> {
             }
         }
 
+        // 3. Final fallback to shell file info icon.
         if hicon.is_invalid() {
             if let Some(path) = exe_path {
                 let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
@@ -420,12 +467,44 @@ fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>) -> Option<Image> {
         if hicon.is_invalid() {
             return None;
         }
-        let img = hicon_to_image(hicon, ICON_PX);
+        let img = if from_hi_res {
+            // Render at 256×256 and 2×2 box-downsample to 128×128 for supersampled sharpness.
+            hicon_to_image_supersampled(hicon, ICON_PX)
+        } else {
+            hicon_to_image(hicon, ICON_PX)
+        };
         if owned {
             let _ = DestroyIcon(hicon);
         }
         img
     }
+}
+
+fn hicon_to_image_supersampled(hicon: HICON, target: u32) -> Option<Image> {
+    let raw = hicon_to_image(hicon, target * 2)?;
+    let tw = target as usize;
+    let sw = (target * 2) as usize;
+    let mut out = vec![0u8; tw * tw * 4];
+    for y in 0..tw {
+        for x in 0..tw {
+            let mut acc = [0u32; 4];
+            for dy in 0..2 {
+                for dx in 0..2 {
+                    let si = ((y * 2 + dy) * sw + (x * 2 + dx)) * 4;
+                    acc[0] += raw.pixels[si] as u32;
+                    acc[1] += raw.pixels[si + 1] as u32;
+                    acc[2] += raw.pixels[si + 2] as u32;
+                    acc[3] += raw.pixels[si + 3] as u32;
+                }
+            }
+            let di = (y * tw + x) * 4;
+            out[di] = ((acc[0] + 2) / 4) as u8;
+            out[di + 1] = ((acc[1] + 2) / 4) as u8;
+            out[di + 2] = ((acc[2] + 2) / 4) as u8;
+            out[di + 3] = ((acc[3] + 2) / 4) as u8;
+        }
+    }
+    Some(ImageData::new(target, target, out))
 }
 
 fn hicon_to_image(hicon: HICON, size: u32) -> Option<Image> {

@@ -11,7 +11,11 @@ pub const TAGLINE: &str = "A living notch for Windows: by kolijijani";
 pub const TAGLINE_PRO: &str = "Free is whole — Pro for power users.";
 
 const REPO: &str = "https://github.com/kolijijani/halo-island";
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = if matches!(env!("CARGO_PKG_VERSION").as_bytes(), b"0.3.0") {
+    "0.3.00"
+} else {
+    env!("CARGO_PKG_VERSION")
+};
 /// "release" (a release tag's CI build), "test" (any other CI build) or "local".
 const KIND: &str = env!("HALO_BUILD_KIND");
 /// The commit a CI build was made from, 7 characters; empty for a local build.

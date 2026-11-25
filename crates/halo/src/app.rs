@@ -2008,6 +2008,8 @@ impl App {
             }
             crate::dock::DockAction::ToggleAppWindow { hwnd: target, minimized, focused, icon_rect } => {
                 self.close_dock_stack();
+                // Finish any in-flight Genie transition before starting a new one so two Genies never overlap.
+                self.dock_genie = None;
                 if focused && !minimized {
                     // Clicking the already-focused app minimizes it with Genie and caches its window thumbnail.
                     if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
@@ -2029,14 +2031,14 @@ impl App {
                         }
                         self.request_frame();
                     }
-                    unsafe {
-                        let _ = ShowWindow(target, SW_MINIMIZE);
-                    }
+                    crate::dock_genie::minimize_window_no_dwm(target);
                 } else if minimized {
-                    // Clicking a minimized app restores it with Genie.
-                    services::dock_apps::focus_window(target);
+                    // Clicking a minimized app restores it with a single Genie (real window stays hidden
+                    // until the Genie expansion completes at t = 1.0, eliminating the double-genie artifact).
+                    let cached_thumb = self.dock.as_ref().and_then(|d| d.app_thumb(target));
+                    let target_rc = crate::dock_genie::restored_window_rect(target);
                     if !instant {
-                        if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
+                        if let (Some(img), Some(win_rc)) = (cached_thumb, target_rc) {
                             let shared = self.gfx.d3d_handles();
                             if let Ok(g) = crate::dock_genie::DockGenie::start(
                                 &self.monitor,
@@ -2046,11 +2048,13 @@ impl App {
                                 crate::dock_genie::GenieDir::Restore,
                                 shared,
                             ) {
-                                self.dock_genie = Some(g);
+                                self.dock_genie = Some(g.with_restore_target(target));
                                 self.request_frame();
+                                return res;
                             }
                         }
                     }
+                    crate::dock_genie::restore_window_no_dwm(target);
                 } else {
                     services::dock_apps::focus_window(target);
                 }

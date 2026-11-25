@@ -302,7 +302,7 @@ mod tests {
             .collect();
         let at = |cmd: MenuCmd| labels.iter().position(|l| l.1 == cmd);
         let about = at(MenuCmd::About).expect("no About line");
-        assert!(labels[about].0.starts_with(&format!("About Halo Island {}", env!("CARGO_PKG_VERSION"))), "{}", labels[about].0);
+        assert!(labels[about].0.starts_with(&format!("About Halo Island {}", crate::version::VERSION)), "{}", labels[about].0);
         // Right above Quit, under What's New.
         assert_eq!(at(MenuCmd::Quit), Some(about + 1));
         assert_eq!(at(MenuCmd::WhatsNew), Some(about - 1));
