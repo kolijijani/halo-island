@@ -1997,9 +1997,12 @@ impl App {
             crate::dock::DockAction::ToggleAppWindow { hwnd: target, minimized, focused, icon_rect } => {
                 self.close_dock_stack();
                 if focused && !minimized {
-                    // Clicking the already-focused app minimizes it with Genie.
-                    if !instant {
-                        if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
+                    // Clicking the already-focused app minimizes it with Genie and caches its window thumbnail.
+                    if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
+                        if let Some(d) = self.dock.as_mut() {
+                            d.set_app_thumb(target, img.clone());
+                        }
+                        if !instant {
                             let shared = self.gfx.d3d_handles();
                             if let Ok(g) = crate::dock_genie::DockGenie::start(
                                 &self.monitor,
@@ -2010,9 +2013,9 @@ impl App {
                                 shared,
                             ) {
                                 self.dock_genie = Some(g);
-                                self.request_frame();
                             }
                         }
+                        self.request_frame();
                     }
                     unsafe {
                         let _ = ShowWindow(target, SW_MINIMIZE);

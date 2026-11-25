@@ -3,7 +3,7 @@
 //! non-blocking `Present(0, 0)`, rounded-pill hit mask, right-click tuck/peek
 //! handle, fullscreen hide, and zero idle CPU when settled.
 
-use crate::gfx::{Canvas, Gfx, HitMask, SharedD3d, TextStyle, Weight};
+use crate::gfx::{Canvas, Gfx, HitMask, Image, SharedD3d, TextStyle, Weight};
 use crate::glass::GlassParams;
 use crate::icons::Icon;
 use crate::pages::PageKind;
@@ -653,7 +653,15 @@ impl Dock {
     }
 
     /// Replace the running-apps slice; returns `true` only if the dock changed visually.
-    pub fn set_apps(&mut self, apps: Vec<RunningApp>) -> bool {
+    /// Preserves any captured window thumbnail while an app remains minimized.
+    pub fn set_apps(&mut self, mut apps: Vec<RunningApp>) -> bool {
+        for next in &mut apps {
+            if next.minimized && next.thumb.is_none() {
+                if let Some(prev) = self.apps.iter().find(|a| a.hwnd == next.hwnd) {
+                    next.thumb = prev.thumb.clone();
+                }
+            }
+        }
         if self.apps.len() == apps.len() && self.apps.iter().zip(&apps).all(|(a, b)| a.visual_eq(b)) {
             return false;
         }
@@ -669,6 +677,14 @@ impl Dock {
         self.update_mag_targets(false);
         self.dirty = true;
         true
+    }
+
+    /// Attach a captured window thumbnail to the slot for `hwnd` when minimizing into the dock.
+    pub fn set_app_thumb(&mut self, hwnd: HWND, thumb: Image) {
+        if let Some(app) = self.apps.iter_mut().find(|a| a.hwnd == hwnd) {
+            app.thumb = Some(thumb);
+            self.dirty = true;
+        }
     }
 
     fn current_scales(&self) -> Vec<f32> {
@@ -1344,6 +1360,163 @@ fn draw_progress_ring(c: &mut Canvas<'_>, tile: Rect, progress: f32) {
     );
 }
 
+/// Compute the miniature window card and corner app-badge rects for a minimized window slot (`.min-thumb`).
+pub fn minimized_card_rects(tile: Rect) -> (Rect, Rect, Rect) {
+    let card_w = (tile.w * 0.94).max(18.0);
+    let card_h = (tile.h * 0.78).max(14.0);
+    let card_x = tile.x + (tile.w - card_w) * 0.5;
+    let card_y = tile.y + (tile.h - card_h) * 0.5 - 1.0;
+    let card = Rect::new(card_x, card_y, card_w, card_h);
+    let bar_h = (card_h * 0.22).clamp(5.0, 8.5);
+    let bar = Rect::new(card.x, card.y, card.w, bar_h);
+    let badge_sz = (tile.w * 0.40).clamp(12.0, 22.0);
+    let badge = Rect::new(tile.right() - badge_sz + 2.0, tile.bottom() - badge_sz + 1.0, badge_sz, badge_sz);
+    (card, bar, badge)
+}
+
+/// Draw a macOS Sequoia minimized window thumbnail card (`.min-thumb`) with live screenshot
+/// (or stylized window preview) and corner app-icon badge (`.min-thumb-badge`).
+fn draw_minimized_window_tile(
+    c: &mut Canvas<'_>,
+    tile: Rect,
+    app: &RunningApp,
+    theme_ink: Color,
+    theme_accent: Color,
+    light: bool,
+    is_hover: bool,
+) {
+    let (card, bar, badge) = minimized_card_rects(tile);
+    let cr = (card.h * 0.22).clamp(5.0, 9.0);
+    draw_squircle_shadow(c, card, cr, light);
+
+    let bg = if light {
+        Color::rgba(0.93, 0.95, 0.98, 0.95)
+    } else {
+        Color::hex(0x141821).with_alpha(0.96)
+    };
+    c.fill_rrect(card, cr, bg);
+
+    // Body area below the mini window titlebar
+    let body = Rect::new(card.x + 1.5, bar.bottom() + 1.0, (card.w - 3.0).max(4.0), (card.bottom() - bar.bottom() - 2.5).max(4.0));
+    if let Some(thumb) = app.thumb.as_ref() {
+        c.image(thumb, body, (cr - 2.0).max(2.5));
+    } else {
+        // Stylized mini window preview (.min-thumb-art + .min-thumb-lines) when minimized before dock start
+        let art_sz = (body.h - 4.0).clamp(6.0, body.w * 0.42);
+        let art = Rect::new(body.x + 2.5, body.y + (body.h - art_sz) * 0.5, art_sz, art_sz);
+        c.fill_rrect(art, (art_sz * 0.24).max(2.0), theme_accent.with_alpha(0.85));
+        let lx = art.right() + 3.5;
+        let lw = (body.right() - lx - 2.5).max(4.0);
+        let lh = 2.2f32.min(body.h * 0.16);
+        let line_c = theme_ink.with_alpha(if light { 0.36 } else { 0.44 });
+        for (k, frac) in [1.0f32, 0.74, 0.52].iter().enumerate() {
+            let ly = body.y + 3.0 + k as f32 * (lh + 2.4);
+            if ly + lh <= body.bottom() {
+                c.fill_rrect(Rect::new(lx, ly, lw * frac, lh), lh * 0.5, line_c);
+            }
+        }
+    }
+
+    // Mini window titlebar (.min-thumb-bar) with 3 window control dots
+    let bar_bg = if light { Color::black(0.07) } else { Color::white(0.10) };
+    c.fill_rrect(bar, cr, bar_bg);
+    let dot_r = (bar.h * 0.18).clamp(1.0, 1.7);
+    let dot_y = bar.y + bar.h * 0.5;
+    let dot_c = theme_ink.with_alpha(0.48);
+    for k in 0..3 {
+        let dx = bar.right() - 4.0 - k as f32 * (dot_r * 2.6);
+        if dx > bar.x + 4.0 {
+            c.fill_circle(Point::new(dx, dot_y), dot_r, dot_c);
+        }
+    }
+
+    // Top inner specular bevel & outer rim
+    let segs = crate::pill::shape::segments(card, cr);
+    c.fill_path_fade(&segs, Color::white(1.0), card.y, card.y + card.h * 0.45, if light { 0.32 } else { 0.18 }, 0.0);
+    let rim = if is_hover {
+        theme_accent.with_alpha(0.76)
+    } else if light {
+        Color::black(0.18)
+    } else {
+        Color::white(0.28)
+    };
+    c.stroke_rrect(card, cr, rim, 1.0);
+
+    // Corner app icon badge (.min-thumb-badge)
+    let br = (badge.w * 0.28).clamp(3.5, 6.5);
+    c.fill_rrect(badge.offset(0.0, 1.5), br, Color::black(0.45));
+    if let Some(img) = app.icon.as_ref() {
+        c.image(img, badge, br);
+    } else {
+        let badge_bg = if light { Color::white(0.94) } else { Color::hex(0x1E293B) };
+        c.fill_rrect(badge, br, badge_bg);
+        c.stroke_rrect(badge, br, Color::white(0.25), 0.9);
+        c.icon(Icon::AppWindow, badge.inset(badge.w * 0.18, badge.h * 0.18), theme_ink);
+    }
+}
+
+/// Draw the macOS Downloads Folder Stack tile icon (`#dockDownloads`: stacked document sheets
+/// peeking out of a vivid sky-blue folder pocket with downward arrow).
+fn draw_downloads_stack_icon(
+    c: &mut Canvas<'_>,
+    tile: Rect,
+    tr: f32,
+    accent: Color,
+    light: bool,
+    is_hover: bool,
+    stack_open: bool,
+) {
+    let base_a = if stack_open { 0.28 } else if is_hover { 0.22 } else { 0.14 };
+    c.fill_rrect(tile, tr, accent.with_alpha(base_a));
+
+    // Back folder tab
+    let tab_w = tile.w * 0.36;
+    let tab_h = tile.h * 0.18;
+    let tab = Rect::new(tile.x + tile.w * 0.14, tile.y + tile.h * 0.17, tab_w, tab_h);
+    c.fill_rrect(tab, (tab_h * 0.4).max(2.0), Color::hex(0x0284C7).with_alpha(0.82));
+
+    // Two stacked white document sheets peeking out above the folder pocket
+    let doc1 = Rect::new(tile.x + tile.w * 0.21, tile.y + tile.h * 0.15, tile.w * 0.54, tile.h * 0.36);
+    let doc2 = Rect::new(tile.x + tile.w * 0.26, tile.y + tile.h * 0.18, tile.w * 0.54, tile.h * 0.36);
+    c.fill_rrect(doc1, 3.0, Color::hex(0xCBD5E1).with_alpha(0.92));
+    c.fill_rrect(doc2, 3.0, Color::white(0.98));
+
+    // Front folder pocket (#38bdf8 -> #0284c7)
+    let pocket = Rect::new(
+        tile.x + tile.w * 0.10,
+        tile.y + tile.h * 0.33,
+        tile.w * 0.80,
+        tile.h * 0.54,
+    );
+    let pr = (pocket.h * 0.24).clamp(4.0, 8.0);
+    c.fill_rrect(pocket, pr, Color::hex(0x0284C7).with_alpha(0.95));
+    let p_segs = crate::pill::shape::segments(pocket, pr);
+    c.fill_path_fade(&p_segs, Color::hex(0x38BDF8), pocket.y, pocket.bottom(), 0.92, 0.0);
+    c.stroke_rrect(pocket, pr, Color::white(0.36), 1.0);
+
+    // Crisp white download arrow centered on the folder pocket
+    let ic_sz = (pocket.h * 0.58).clamp(11.0, 18.0);
+    let ic_box = Rect::new(
+        pocket.x + (pocket.w - ic_sz) * 0.5,
+        pocket.y + (pocket.h - ic_sz) * 0.5,
+        ic_sz,
+        ic_sz,
+    );
+    c.icon(Icon::Download, ic_box, Color::white(0.98));
+
+    // Outer squircle bevel & rim
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.45, if light { 0.24 } else { 0.14 }, 0.0);
+    let tile_rim = if is_hover || stack_open {
+        Color::hex(0x38BDF8).with_alpha(0.74)
+    } else if light {
+        Color::black(0.11)
+    } else {
+        Color::white(0.18)
+    };
+    c.stroke_rrect(tile, tr, tile_rim, 1.0);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_dock(
     c: &mut Canvas<'_>,
@@ -1457,7 +1630,6 @@ fn draw_dock(
                     let is_press = pressed == Some(idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
-                    let tile_alpha = if app.minimized { 0.68 } else { 1.0 };
 
                     let ring_p = app.progress.or_else(|| {
                         if !browser_ring_drawn && is_browser_key(&app.key) {
@@ -1473,7 +1645,9 @@ fn draw_dock(
                         draw_progress_ring(c, tile, p);
                     }
 
-                    c.with_alpha(tile_alpha, |c| {
+                    if app.minimized {
+                        draw_minimized_window_tile(c, tile, app, theme_ink, theme_accent, light, is_hover);
+                    } else {
                         draw_squircle_shadow(c, tile, tr, light);
                         let back = if is_hover {
                             if light { Color::black(0.10) } else { Color::white(0.18) }
@@ -1513,15 +1687,15 @@ fn draw_dock(
                             Color::white(0.13)
                         };
                         c.stroke_rrect(tile, tr, r_c, 1.0);
-                    });
+                    }
 
                     if app.badge > 0 {
                         draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
                     }
 
                     // Active running-app indicator dot (focused = brighter & slightly larger).
-                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.5 } else { 1.9 };
-                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.44 } else { 0.78 };
+                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.6 } else { 1.9 };
+                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.55 } else { 0.78 };
                     draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
                 }
 
@@ -1540,27 +1714,7 @@ fn draw_dock(
                         draw_progress_ring(c, tile, p);
                     }
                     draw_squircle_shadow(c, tile, tr, light);
-                    let fill_a = if is_press || stack_open { 0.32 } else if is_hover { 0.26 } else { 0.18 };
-                    c.fill_rrect(tile, tr, accent.with_alpha(fill_a));
-                    let tile_segs = crate::pill::shape::segments(tile, tr);
-                    c.fill_path_fade(
-                        &tile_segs,
-                        Color::white(1.0),
-                        tile.y,
-                        tile.y + tile.h * 0.5,
-                        if light { 0.24 } else { 0.16 },
-                        0.0,
-                    );
-                    let tile_rim = if is_hover || stack_open {
-                        accent.with_alpha(0.68)
-                    } else if light {
-                        Color::black(0.11)
-                    } else {
-                        Color::white(0.18)
-                    };
-                    c.stroke_rrect(tile, tr, tile_rim, 1.0);
-                    let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                    c.icon(Icon::Download, icon_box, theme_ink);
+                    draw_downloads_stack_icon(c, tile, tr, accent, light, is_hover, stack_open);
                     if tray.downloads_active > 0 {
                         draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue);
                     }
@@ -1775,12 +1929,56 @@ pub enum StackAction {
     Close,
 }
 
-const STACK_W: f32 = 286.0;
-const STACK_PAD: f32 = 10.0;
-const STACK_HDR_H: f32 = 34.0;
-const STACK_ROW_H: f32 = 32.0;
-const STACK_R: f32 = 16.0;
+const STACK_W: f32 = 326.0;
+const STACK_PAD: f32 = 12.0;
+const STACK_HDR_H: f32 = 38.0;
+const STACK_ROW_H: f32 = 46.0;
+const STACK_R: f32 = 18.0;
 const STACK_MAX_ITEMS: usize = 8;
+
+/// Compute the fan-out horizontal curve indent for item `i` of `count` in the Downloads stack,
+/// creating a subtle macOS fan cascade where upper cards arc outward from the bottom anchor.
+pub fn stack_fan_indent(index: usize, count: usize) -> f32 {
+    if count <= 1 {
+        return 0.0;
+    }
+    // Distance from bottom card (0 = bottom card closest to dock, 1 = top card)
+    let from_bottom = (count.saturating_sub(1 + index)) as f32 / (count - 1) as f32;
+    (from_bottom * from_bottom * 8.0).round()
+}
+
+/// Compute the elevated card rectangle for item `i` of `count` inside `card_dip`.
+pub fn stack_fan_card_rect(card: Rect, index: usize, count: usize) -> Rect {
+    let indent = stack_fan_indent(index, count);
+    let y = STACK_PAD + STACK_HDR_H + 6.0 + index as f32 * STACK_ROW_H;
+    Rect::new(
+        STACK_PAD + indent,
+        y,
+        (card.w - 2.0 * STACK_PAD - indent * 1.4).max(80.0),
+        STACK_ROW_H - 5.0,
+    )
+}
+
+/// Resolve the file-type badge accent color and short kind tag for a download item.
+pub fn download_file_badge(item: &DownloadItem) -> (Color, &'static str) {
+    if item.is_dir {
+        return (Color::hex(0x0284C7), "FOLDER");
+    }
+    let ext = item
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "exe" | "msi" | "dmg" | "pkg" => (Color::hex(0x0A84FF), "APP"),
+        "pdf" | "doc" | "docx" | "txt" | "md" => (Color::hex(0xEF4444), "DOC"),
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "svg" => (Color::hex(0x10B981), "IMG"),
+        "mp3" | "wav" | "flac" | "ogg" | "m4a" | "mp4" | "mkv" | "mov" => (Color::hex(0x8B5CF6), "MEDIA"),
+        "zip" | "7z" | "rar" | "tar" | "gz" => (Color::hex(0xF5A524), "ZIP"),
+        _ => (Color::hex(0x64748B), "FILE"),
+    }
+}
 
 /// Lazily scan `dir` for the newest `limit` non-hidden files/folders.
 /// Called only when the user opens the Downloads stack (0 idle threads/watchers).
@@ -1938,13 +2136,11 @@ impl DockStack {
 
     fn open_btn_rect(&self) -> Rect {
         let card = self.card_dip();
-        Rect::new(card.w - STACK_PAD - 58.0, STACK_PAD + 3.0, 58.0, 24.0)
+        Rect::new(card.w - STACK_PAD - 58.0, STACK_PAD + 4.0, 58.0, 24.0)
     }
 
     fn row_rect(&self, i: usize) -> Rect {
-        let card = self.card_dip();
-        let y = STACK_PAD + STACK_HDR_H + 4.0 + i as f32 * STACK_ROW_H;
-        Rect::new(STACK_PAD, y, card.w - 2.0 * STACK_PAD, STACK_ROW_H - 2.0)
+        stack_fan_card_rect(self.card_dip(), i, self.items.len().max(1))
     }
 
     fn hit_test(&self, p: Point) -> Option<usize> {
@@ -2081,9 +2277,14 @@ impl DockStack {
                     c.stroke_rrect(body, STACK_R, rim, 1.0);
                 }
 
-                // Header
+                // Header (.stk-head: icon + "Downloads Stack" + count subtitle + "Open" button)
+                let sky = Color::hex(0x38BDF8);
+                c.icon(Icon::Download, Rect::new(STACK_PAD + 2.0, STACK_PAD + 6.0, 15.0, 15.0), sky);
                 let hdr_st = TextStyle::body().weight(Weight::Semibold).color(ink);
-                c.text("Downloads", Rect::new(STACK_PAD + 4.0, STACK_PAD + 4.0, card.w - 90.0, 24.0), &hdr_st);
+                c.text("Downloads Stack", Rect::new(STACK_PAD + 23.0, STACK_PAD + 3.0, 136.0, 22.0), &hdr_st);
+                let sub_label = format!("{} recent", self.items.len());
+                let sub_st = TextStyle::caption().color(sub);
+                c.text(&sub_label, Rect::new(STACK_PAD + 23.0, STACK_PAD + 20.0, 110.0, 14.0), &sub_st);
 
                 let btn_bg = if hovered == Some(usize::MAX) {
                     accent.with_alpha(0.28)
@@ -2093,30 +2294,74 @@ impl DockStack {
                     Color::white(0.10)
                 };
                 c.fill_rrect(open_btn, 8.0, btn_bg);
+                c.stroke_rrect(open_btn, 8.0, if hovered == Some(usize::MAX) { accent.with_alpha(0.55) } else { rim }, 1.0);
                 let btn_st = TextStyle::caption().weight(Weight::Medium).center().color(ink);
                 c.text("Open", open_btn, &btn_st);
 
                 let div_y = STACK_PAD + STACK_HDR_H;
-                c.fill_rrect(Rect::new(STACK_PAD, div_y, card.w - 2.0 * STACK_PAD, 1.0), 0.5, rim);
+                c.fill_rrect(Rect::new(STACK_PAD, div_y, card.w - 2.0 * STACK_PAD, 1.0), 0.5, rim.with_alpha(0.10));
 
                 if self.items.is_empty() {
                     let empty_st = TextStyle::caption().center().color(sub);
-                    c.text("No recent downloads", Rect::new(STACK_PAD, div_y + 8.0, card.w - 2.0 * STACK_PAD, 28.0), &empty_st);
+                    c.text("No recent downloads", Rect::new(STACK_PAD, div_y + 10.0, card.w - 2.0 * STACK_PAD, 28.0), &empty_st);
                 } else {
-                    let row_st = TextStyle::caption().weight(Weight::Medium).color(ink);
-                    let meta_st = TextStyle::caption().right().color(sub);
+                    let count = self.items.len();
+                    let name_st = TextStyle::caption().weight(Weight::Semibold).color(ink);
+                    let info_st = TextStyle::new(10.5).color(sub);
                     for (i, item) in self.items.iter().enumerate() {
-                        let rr = Rect::new(STACK_PAD, div_y + 4.0 + i as f32 * STACK_ROW_H, card.w - 2.0 * STACK_PAD, STACK_ROW_H - 2.0);
-                        if hovered == Some(i) {
-                            let hb = accent.with_alpha(if light { 0.16 } else { 0.24 });
-                            c.fill_rrect(rr, 8.0, hb);
-                        }
+                        let rr = stack_fan_card_rect(card, i, count);
+                        let is_h = hovered == Some(i);
+                        let card_r = 12.0;
+
+                        // Fan-out card background & rim (.stk-item / .stk-item.hov)
+                        let card_bg = if is_h {
+                            accent.with_alpha(if light { 0.18 } else { 0.24 })
+                        } else if light {
+                            Color::black(0.04)
+                        } else {
+                            Color::white(0.05)
+                        };
+                        let card_rim = if is_h {
+                            accent.with_alpha(0.52)
+                        } else if light {
+                            Color::black(0.08)
+                        } else {
+                            Color::white(0.08)
+                        };
+                        c.fill_rrect(rr, card_r, card_bg);
+                        let r_segs = crate::pill::shape::segments(rr, card_r);
+                        c.fill_path_fade(&r_segs, Color::white(1.0), rr.y, rr.y + rr.h * 0.5, if light { 0.22 } else { 0.10 }, 0.0);
+                        c.stroke_rrect(rr, card_r, card_rim, 1.0);
+
+                        // Left squircle file-type icon badge (.stk-ico)
+                        let (badge_c, kind_tag) = download_file_badge(item);
+                        let ico_box = Rect::new(rr.x + 7.0, rr.y + (rr.h - 30.0) * 0.5, 30.0, 30.0);
+                        c.fill_rrect(ico_box, 8.0, badge_c.with_alpha(if light { 0.18 } else { 0.24 }));
+                        c.stroke_rrect(ico_box, 8.0, badge_c.with_alpha(0.45), 1.0);
                         let ic = if item.is_dir { Icon::Folder } else { Icon::File };
-                        let ic_c = if item.is_dir { accent } else { sub };
-                        c.icon(ic, Rect::new(rr.x + 6.0, rr.y + 7.0, 16.0, 16.0), ic_c);
-                        c.text(&item.name, Rect::new(rr.x + 28.0, rr.y + 6.0, rr.w - 90.0, 18.0), &row_st);
-                        let meta = if item.is_dir { "Folder".to_string() } else { format_file_size(item.size) };
-                        c.text(&meta, Rect::new(rr.right() - 60.0, rr.y + 6.0, 54.0, 18.0), &meta_st);
+                        c.icon(ic, ico_box.inset(7.0, 7.0), badge_c);
+
+                        // Right "NEW" tag on newest item (.stk-tag)
+                        let right_pad = if i == 0 {
+                            let tag_r = Rect::new(rr.right() - 42.0, rr.y + (rr.h - 17.0) * 0.5, 34.0, 17.0);
+                            c.fill_rrect(tag_r, 5.5, Color::hex(0x2ED573).with_alpha(0.20));
+                            let tag_st = TextStyle::new(9.0).weight(Weight::Bold).center().color(Color::hex(0x4ADE80));
+                            c.text("NEW", tag_r, &tag_st);
+                            48.0
+                        } else {
+                            10.0
+                        };
+
+                        // Two-line metadata (.stk-name + .stk-info)
+                        let tx = ico_box.right() + 9.0;
+                        let tw = (rr.right() - tx - right_pad).max(30.0);
+                        c.text(&item.name, Rect::new(tx, rr.y + 5.0, tw, 16.0), &name_st);
+                        let info = if item.is_dir {
+                            "Folder · Downloads".to_string()
+                        } else {
+                            format!("{} · {kind_tag}", format_file_size(item.size))
+                        };
+                        c.text(&info, Rect::new(tx, rr.y + 21.0, tw, 14.0), &info_st);
                     }
                 }
             });
@@ -2340,5 +2585,30 @@ mod tests {
         assert!(b1.w == b1.h && b2.w > b1.w && b3.w > b2.w);
         assert!(b1.right() > tile.right() && b1.y < tile.y);
         assert!(progress_ring_radius(tile) > tile.w * 0.5);
+    }
+
+    #[test]
+    fn fan_stack_cards_and_minimized_window_thumbnail_geometry() {
+        let card = Rect::new(0.0, 0.0, STACK_W, 260.0);
+        let top_row = stack_fan_card_rect(card, 0, 4);
+        let bot_row = stack_fan_card_rect(card, 3, 4);
+        assert!(top_row.x > bot_row.x, "top fan card must cascade inward relative to bottom anchor card");
+        assert!(top_row.y < bot_row.y);
+        assert!(bot_row.right() <= card.w - STACK_PAD + 0.5);
+
+        let exe_item = DownloadItem {
+            name: "Halo-Island-Setup.exe".into(),
+            path: std::path::PathBuf::from("Halo-Island-Setup.exe"),
+            is_dir: false,
+            size: 4_200_000,
+        };
+        let (_, tag) = download_file_badge(&exe_item);
+        assert_eq!(tag, "APP");
+
+        let tile = Rect::new(300.0, 74.0, 44.0, 44.0);
+        let (min_card, min_bar, min_badge) = minimized_card_rects(tile);
+        assert!(min_card.w < tile.w && min_card.h < tile.h);
+        assert_eq!(min_bar.y, min_card.y);
+        assert!(min_badge.right() >= tile.right() && min_badge.bottom() >= tile.bottom());
     }
 }
