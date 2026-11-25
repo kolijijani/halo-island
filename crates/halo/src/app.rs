@@ -173,6 +173,12 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     if let Err(e) = crate::dock::register(dock_wndproc) {
         pwarn!("dock window: class not registered ({e})");
     }
+    if let Err(e) = crate::dock::register_stack(dock_stack_wndproc) {
+        pwarn!("dock stack window: class not registered ({e})");
+    }
+    if let Err(e) = crate::dock_genie::register() {
+        pwarn!("dock genie window: class not registered ({e})");
+    }
     let hwnd = window::create_island_window()?;
     let helper = window::create_helper_window()?;
     pinfo!("windows created");
@@ -361,6 +367,15 @@ unsafe extern "system" fn dock_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPA
     }
 }
 
+/// The bottom dock's transient Downloads stack popover messages (`dock`).
+unsafe extern "system" fn dock_stack_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let res = with_app(|app| app.handle_dock_stack_window(hwnd, msg, wp, lp));
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 fn run_deferred(d: Deferred) {
     match d {
         Deferred::DragOut(paths) => {
@@ -442,6 +457,10 @@ pub struct App {
     dock: Option<crate::dock::Dock>,
     /// Running-apps WinEvent watcher, alive only while the bottom dock is enabled.
     dock_apps: Option<services::dock_apps::DockAppsWatcher>,
+    /// Transient Downloads stack popover, alive only while open.
+    dock_stack: Option<crate::dock::DockStack>,
+    /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
+    dock_genie: Option<crate::dock_genie::DockGenie>,
     clock: FrameClock,
     sink: EventSink,
     rx: Receiver<AppEvent>,
@@ -755,6 +774,8 @@ impl App {
             settings_win: None,
             dock: None,
             dock_apps: None,
+            dock_stack: None,
+            dock_genie: None,
             clock,
             sink,
             rx,
@@ -907,6 +928,8 @@ impl App {
         self.settings_win = None;
         self.dock = None;
         self.dock_apps = None;
+        self.dock_stack = None;
+        self.dock_genie = None;
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
         self.set_peek_hotkey(false);
@@ -1820,14 +1843,27 @@ impl App {
             }
         } else {
             self.dock_apps = None;
+            self.dock_stack = None;
+            self.dock_genie = None;
             if self.dock.take().is_some() {
                 pinfo!("dock: disabled");
             }
         }
     }
 
+    fn close_dock_stack(&mut self) {
+        if self.dock_stack.take().is_some() {
+            if let Some(d) = self.dock.as_mut() {
+                d.set_stack_open(false);
+            }
+            self.request_frame();
+        }
+    }
+
     fn dock_moving(&self) -> bool {
         self.dock.as_ref().is_some_and(|d| d.needs_frame())
+            || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
+            || self.dock_genie.is_some()
     }
 
     fn paint_dock_if_needed(&mut self, now: f64, dt: f32, _deferred: &mut Vec<Deferred>) {
@@ -1837,7 +1873,19 @@ impl App {
         let instant = self.reduce_motion || self.st.power.saver;
         let shared = self.gfx.d3d_handles();
         if let Some(d) = self.dock.as_mut() {
-            d.paint(now, dt, instant, shared);
+            if d.needs_frame() {
+                d.paint(now, dt, instant, shared.clone());
+            }
+        }
+        if let Some(s) = self.dock_stack.as_mut() {
+            if s.needs_frame() {
+                s.paint(shared.clone());
+            }
+        }
+        if let Some(g) = self.dock_genie.as_mut() {
+            if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
+                self.dock_genie = None;
+            }
         }
     }
 
@@ -1848,6 +1896,7 @@ impl App {
             crate::dock::DockAction::None => {}
             crate::dock::DockAction::RequestFrame => self.request_frame(),
             crate::dock::DockAction::ToggleIsland => {
+                self.close_dock_stack();
                 if self.expanded {
                     self.collapse();
                 } else {
@@ -1856,18 +1905,98 @@ impl App {
                 self.request_frame();
             }
             crate::dock::DockAction::OpenPage(pk) => {
+                self.close_dock_stack();
                 self.st.page = pk;
                 self.expand();
                 self.request_frame();
             }
             crate::dock::DockAction::OpenSettings => {
+                self.close_dock_stack();
                 self.collapse();
                 self.open_settings_window(Some(Section::Island), deferred);
             }
-            crate::dock::DockAction::FocusWindow(target) => {
-                services::dock_apps::focus_window(target);
+            crate::dock::DockAction::ToggleAppWindow { hwnd: target, minimized, focused, icon_rect } => {
+                self.close_dock_stack();
+                if focused && !minimized {
+                    // Clicking the already-focused app minimizes it with Genie.
+                    if !instant {
+                        if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
+                            let shared = self.gfx.d3d_handles();
+                            if let Ok(g) = crate::dock_genie::DockGenie::start(
+                                &self.monitor,
+                                img,
+                                win_rc,
+                                icon_rect,
+                                crate::dock_genie::GenieDir::Minimize,
+                                shared,
+                            ) {
+                                self.dock_genie = Some(g);
+                                self.request_frame();
+                            }
+                        }
+                    }
+                    unsafe {
+                        let _ = ShowWindow(target, SW_MINIMIZE);
+                    }
+                } else if minimized {
+                    // Clicking a minimized app restores it with Genie.
+                    services::dock_apps::focus_window(target);
+                    if !instant {
+                        if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
+                            let shared = self.gfx.d3d_handles();
+                            if let Ok(g) = crate::dock_genie::DockGenie::start(
+                                &self.monitor,
+                                img,
+                                win_rc,
+                                icon_rect,
+                                crate::dock_genie::GenieDir::Restore,
+                                shared,
+                            ) {
+                                self.dock_genie = Some(g);
+                                self.request_frame();
+                            }
+                        }
+                    }
+                } else {
+                    services::dock_apps::focus_window(target);
+                }
             }
-            crate::dock::DockAction::ShowMenu(pt, tucked) => deferred.push(Deferred::DockMenu(pt, tucked)),
+            crate::dock::DockAction::ToggleDownloadsStack(icon_rect) => {
+                if self.dock_stack.is_some() {
+                    self.close_dock_stack();
+                } else {
+                    let light = services::apps_use_light_theme();
+                    let shared = self.gfx.d3d_handles();
+                    match crate::dock::DockStack::open(&self.monitor, icon_rect, light, shared) {
+                        Ok(s) => {
+                            self.dock_stack = Some(s);
+                            if let Some(d) = self.dock.as_mut() {
+                                d.set_stack_open(true);
+                            }
+                            self.request_frame();
+                        }
+                        Err(e) => pwarn!("dock stack: couldn't open ({e})"),
+                    }
+                }
+            }
+            crate::dock::DockAction::ShowMenu(pt, tucked) => {
+                self.close_dock_stack();
+                deferred.push(Deferred::DockMenu(pt, tucked));
+            }
+        }
+        res
+    }
+
+    fn handle_dock_stack_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        let (res, act) = self.dock_stack.as_mut()?.handle_message(hwnd, msg, wp, lp);
+        match act {
+            crate::dock::StackAction::None => {}
+            crate::dock::StackAction::RequestFrame => self.request_frame(),
+            crate::dock::StackAction::OpenPath(path) => {
+                self.close_dock_stack();
+                crate::shell::open(&path);
+            }
+            crate::dock::StackAction::Close => self.close_dock_stack(),
         }
         res
     }

@@ -33,6 +33,8 @@ mod commands;
 #[cfg(windows)]
 mod dock;
 #[cfg(windows)]
+mod dock_genie;
+#[cfg(windows)]
 mod dragdrop;
 #[cfg(windows)]
 mod events;

@@ -2042,6 +2042,19 @@ impl<'a> Canvas<'a> {
         self.image_as(img, r, radius, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
     }
 
+    /// Draw a source rectangle of `img` (in image pixels) stretched into `dst` (in DIPs).
+    pub fn image_slice(&mut self, img: &Image, src: Rect, dst: Rect) {
+        if img.width == 0 || img.height == 0 || src.w <= 0.0 || src.h <= 0.0 || dst.w <= 0.0 || dst.h <= 0.0 {
+            return;
+        }
+        let Ok(bmp) = self.g.bitmap_for(img) else { return };
+        let d = rectf(dst);
+        let s = rectf(src);
+        unsafe {
+            self.g.rt.DrawBitmap(&bmp, Some(&d), self.alpha, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, Some(&s));
+        }
+    }
+
     fn image_as(&mut self, img: &Image, r: Rect, radius: f32, interpolation: D2D1_BITMAP_INTERPOLATION_MODE) {
         if img.width == 0 || img.height == 0 || r.w <= 0.0 || r.h <= 0.0 {
             return;

@@ -19,6 +19,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, Tr
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const CLASS: PCWSTR = w!("Halo.Dock");
+pub const STACK_CLASS: PCWSTR = w!("Halo.DockStack");
 
 /// Not exported by windows-rs 0.58's WindowsAndMessaging module.
 const WM_MOUSELEAVE: u32 = 0x02A3;
@@ -55,14 +56,15 @@ pub enum DockCmd {
     DisableDock,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DockAction {
     None,
     RequestFrame,
     ToggleIsland,
     OpenPage(PageKind),
     OpenSettings,
-    FocusWindow(HWND),
+    ToggleAppWindow { hwnd: HWND, minimized: bool, focused: bool, icon_rect: Rect },
+    ToggleDownloadsStack(Rect),
     ShowMenu(POINT, bool),
 }
 
@@ -92,6 +94,15 @@ const ANCHOR_SLOTS: &[AnchorSlot] = &[
 
 /// Register `Halo.Dock` once at process startup.
 pub fn register(wndproc: crate::window::WndProc) -> Result<()> {
+    register_class(CLASS, wndproc)
+}
+
+/// Register `Halo.DockStack` (the transient Downloads stack popover) once at startup.
+pub fn register_stack(wndproc: crate::window::WndProc) -> Result<()> {
+    register_class(STACK_CLASS, wndproc)
+}
+
+fn register_class(class: PCWSTR, wndproc: crate::window::WndProc) -> Result<()> {
     unsafe {
         let hinst = GetModuleHandleW(None)?;
         let wc = WNDCLASSEXW {
@@ -102,7 +113,7 @@ pub fn register(wndproc: crate::window::WndProc) -> Result<()> {
             hIcon: crate::window::app_icon(false),
             hIconSm: crate::window::app_icon(true),
             hCursor: LoadCursorW(None, IDC_ARROW)?,
-            lpszClassName: CLASS,
+            lpszClassName: class,
             ..Default::default()
         };
         if RegisterClassExW(&wc) == 0 {
@@ -140,12 +151,12 @@ pub fn mag_scale(dist_x: f32, step: f32) -> f32 {
 /// Single-row slot size in DIPs for `count` items inside `surf_w` DIPs:
 /// shrinks proportionally at high counts (e.g. 30 apps) so icons never wrap or clip.
 pub fn slot_metrics(surf_w: f32, count: usize) -> (f32, f32) {
-    slot_metrics_with_sep(surf_w, count, false)
+    slot_metrics_with_seps(surf_w, count, 0)
 }
 
-fn slot_metrics_with_sep(surf_w: f32, count: usize, has_sep: bool) -> (f32, f32) {
+fn slot_metrics_with_seps(surf_w: f32, count: usize, sep_count: usize) -> (f32, f32) {
     let n = count.max(1) as f32;
-    let sep = if has_sep { SEP_W } else { 0.0 };
+    let sep = sep_count as f32 * SEP_W;
     let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0 - sep).max(64.0);
     let natural = n * SLOT_MAX + (n - 1.0) * SLOT_GAP;
     if natural <= avail {
@@ -180,11 +191,27 @@ pub fn layout_slots(
     scales: &[f32],
     tuck_t: f32,
 ) -> (Rect, Option<f32>, Vec<Rect>) {
-    let total = anchor_count + app_count;
-    let has_sep = anchor_count > 0 && app_count > 0;
-    let (base_slot, base_gap) = slot_metrics_with_sep(surf_w, total, has_sep);
-    let sep_w = if has_sep { SEP_W } else { 0.0 };
-    let gap_count = total.saturating_sub(1).saturating_sub(usize::from(has_sep)) as f32;
+    let (shelf, sep1, _, rects) = layout_slots_with_stack(surf_w, anchor_count, app_count, 0, scales, tuck_t);
+    (shelf, sep1, rects)
+}
+
+/// Magnified dock layout with trailing stack slots (e.g. Downloads) separated by
+/// a second vertical divider. Returns `(shelf_rect, sep1_x, sep2_x, slot_rects)`.
+pub fn layout_slots_with_stack(
+    surf_w: f32,
+    anchor_count: usize,
+    app_count: usize,
+    stack_count: usize,
+    scales: &[f32],
+    tuck_t: f32,
+) -> (Rect, Option<f32>, Option<f32>, Vec<Rect>) {
+    let total = anchor_count + app_count + stack_count;
+    let has_sep1 = anchor_count > 0 && app_count > 0;
+    let has_sep2 = stack_count > 0 && (anchor_count + app_count) > 0;
+    let sep_count = usize::from(has_sep1) + usize::from(has_sep2);
+    let (base_slot, base_gap) = slot_metrics_with_seps(surf_w, total, sep_count);
+    let sep_w = sep_count as f32 * SEP_W;
+    let gap_count = total.saturating_sub(1).saturating_sub(sep_count) as f32;
     let base_w = total as f32 * base_slot + gap_count * base_gap + sep_w + 2.0 * SHELF_PAD_X;
     let max_shelf_w = (surf_w - 8.0).max(64.0);
 
@@ -208,12 +235,17 @@ pub fn layout_slots(
     let shelf = Rect::new(x0, base_y + slide, shelf_w, shelf_h);
     let bottom_pad = (shelf_h - base_slot) * 0.5;
 
+    let stack_start = anchor_count + app_count;
     let mut rects = Vec::with_capacity(total);
-    let mut sep_x = None;
+    let mut sep1_x = None;
+    let mut sep2_x = None;
     let mut x = shelf.x + SHELF_PAD_X;
     for i in 0..total {
-        if has_sep && i == anchor_count {
-            sep_x = Some(x + SEP_W * 0.5);
+        if has_sep1 && i == anchor_count {
+            sep1_x = Some(x + SEP_W * 0.5);
+            x += SEP_W;
+        } else if has_sep2 && i == stack_start {
+            sep2_x = Some(x + SEP_W * 0.5);
             x += SEP_W;
         }
         let s = 1.0 + (scales.get(i).copied().unwrap_or(1.0).max(1.0) - 1.0) * damp;
@@ -221,11 +253,12 @@ pub fn layout_slots(
         let y = shelf.bottom() - bottom_pad - sz;
         rects.push(Rect::new(x, y, sz, sz));
         x += sz;
-        if i + 1 < total && !(has_sep && i + 1 == anchor_count) {
+        let next_is_sep = (has_sep1 && i + 1 == anchor_count) || (has_sep2 && i + 1 == stack_start);
+        if i + 1 < total && !next_is_sep {
             x += base_gap;
         }
     }
-    (shelf, sep_x, rects)
+    (shelf, sep1_x, sep2_x, rects)
 }
 
 /// Bottom 4 DIP peek handle shown while tucked (`CHOSEN.md` §3).
@@ -286,6 +319,7 @@ pub struct Dock {
     mouse: Option<Point>,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    stack_open: bool,
     dirty: bool,
     mask: Option<(HitMask, f64)>,
 }
@@ -344,14 +378,22 @@ impl Dock {
             tucked: false,
             tuck: Spring::smooth(0.0),
             apps: Vec::new(),
-            scales: (0..ANCHOR_SLOTS.len()).map(|_| mag_spring(1.0)).collect(),
+            scales: (0..ANCHOR_SLOTS.len() + 1).map(|_| mag_spring(1.0)).collect(),
             tracking: false,
             mouse: None,
             hovered: None,
             pressed: None,
+            stack_open: false,
             dirty: true,
             mask: None,
         })
+    }
+
+    pub fn set_stack_open(&mut self, open: bool) {
+        if self.stack_open != open {
+            self.stack_open = open;
+            self.dirty = true;
+        }
     }
 
     pub fn scale(&self) -> f32 {
@@ -372,7 +414,21 @@ impl Dock {
     }
 
     pub fn total_slots(&self) -> usize {
-        ANCHOR_SLOTS.len() + self.apps.len()
+        ANCHOR_SLOTS.len() + self.apps.len() + 1
+    }
+
+    fn slot_screen_rect(&self, index: usize) -> Rect {
+        let sw = self.surf_w_dip();
+        let scales = self.current_scales();
+        let (_, _, _, rects) = layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, self.tuck.value);
+        let r = rects.get(index).copied().unwrap_or(Rect::new(sw * 0.5 - 22.0, SURF_H - 58.0, 44.0, 44.0));
+        let sc = self.scale().max(1.0);
+        Rect::new(
+            self.at.0 as f32 + r.x * sc,
+            self.at.1 as f32 + r.y * sc,
+            r.w * sc,
+            r.h * sc,
+        )
     }
 
     /// Replace the running-apps slice; returns `true` only if the dock changed visually.
@@ -421,8 +477,8 @@ impl Dock {
         };
         let sw = self.surf_w_dip();
         let rest_scales = vec![1.0f32; total];
-        let (rest_shelf, _, rest_rects) =
-            layout_slots(sw, ANCHOR_SLOTS.len(), self.apps.len(), &rest_scales, self.tuck.value);
+        let (rest_shelf, _, _, rest_rects) =
+            layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &rest_scales, self.tuck.value);
         let active_band = Rect::new(
             rest_shelf.x - 16.0,
             (rest_shelf.y - 36.0).max(0.0),
@@ -433,8 +489,8 @@ impl Dock {
             self.reset_mag_targets(instant);
             return;
         }
-        let has_sep = !self.apps.is_empty();
-        let (base_slot, base_gap) = slot_metrics_with_sep(sw, total, has_sep);
+        let sep_count = usize::from(!self.apps.is_empty()) + 1;
+        let (base_slot, base_gap) = slot_metrics_with_seps(sw, total, sep_count);
         let step = base_slot + base_gap;
         for (i, r) in rest_rects.iter().enumerate() {
             let target = mag_scale(p.x - (r.x + r.w * 0.5), step);
@@ -532,7 +588,7 @@ impl Dock {
         }
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let (_, _, rects) = layout_slots(sw, ANCHOR_SLOTS.len(), self.apps.len(), &scales, self.tuck.value);
+        let (_, _, _, rects) = layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, self.tuck.value);
         rects.iter().position(|r| r.inset(-3.0, -6.0).contains(p))
     }
 
@@ -629,7 +685,20 @@ impl Dock {
                         return (Some(LRESULT(0)), act);
                     }
                     if let Some(app) = self.apps.get(i - ANCHOR_SLOTS.len()) {
-                        return (Some(LRESULT(0)), DockAction::FocusWindow(app.hwnd));
+                        let icon_rect = self.slot_screen_rect(i);
+                        return (
+                            Some(LRESULT(0)),
+                            DockAction::ToggleAppWindow {
+                                hwnd: app.hwnd,
+                                minimized: app.minimized,
+                                focused: app.focused,
+                                icon_rect,
+                            },
+                        );
+                    }
+                    if i == ANCHOR_SLOTS.len() + self.apps.len() {
+                        let icon_rect = self.slot_screen_rect(i);
+                        return (Some(LRESULT(0)), DockAction::ToggleDownloadsStack(icon_rect));
                     }
                 }
                 (Some(LRESULT(0)), DockAction::RequestFrame)
@@ -688,8 +757,10 @@ impl Dock {
         let hovered = self.hovered;
         let pressed = self.pressed;
         let scales = self.current_scales();
-        let (shelf, sep_x, slot_rects) = layout_slots(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), &scales, tuck_t);
+        let (shelf, sep_x, sep2_x, slot_rects) =
+            layout_slots_with_stack(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, tuck_t);
         let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
+        let stack_open = self.stack_open;
 
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -703,7 +774,20 @@ impl Dock {
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         match gfx.begin(full) {
             Ok(mut c) => {
-                draw_dock(&mut c, surf_w, light, tuck_t, shelf, sep_x, &slot_rects, &self.apps, hovered, pressed);
+                draw_dock(
+                    &mut c,
+                    surf_w,
+                    light,
+                    tuck_t,
+                    shelf,
+                    sep_x,
+                    sep2_x,
+                    &slot_rects,
+                    &self.apps,
+                    stack_open,
+                    hovered,
+                    pressed,
+                );
                 if let Err(e) = gfx.end() {
                     crate::pwarn!("dock: EndDraw failed ({e})");
                 }
@@ -763,8 +847,10 @@ fn draw_dock(
     tuck_t: f32,
     shelf: Rect,
     sep_x: Option<f32>,
+    sep2_x: Option<f32>,
     slot_rects: &[Rect],
     apps: &[RunningApp],
+    stack_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
 ) {
@@ -867,9 +953,43 @@ fn draw_dock(
                     c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink.with_alpha(dot_a));
                 }
 
+                if let Some(sx) = sep2_x {
+                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
+                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
+                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
+                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                }
+
+                let dl_idx = ANCHOR_SLOTS.len() + apps.len();
+                if let Some(&sr) = slot_rects.get(dl_idx) {
+                    let is_hover = hovered == Some(dl_idx);
+                    let is_press = pressed == Some(dl_idx);
+                    let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
+                    let tr = (tile.w * 0.26).clamp(8.0, 16.0);
+                    let accent = Color::hex(0x007AFF);
+                    let fill_a = if is_press || stack_open { 0.30 } else if is_hover { 0.24 } else { 0.15 };
+                    c.fill_rrect(tile, tr, accent.with_alpha(fill_a));
+                    let tile_rim = if is_hover || stack_open {
+                        accent.with_alpha(0.60)
+                    } else if light {
+                        Color::black(0.08)
+                    } else {
+                        Color::white(0.12)
+                    };
+                    c.stroke_rrect(tile, tr, tile_rim, 1.0);
+                    let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+                    let icon_ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
+                    c.icon(Icon::Download, icon_box, icon_ink);
+                    if stack_open {
+                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent.with_alpha(0.95));
+                    }
+                }
+
                 if let Some(i) = hovered {
                     let label = if i < ANCHOR_SLOTS.len() {
                         Some(ANCHOR_SLOTS[i].label)
+                    } else if i == dl_idx {
+                        Some("Downloads")
                     } else {
                         apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
                     };
@@ -937,6 +1057,353 @@ pub fn show_menu(owner: HWND, pt: POINT, tucked: bool) -> Option<DockCmd> {
             let _ = SetForegroundWindow(prev);
         }
         cmd
+    }
+}
+
+/// Recent entry inside the Downloads stack popover.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DownloadItem {
+    pub name: String,
+    pub path: std::path::PathBuf,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StackAction {
+    None,
+    RequestFrame,
+    OpenPath(String),
+    Close,
+}
+
+const STACK_W: f32 = 286.0;
+const STACK_PAD: f32 = 10.0;
+const STACK_HDR_H: f32 = 34.0;
+const STACK_ROW_H: f32 = 32.0;
+const STACK_R: f32 = 16.0;
+const STACK_MAX_ITEMS: usize = 8;
+
+/// Lazily scan `dir` for the newest `limit` non-hidden files/folders.
+/// Called only when the user opens the Downloads stack (0 idle threads/watchers).
+pub fn scan_downloads_in(dir: &std::path::Path, limit: usize) -> Vec<DownloadItem> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(std::time::SystemTime, DownloadItem)> = Vec::new();
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.is_empty() || name.starts_with('.') || name.eq_ignore_ascii_case("desktop.ini") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let is_dir = meta.is_dir();
+        let size = if is_dir { 0 } else { meta.len() };
+        rows.push((modified, DownloadItem { name, path: entry.path(), is_dir, size }));
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+    rows.into_iter().take(limit).map(|(_, item)| item).collect()
+}
+
+pub fn format_file_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.1} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.0} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Physical pixel bounds `(x, y, w, h)` for the Downloads stack card anchored above `anchor_screen`.
+pub fn stack_surface_rect(mon: &MonitorInfo, anchor_screen: Rect, item_count: usize) -> (i32, i32, i32, i32) {
+    let scale = mon.scale().max(1.0);
+    let rows = item_count.clamp(1, STACK_MAX_ITEMS) as f32;
+    let dip_h = STACK_PAD * 2.0 + STACK_HDR_H + rows * STACK_ROW_H + 6.0;
+    let w = ((STACK_W * scale).ceil() as i32).max(120);
+    let h = ((dip_h * scale).ceil() as i32).max(80);
+    let gap = (10.0 * scale).round() as i32;
+    let cx = (anchor_screen.x + anchor_screen.w * 0.5).round() as i32;
+    let min_x = mon.work.left + (8.0 * scale) as i32;
+    let max_x = (mon.work.right - w - (8.0 * scale) as i32).max(min_x);
+    let x = (cx - w / 2).clamp(min_x, max_x);
+    let y = (anchor_screen.y.round() as i32 - h - gap).max(mon.work.top + (8.0 * scale) as i32);
+    (x, y, w, h)
+}
+
+/// Transient Downloads stack popover (`Halo.DockStack`): exists only while open.
+pub struct DockStack {
+    gfx: Option<Gfx>,
+    pub hwnd: HWND,
+    at: (i32, i32, i32, i32),
+    dpi: u32,
+    light: bool,
+    dir: std::path::PathBuf,
+    items: Vec<DownloadItem>,
+    hovered: Option<usize>, // usize::MAX = "Open Folder" header button
+    tracking: bool,
+    shown: bool,
+    dirty: bool,
+}
+
+impl Drop for DockStack {
+    fn drop(&mut self) {
+        let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
+        self.gfx = None;
+        unsafe {
+            if let Some(v) = visual {
+                let _ = DestroyWindow(v);
+            }
+            let _ = DestroyWindow(self.hwnd);
+        }
+    }
+}
+
+impl DockStack {
+    pub fn open(mon: &MonitorInfo, anchor_screen: Rect, light: bool, shared: Option<SharedD3d>) -> Result<Self> {
+        let dir = crate::paths::media_downloads_dir();
+        let items = scan_downloads_in(&dir, STACK_MAX_ITEMS);
+        let (x, y, w, h) = stack_surface_rect(mon, anchor_screen, items.len());
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                STACK_CLASS,
+                w!("Halo Downloads Stack"),
+                WS_POPUP,
+                x,
+                y,
+                w,
+                h,
+                None,
+                None,
+                GetModuleHandleW(None)?,
+                None,
+            )?
+        };
+        let mut gfx = match Gfx::new(mon.dpi as f32, hwnd) {
+            Ok(g) => g.secondary(),
+            Err(e) => {
+                unsafe {
+                    let _ = DestroyWindow(hwnd);
+                }
+                return Err(e);
+            }
+        };
+        gfx.set_shared_d3d(shared);
+        let _ = gfx.set_surface(w, h);
+        Ok(Self {
+            gfx: Some(gfx),
+            hwnd,
+            at: (x, y, w, h),
+            dpi: mon.dpi,
+            light,
+            dir,
+            items,
+            hovered: None,
+            tracking: false,
+            shown: false,
+            dirty: true,
+        })
+    }
+
+    pub fn needs_frame(&self) -> bool {
+        self.dirty
+    }
+
+    fn scale(&self) -> f32 {
+        (self.dpi as f32 / 96.0).max(1.0)
+    }
+
+    fn card_dip(&self) -> Rect {
+        let s = self.scale();
+        Rect::new(0.0, 0.0, self.at.2 as f32 / s, self.at.3 as f32 / s)
+    }
+
+    fn open_btn_rect(&self) -> Rect {
+        let card = self.card_dip();
+        Rect::new(card.w - STACK_PAD - 58.0, STACK_PAD + 3.0, 58.0, 24.0)
+    }
+
+    fn row_rect(&self, i: usize) -> Rect {
+        let card = self.card_dip();
+        let y = STACK_PAD + STACK_HDR_H + 4.0 + i as f32 * STACK_ROW_H;
+        Rect::new(STACK_PAD, y, card.w - 2.0 * STACK_PAD, STACK_ROW_H - 2.0)
+    }
+
+    fn hit_test(&self, p: Point) -> Option<usize> {
+        if self.open_btn_rect().contains(p) {
+            return Some(usize::MAX);
+        }
+        for i in 0..self.items.len() {
+            if self.row_rect(i).contains(p) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn handle_message(&mut self, hwnd: HWND, msg: u32, _wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, StackAction) {
+        if hwnd != self.hwnd {
+            return (None, StackAction::None);
+        }
+        let to_dip = |lp: LPARAM, scale: f32| {
+            let x = (lp.0 & 0xffff) as u16 as i16 as f32;
+            let y = ((lp.0 >> 16) & 0xffff) as u16 as i16 as f32;
+            Point::new(x / scale, y / scale)
+        };
+        match msg {
+            WM_MOUSEACTIVATE => (Some(LRESULT(MA_NOACTIVATE as isize)), StackAction::None),
+            WM_MOUSEMOVE => {
+                if !self.tracking {
+                    self.tracking = true;
+                    unsafe {
+                        let mut tme = TRACKMOUSEEVENT {
+                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: self.hwnd,
+                            dwHoverTime: 0,
+                        };
+                        let _ = TrackMouseEvent(&mut tme);
+                    }
+                }
+                let next = self.hit_test(to_dip(lp, self.scale()));
+                if next != self.hovered {
+                    self.hovered = next;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), StackAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), StackAction::None)
+            }
+            WM_MOUSELEAVE => {
+                self.tracking = false;
+                if self.hovered.take().is_some() {
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), StackAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), StackAction::None)
+            }
+            WM_LBUTTONUP => {
+                let hit = self.hit_test(to_dip(lp, self.scale()));
+                match hit {
+                    Some(usize::MAX) => {
+                        return (Some(LRESULT(0)), StackAction::OpenPath(self.dir.to_string_lossy().into_owned()));
+                    }
+                    Some(i) => {
+                        if let Some(item) = self.items.get(i) {
+                            return (Some(LRESULT(0)), StackAction::OpenPath(item.path.to_string_lossy().into_owned()));
+                        }
+                    }
+                    None => {}
+                }
+                (Some(LRESULT(0)), StackAction::None)
+            }
+            WM_RBUTTONUP => (Some(LRESULT(0)), StackAction::Close),
+            WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
+                unsafe {
+                    let id = if self.hovered.is_some() { IDC_HAND } else { IDC_ARROW };
+                    if let Ok(c) = LoadCursorW(None, id) {
+                        SetCursor(c);
+                    }
+                }
+                (Some(LRESULT(1)), StackAction::None)
+            }
+            _ => (None, StackAction::None),
+        }
+    }
+
+    pub fn paint(&mut self, shared: Option<SharedD3d>) {
+        if !self.dirty {
+            return;
+        }
+        let (x, y, w, h) = self.at;
+        let card = self.card_dip();
+        let open_btn = self.open_btn_rect();
+        let light = self.light;
+        let hovered = self.hovered;
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        if !gfx.has_gpu() && shared.is_some() {
+            gfx.set_shared_d3d(shared);
+        }
+        if gfx.set_surface(w, h).is_err() {
+            return;
+        }
+        gfx.set_look(look::glass(light));
+        let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        if let Ok(mut c) = gfx.begin(full) {
+            c.unthemed(|c| {
+                let bg = if light {
+                    Color::rgba(0.96, 0.97, 0.99, 0.94)
+                } else {
+                    Color::rgba(0.12, 0.13, 0.16, 0.94)
+                };
+                let rim = if light { Color::black(0.12) } else { Color::white(0.16) };
+                let ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
+                let sub = if light { Color::black(0.55) } else { Color::white(0.55) };
+                c.fill_rrect(card.inset(1.0, 1.0), STACK_R, bg);
+                c.stroke_rrect(card.inset(1.0, 1.0), STACK_R, rim, 1.0);
+
+                // Header
+                let hdr_st = TextStyle::body().weight(Weight::Semibold).color(ink);
+                c.text("Downloads", Rect::new(STACK_PAD + 4.0, STACK_PAD + 4.0, card.w - 90.0, 24.0), &hdr_st);
+
+                let btn_bg = if hovered == Some(usize::MAX) {
+                    Color::hex(0x007AFF).with_alpha(0.28)
+                } else if light {
+                    Color::black(0.06)
+                } else {
+                    Color::white(0.10)
+                };
+                c.fill_rrect(open_btn, 8.0, btn_bg);
+                let btn_st = TextStyle::caption().weight(Weight::Medium).center().color(ink);
+                c.text("Open", open_btn, &btn_st);
+
+                let div_y = STACK_PAD + STACK_HDR_H;
+                c.fill_rrect(Rect::new(STACK_PAD, div_y, card.w - 2.0 * STACK_PAD, 1.0), 0.5, rim);
+
+                if self.items.is_empty() {
+                    let empty_st = TextStyle::caption().center().color(sub);
+                    c.text("No recent downloads", Rect::new(STACK_PAD, div_y + 8.0, card.w - 2.0 * STACK_PAD, 28.0), &empty_st);
+                } else {
+                    let row_st = TextStyle::caption().weight(Weight::Medium).color(ink);
+                    let meta_st = TextStyle::caption().right().color(sub);
+                    for (i, item) in self.items.iter().enumerate() {
+                        let rr = Rect::new(STACK_PAD, div_y + 4.0 + i as f32 * STACK_ROW_H, card.w - 2.0 * STACK_PAD, STACK_ROW_H - 2.0);
+                        if hovered == Some(i) {
+                            let hb = if light { Color::black(0.07) } else { Color::white(0.11) };
+                            c.fill_rrect(rr, 8.0, hb);
+                        }
+                        let ic = if item.is_dir { Icon::Folder } else { Icon::File };
+                        let ic_c = if item.is_dir { Color::hex(0x0A84FF) } else { sub };
+                        c.icon(ic, Rect::new(rr.x + 6.0, rr.y + 7.0, 16.0, 16.0), ic_c);
+                        c.text(&item.name, Rect::new(rr.x + 28.0, rr.y + 6.0, rr.w - 90.0, 18.0), &row_st);
+                        let meta = if item.is_dir { "Folder".to_string() } else { format_file_size(item.size) };
+                        c.text(&meta, Rect::new(rr.right() - 60.0, rr.y + 6.0, 54.0, 18.0), &meta_st);
+                    }
+                }
+            });
+            let _ = gfx.end();
+        }
+        let _ = gfx.present(x, y);
+        if gfx.needs_hit_mask() {
+            let mask = HitMask { rect: None, notch: None, pill: Some((card, STACK_R)) };
+            let _ = gfx.push_hit_mask(x, y, &mask, None);
+        }
+        if !self.shown {
+            self.shown = true;
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            gfx.set_shown(true);
+        }
+        self.dirty = false;
     }
 }
 
@@ -1056,5 +1523,26 @@ mod tests {
             assert!(rects[15].y < rects[0].y, "magnified slot must grow upward");
             assert!(rects[29].right() <= shelf.right() - SHELF_PAD_X + 0.5);
         }
+    }
+
+    #[test]
+    fn stack_layout_adds_second_divider_and_formats_sizes() {
+        let scales = vec![1.0f32; 9];
+        let (shelf, sep1, sep2, rects) = layout_slots_with_stack(1360.0, 5, 3, 1, &scales, 0.0);
+        assert!(sep1.is_some());
+        assert!(sep2.is_some());
+        assert!(sep2.unwrap() > sep1.unwrap());
+        assert_eq!(rects.len(), 9);
+        assert!(rects[8].right() <= shelf.right() - SHELF_PAD_X + 0.5);
+
+        assert_eq!(format_file_size(512), "512 B");
+        assert_eq!(format_file_size(2048), "2 KB");
+        assert_eq!(format_file_size(3 * 1024 * 1024), "3.0 MB");
+
+        let m = mon(1920, 1080, 1032, 96);
+        let anchor = Rect::new(1100.0, 960.0, 44.0, 44.0);
+        let (sx, sy, sw, sh) = stack_surface_rect(&m, anchor, 4);
+        assert!(sx >= m.work.left && sx + sw <= m.work.right);
+        assert!(sy + sh < anchor.y as i32);
     }
 }
