@@ -85,3 +85,6 @@
 {"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "open", "title": "Dock Phase 4: Stacks, Downloads, and Genie effect", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795625981}
 {"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-4-stacks-downloads-and-genie-", "who": "ag", "ts": 1795625988}
 {"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "done", "owner": "ag", "who": "ag", "commit": "160010b", "note": "Added Downloads stack popover (lazy scan, 0 idle cost) and transient 72-slice S-curve Genie minimize/restore overlay", "ts": 1795626322}
+{"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "open", "title": "Dock Phase 5: System tray capsule and Halo Pro gating", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795626560}
+{"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-5-system-tray-capsule-and-hal", "who": "ag", "ts": 1795626580}
+{"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "done", "owner": "ag", "who": "ag", "commit": "9510f80", "note": "Added right-side System Tray Capsule (Wi-Fi, volume, battery, clock; 0 idle polls, pauses on lock/display-off) and Halo Pro license gating in Settings & App::sync_dock", "ts": 1795626869}
