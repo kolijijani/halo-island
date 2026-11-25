@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Halo Island — Dock Phase 1 Mockup Picker</title>
+<style>
+@font-face {
+  font-family: "Outfit";
+  font-weight: 400;
+  font-display: block;
+  src: url("../../crates/halo/res/fonts/Outfit-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Outfit";
+  font-weight: 500;
+  font-display: block;
+  src: url("../../crates/halo/res/fonts/Outfit-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Outfit";
+  font-weight: 600;
+  font-display: block;
+  src: url("../../crates/halo/res/fonts/Outfit-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Outfit";
+  font-weight: 700;
+  font-display: block;
+  src: url("../../crates/halo/res/fonts/Outfit-Bold.ttf") format("truetype");
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #090c12;
+  color: #edf1f8;
+  font-family: "Outfit", "Segoe UI", system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 36px 48px 48px;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+a:focus-visible, button:focus-visible { outline: 2px solid #59b8ff; outline-offset: 2px; }
+header {
+  max-width: 1760px;
+  margin: 0 auto 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 18px;
+}
+h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.meta { font-size: 13.5px; color: #9aa7bd; margin-top: 4px; }
+.doc-pill {
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #cfe4ff;
+}
+.doc-pill:hover { background: rgba(255,255,255,0.12); }
+
+.grid {
+  max-width: 1760px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.card {
+  background: #101520;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.shot-link {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: #0b0f18;
+  border-bottom: 1px solid rgba(255,255,255,0.09);
+  overflow: hidden;
+  position: relative;
+}
+.shot-link img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.18s ease;
+}
+.shot-link:hover img { transform: scale(1.015); }
+.badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(9, 12, 18, 0.86);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.body {
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+.body h2 { font-size: 20px; font-weight: 600; }
+.one-liner {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #cad3e3;
+}
+.specs {
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #9fb0c8;
+  display: grid;
+  gap: 6px;
+}
+.specs b { color: #e8eef8; font-weight: 600; }
+.jumps {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jumps a {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.13);
+  color: #d6e4f7;
+}
+.jumps a.primary {
+  background: #2b7de9;
+  border-color: #5ca4ff;
+  color: #fff;
+  font-weight: 500;
+}
+.jumps a:hover { background: rgba(255,255,255,0.14); }
+.jumps a.primary:hover { background: #398bf5; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Halo Island — Dock Phase 1 Interaction Directions</h1>
+    <div class="meta">1920×1080 desktop · 30 real installed Windows apps &amp; extracted icons · self-contained <code>file://</code></div>
+  </div>
+  <a class="doc-pill" href="../../docs/DOCK-INVESTIGATION.md">Read docs/DOCK-INVESTIGATION.md</a>
+</header>
+
+<main class="grid">
+  <article class="card">
+    <a class="shot-link" href="a.html">
+      <img src="shots/a-idle.png" alt="Direction A — Magnification shelf">
+      <span class="badge">Direction A</span>
+    </a>
+    <div class="body">
+      <h2>A — Magnification shelf</h2>
+      <p class="one-liner">macOS-like floating bottom shelf with continuous cursor-follow magnification and running dots; trades away a second GPU swapchain redraw at full display Hz on every mouse move and competes with Windows 11's bottom taskbar edge.</p>
+      <div class="specs">
+        <div><b>Fullscreen:</b> Hides via <code>SW_HIDE</code> on <code>FullscreenWatcher</code>; bottom-edge wake disabled during fullscreen.</div>
+        <div><b>30 running apps:</b> Proportionally shrinks base icon slot from 48 px to 36 px (32 px at 125% DPI) on one single row without clipping or wrapping.</div>
+        <div><b>Hide without Settings:</b> Right-click shelf → <em>Hide shelf</em> (tucks to a 4 px bottom peek handle; click handle to restore).</div>
+      </div>
+      <div class="jumps">
+        <a class="primary" href="a.html">Open A (Idle)</a>
+        <a href="a.html?state=hover">Magnified</a>
+        <a href="a.html?state=many">30 apps</a>
+        <a href="a.html?state=empty">Empty</a>
+        <a href="a.html?state=fullscreen">Fullscreen</a>
+        <a href="a.html?state=light">Light wall</a>
+        <a href="a.html?state=zoom125">125% DPI</a>
+      </div>
+    </div>
+  </article>
+
+  <article class="card">
+    <a class="shot-link" href="b.html">
+      <img src="shots/b-idle.png" alt="Direction B — Flush dock">
+      <span class="badge">Direction B</span>
+    </a>
+    <div class="body">
+      <h2>B — Flush dock</h2>
+      <p class="one-liner">Windows 11-like fixed-target bottom dock with grouped multi-window stacks and right-click window lists; trades away macOS magnification flair and still requires a second HWND at the bottom edge.</p>
+      <div class="specs">
+        <div><b>Fullscreen:</b> Hides via <code>SW_HIDE</code> on <code>FullscreenWatcher</code>; closes any open window-list popover immediately.</div>
+        <div><b>30 running apps:</b> Keeps fixed 38 px icons so click targets never shrink; caps inline rail and groups excess into an inline <code>+N Running</code> overflow popover.</div>
+        <div><b>Hide without Settings:</b> Click the trailing <code>⌄</code> button on the dock rail (or right-click → <em>Hide dock</em>) to collapse into a corner tab.</div>
+      </div>
+      <div class="jumps">
+        <a class="primary" href="b.html">Open B (Idle)</a>
+        <a href="b.html?state=hover">Hovered + window list</a>
+        <a href="b.html?state=many">30 apps</a>
+        <a href="b.html?state=empty">Empty</a>
+        <a href="b.html?state=fullscreen">Fullscreen</a>
+        <a href="b.html?state=light">Light wall</a>
+        <a href="b.html?state=zoom125">125% DPI</a>
+      </div>
+    </div>
+  </article>
+
+  <article class="card">
+    <a class="shot-link" href="c.html">
+      <img src="shots/c-idle.png" alt="Direction C — Island strip">
+      <span class="badge">Direction C</span>
+    </a>
+    <div class="body">
+      <h2>C — Island strip</h2>
+      <p class="one-liner">App strip unfurling directly out of Halo's top notch with zero second window, zero second swapchain, and zero bottom-taskbar collision; trades away persistent always-visible icons when the island is collapsed.</p>
+      <div class="specs">
+        <div><b>Fullscreen:</b> Uses Halo's existing <code>App::apply_fullscreen</code> slide/hide with zero extra window management.</div>
+        <div><b>30 running apps:</b> Single-row horizontal strip capped at 940 px (860 px at 125% DPI) with <code>‹ / ›</code> paging, wheel scroll, and <code>Tab</code> auto-scroll.</div>
+        <div><b>Hide without Settings:</b> Move pointer off the island (collapses to 32 px notch) or click the <code>▴ Tuck</code> button on the strip header.</div>
+      </div>
+      <div class="jumps">
+        <a class="primary" href="c.html">Open C (Idle)</a>
+        <a href="c.html?state=hover">Expanded + hovered</a>
+        <a href="c.html?state=many">30 apps</a>
+        <a href="c.html?state=empty">Empty</a>
+        <a href="c.html?state=fullscreen">Fullscreen</a>
+        <a href="c.html?state=light">Light wall</a>
+        <a href="c.html?state=zoom125">125% DPI</a>
+      </div>
+    </div>
+  </article>
+</main>
+</body>
+</html>

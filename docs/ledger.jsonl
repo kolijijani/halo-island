@@ -73,3 +73,5 @@
 {"id": "to-do-tab-titles-tasks-subtasks", "ev": "open", "title": "To-do tab titles tasks subtasks", "owner": "", "who": "qc", "ref": "", "note": "three levels, parent done only when all children done", "ts": 1795441418}
 {"id": "apple-watch-health-data-feasibility", "ev": "open", "title": "Apple Watch health data feasibility", "owner": "", "who": "qc", "ref": "", "note": "investigation only, routes and costs", "ts": 1795441418}
 {"id": "to-do-tab-titles-tasks-subtasks", "ev": "doing", "owner": "ag", "branch": "ag/todo", "who": "ag", "ts": 1795441709}
+{"id": "dock-phase-1-investigate-window-layer-an", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase1", "who": "ag", "ts": 1795622254}
+{"id": "dock-phase-1-investigate-window-layer-an", "ev": "blocked", "owner": "ag", "who": "ag", "note": "Investigation + A/B/C mockups committed on ag/dock-phase1; waiting on owner choice for CHOSEN.md", "ts": 1795622949}

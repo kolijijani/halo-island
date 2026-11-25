@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction A — Magnification Shelf · Halo Island</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+#dock-a-wrap {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
+}
+
+#stage[data-fullscreen="true"] #dock-a-wrap,
+#dock-a-wrap[data-user-hidden="true"] {
+  transform: translateX(-50%) translateY(110px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#dock-a-tooltip {
+  margin-bottom: 10px;
+  padding: 4px 11px;
+  border-radius: 7px;
+  background: rgba(14, 18, 27, 0.92);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: #f1f5fc;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+#dock-a-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#dock-a-shelf {
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 12px 10px;
+  border-radius: 20px;
+  background: rgba(16, 21, 32, 0.74);
+  border: 1px solid rgba(255,255,255,0.18);
+  backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: 0 18px 44px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+#stage[data-wall="light"] #dock-a-shelf {
+  background: rgba(245, 249, 255, 0.76);
+  border-color: rgba(15, 25, 45, 0.16);
+  box-shadow: 0 16px 38px rgba(15, 25, 45, 0.2), inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+.dock-slot {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.dock-slot img {
+  display: block;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.34));
+}
+
+.run-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 4px;
+  margin-top: 4px;
+  background: transparent;
+  transition: width 0.14s ease, background 0.14s ease;
+}
+.dock-slot[data-running="true"] .run-dot {
+  background: rgba(235, 242, 255, 0.78);
+}
+.dock-slot[data-active="true"] .run-dot {
+  width: 10px;
+  background: #5cb0ff;
+}
+#stage[data-wall="light"] .dock-slot[data-running="true"] .run-dot {
+  background: rgba(20, 32, 52, 0.65);
+}
+#stage[data-wall="light"] .dock-slot[data-active="true"] .run-dot {
+  background: #1b6fe0;
+}
+
+.dock-empty-msg {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  color: #b7c3d9;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#stage[data-wall="light"] .dock-empty-msg { color: #314159; }
+.dock-empty-msg button {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.09);
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+#dock-a-peek {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 71;
+  width: 128px;
+  height: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 3px;
+}
+#dock-a-peek span {
+  width: 92px;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.45);
+}
+#stage[data-wall="light"] #dock-a-peek span {
+  background: rgba(20,32,52,0.42);
+}
+#dock-a-peek.visible {
+  display: flex;
+}
+</style>
+</head>
+<body>
+<div id="viewport-fit">
+  <div id="stage">
+    <div id="dpi-plane">
+      <div class="wall-grid"></div>
+      <div id="halo-notch-wrap"></div>
+      <div id="windows-layer"></div>
+      <div id="fs-surface"></div>
+
+      <!-- QA & State Chips -->
+      <aside id="qa-hud" aria-label="Mockup state controls">
+        <div class="qa-top">
+          <a href="index.html">← All 3 directions</a>
+          <span class="qa-variant-tag">A · Magnification Shelf</span>
+        </div>
+        <div class="chip-row" id="chips">
+          <button type="button" class="state-chip" data-chip="idle" aria-pressed="true">idle</button>
+          <button type="button" class="state-chip" data-chip="hover" aria-pressed="false">cursor hovering one icon (magnified)</button>
+          <button type="button" class="state-chip" data-chip="many" aria-pressed="false">30 running apps</button>
+          <button type="button" class="state-chip" data-chip="empty" aria-pressed="false">no running apps, nothing pinned (empty)</button>
+          <button type="button" class="state-chip" data-chip="fullscreen" aria-pressed="false">fullscreen app active (dock hidden)</button>
+          <button type="button" class="state-chip" data-chip="wall" aria-pressed="false">light wallpaper / dark wallpaper</button>
+          <button type="button" class="state-chip" data-chip="zoom" aria-pressed="false">browser zoom 125% (DPI proxy)</button>
+        </div>
+        <div class="rules-box">
+          <div><b>Fullscreen:</b> Hides via <code>SW_HIDE</code> on <code>FullscreenWatcher</code>; bottom wake disabled.</div>
+          <div><b>30 running apps:</b> Scales base slot 48→36 px (32 px at 125% DPI) on one row; zero wrap/clip.</div>
+          <div><b>Hide without Settings:</b> Right-click shelf → <em>Hide shelf</em> (leaves 4 px bottom peek bar).</div>
+        </div>
+        <div id="status-toast">Ready — move across icons, click to focus/launch, right-click for shelf menu.</div>
+      </aside>
+
+      <!-- Direction A Shelf -->
+      <div id="dock-a-wrap">
+        <div id="dock-a-tooltip"></div>
+        <nav id="dock-a-shelf" aria-label="Application dock"></nav>
+      </div>
+      <button type="button" id="dock-a-peek" title="Show dock shelf"><span></span></button>
+      <div id="ctx-menu" class="dock-popover" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  var state = { mode: "idle", activeSlug: "antigravity", hoverX: null, pinnedHoverIdx: null, userHidden: false };
+  var apps = DockDesktop.cloneApps("idle");
+
+  var desk = DockDesktop.buildBaseShell({
+    onFocusApp: function (slug) { state.activeSlug = slug; syncDots(); },
+    onCloseWindow: function (slug) {
+      var a = apps.find(function (x) { return x.slug === slug; });
+      if (a) a.running = false;
+      syncDots();
+    }
+  });
+
+  var shelf = document.getElementById("dock-a-shelf");
+  var wrap = document.getElementById("dock-a-wrap");
+  var tip = document.getElementById("dock-a-tooltip");
+  var peek = document.getElementById("dock-a-peek");
+  var menu = document.getElementById("ctx-menu");
+  var stage = document.getElementById("stage");
+
+  function geometry() {
+    var pm = DockDesktop.planeMetrics();
+    var maxShelfW = pm.width - 56;
+    var n = Math.max(1, apps.length);
+    var gap = n > 20 ? 5 : 8;
+    var maxBase = 48;
+    // Reserve headroom for Gaussian magnification bulge (+96 px across neighbors)
+    var fitBase = Math.floor((maxShelfW - 26 - 96 - gap * n) / n);
+    var base = Math.max(28, Math.min(maxBase, fitBase));
+    var peak = Math.min(72, Math.round(base * 1.56));
+    var sigma = base * 1.85;
+    return { base: base, peak: peak, gap: gap, sigma: sigma };
+  }
+
+  function buildShelf() {
+    shelf.innerHTML = "";
+    if (apps.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "dock-empty-msg";
+      empty.innerHTML = '<span>No running or pinned apps</span><button type="button" id="restore-pins-btn">Pin default apps</button>';
+      shelf.appendChild(empty);
+      empty.querySelector("#restore-pins-btn").onclick = function () {
+        applyChip("idle");
+        DockDesktop.toast("Restored default pinned & running apps.");
+      };
+      tip.classList.remove("visible");
+      return;
+    }
+
+    var g = geometry();
+    apps.forEach(function (app, idx) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dock-slot";
+      btn.dataset.idx = String(idx);
+      btn.dataset.slug = app.slug;
+      btn.dataset.running = String(!!app.running);
+      btn.dataset.active = String(app.slug === state.activeSlug && app.running);
+      btn.setAttribute("aria-label", app.name + (app.running ? " (running)" : ""));
+      btn.innerHTML = '<img src="' + app.icon + '" alt=""><span class="run-dot"></span>';
+
+      btn.addEventListener("click", function () {
+        closeMenu();
+        app.running = true;
+        state.activeSlug = app.slug;
+        desk.focusOrLaunchApp(app);
+        syncDots();
+        DockDesktop.toast((app.running ? "Focused " : "Launched ") + app.name + " (" + app.exe + ")");
+      });
+
+      btn.addEventListener("focus", function () {
+        state.pinnedHoverIdx = idx;
+        layoutMagnification();
+        showTipFor(idx);
+      });
+      btn.addEventListener("blur", function () {
+        if (state.mode !== "hover") {
+          state.pinnedHoverIdx = null;
+          layoutMagnification();
+          tip.classList.remove("visible");
+        }
+      });
+
+      btn.addEventListener("contextmenu", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openContextMenu(ev, app);
+      });
+
+      shelf.appendChild(btn);
+    });
+    layoutMagnification();
+  }
+
+  function syncDots() {
+    shelf.querySelectorAll(".dock-slot").forEach(function (btn) {
+      var a = apps[Number(btn.dataset.idx)];
+      if (!a) return;
+      btn.dataset.running = String(!!a.running);
+      btn.dataset.active = String(a.slug === state.activeSlug && a.running);
+    });
+  }
+
+  function layoutMagnification() {
+    var slots = shelf.querySelectorAll(".dock-slot");
+    if (!slots.length) return;
+    var g = geometry();
+    var centers = [];
+    // Compute un-magnified nominal centers relative to shelf inner start
+    for (var i = 0; i < slots.length; i++) {
+      centers.push((i + 0.5) * (g.base + g.gap));
+    }
+    var focusCenter = null;
+    if (state.hoverX !== null) {
+      focusCenter = state.hoverX;
+    } else if (state.pinnedHoverIdx !== null && centers[state.pinnedHoverIdx] !== undefined) {
+      focusCenter = centers[state.pinnedHoverIdx];
+    }
+
+    var bestIdx = -1, bestDist = 1e9;
+    for (var j = 0; j < slots.length; j++) {
+      var sz = g.base;
+      if (focusCenter !== null) {
+        var d = centers[j] - focusCenter;
+        var w = Math.exp(-(d * d) / (2 * g.sigma * g.sigma));
+        sz = g.base + (g.peak - g.base) * w;
+        if (Math.abs(d) < bestDist) { bestDist = Math.abs(d); bestIdx = j; }
+      }
+      var slotW = sz + g.gap;
+      slots[j].style.width = slotW.toFixed(2) + "px";
+      slots[j].style.height = (g.base + 10) + "px";
+      var img = slots[j].firstElementChild;
+      img.style.width = sz.toFixed(2) + "px";
+      img.style.height = sz.toFixed(2) + "px";
+    }
+    if (focusCenter !== null && bestIdx >= 0) {
+      showTipFor(bestIdx);
+    } else {
+      tip.classList.remove("visible");
+    }
+  }
+
+  function showTipFor(idx) {
+    var app = apps[idx];
+    if (!app) return;
+    tip.textContent = app.name + (app.running ? " · Running" : "");
+    tip.classList.add("visible");
+  }
+
+  shelf.addEventListener("mousemove", function (ev) {
+    if (!apps.length) return;
+    var rect = shelf.getBoundingClientRect();
+    var pm = DockDesktop.planeMetrics();
+    var fit = document.getElementById("viewport-fit").getBoundingClientRect();
+    var totalScale = (fit.width / 1920) * pm.scale;
+    var localX = (ev.clientX - rect.left) / totalScale - 12;
+    var g = geometry();
+    // Map actual shelf fraction onto nominal rail width so cursor tracking is 1:1 without feedback oscillation
+    var innerActual = rect.width / totalScale - 24;
+    var innerNominal = apps.length * (g.base + g.gap);
+    state.hoverX = (localX / Math.max(1, innerActual)) * innerNominal;
+    layoutMagnification();
+  });
+
+  shelf.addEventListener("mouseleave", function () {
+    state.hoverX = null;
+    if (state.mode !== "hover") state.pinnedHoverIdx = null;
+    layoutMagnification();
+  });
+
+  shelf.addEventListener("contextmenu", function (ev) {
+    ev.preventDefault();
+    openContextMenu(ev, null);
+  });
+
+  function openContextMenu(ev, app) {
+    var pm = DockDesktop.planeMetrics();
+    var fit = document.getElementById("viewport-fit").getBoundingClientRect();
+    var totalScale = (fit.width / 1920) * pm.scale;
+    var x = Math.min(pm.width - 250, Math.max(16, (ev.clientX - fit.left) / totalScale));
+    var y = pm.height - 195;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    var html = '<div class="pop-head">' + (app ? DockDesktop.escapeHtml(app.name) : 'Magnification Shelf') + '</div>';
+    if (app) {
+      html += '<button type="button" class="pop-item" data-act="open"><img src="' + app.icon + '" alt="">' + (app.running ? 'Bring window to front' : 'Launch application') + '</button>';
+      html += '<button type="button" class="pop-item" data-act="pin">' + (app.pinned ? 'Unpin from shelf' : 'Keep pinned in shelf') + '</button>';
+      html += '<div class="pop-sep"></div>';
+    }
+    html += '<button type="button" class="pop-item" data-act="hide">Hide shelf (leave 4 px bottom peek)</button>';
+    menu.innerHTML = html;
+    menu.hidden = false;
+
+    menu.querySelectorAll(".pop-item").forEach(function (b) {
+      b.onclick = function () {
+        var act = b.dataset.act;
+        closeMenu();
+        if (act === "open" && app) {
+          app.running = true;
+          state.activeSlug = app.slug;
+          desk.focusOrLaunchApp(app);
+          syncDots();
+        } else if (act === "pin" && app) {
+          app.pinned = !app.pinned;
+          if (!app.pinned && !app.running) {
+            apps = apps.filter(function (x) { return x.slug !== app.slug; });
+          }
+          buildShelf();
+          DockDesktop.toast((app.pinned ? "Pinned " : "Unpinned ") + app.name);
+        } else if (act === "hide") {
+          setUserHidden(true);
+        }
+      };
+    });
+  }
+
+  function closeMenu() { menu.hidden = true; }
+  document.addEventListener("click", function (ev) {
+    if (!menu.hidden && !menu.contains(ev.target)) closeMenu();
+  });
+
+  function setUserHidden(h) {
+    state.userHidden = h;
+    wrap.dataset.userHidden = String(h);
+    peek.classList.toggle("visible", h && stage.dataset.fullscreen !== "true");
+    DockDesktop.toast(h ? "Shelf hidden without opening Settings — click bottom peek bar to restore." : "Shelf restored.");
+  }
+
+  peek.addEventListener("click", function () { setUserHidden(false); });
+
+  function applyChip(chip) {
+    closeMenu();
+    if (chip === "wall") {
+      stage.dataset.wall = stage.dataset.wall === "dark" ? "light" : "dark";
+      document.querySelector('[data-chip="wall"]').setAttribute("aria-pressed", String(stage.dataset.wall === "light"));
+      DockDesktop.toast("Switched to " + stage.dataset.wall + " desktop wallpaper.");
+      return;
+    }
+    if (chip === "zoom") {
+      stage.dataset.zoom = stage.dataset.zoom === "100" ? "125" : "100";
+      document.querySelector('[data-chip="zoom"]').setAttribute("aria-pressed", String(stage.dataset.zoom === "125"));
+      buildShelf();
+      DockDesktop.toast("DPI proxy: " + stage.dataset.zoom + "% scale (" + DockDesktop.planeMetrics().width + "×" + DockDesktop.planeMetrics().height + " DIPs).");
+      return;
+    }
+
+    setUserHidden(false);
+    state.mode = chip;
+    state.hoverX = null;
+    state.pinnedHoverIdx = null;
+    stage.dataset.fullscreen = String(chip === "fullscreen");
+
+    if (chip === "many") {
+      apps = DockDesktop.cloneApps("many");
+    } else if (chip === "empty") {
+      apps = DockDesktop.cloneApps("empty");
+    } else {
+      apps = DockDesktop.cloneApps("idle");
+    }
+
+    if (chip === "hover") {
+      state.pinnedHoverIdx = 2; // Microsoft Edge magnified
+    }
+
+    ["idle", "hover", "many", "empty", "fullscreen"].forEach(function (c) {
+      var el = document.querySelector('[data-chip="' + c + '"]');
+      if (el) el.setAttribute("aria-pressed", String(c === chip));
+    });
+
+    buildShelf();
+    DockDesktop.toast("State: " + chip);
+  }
+
+  document.querySelectorAll(".state-chip").forEach(function (btn) {
+    btn.addEventListener("click", function () { applyChip(btn.dataset.chip); });
+  });
+
+  // URL query initial state support (?state=hover|many|empty|fullscreen|light|zoom125)
+  var q = new URLSearchParams(window.location.search).get("state");
+  buildShelf();
+  if (q === "light") applyChip("wall");
+  else if (q === "zoom125") applyChip("zoom");
+  else if (q && ["idle", "hover", "many", "empty", "fullscreen"].indexOf(q) >= 0) applyChip(q);
+
+  window.__setMockupState = applyChip;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction B — Flush Dock · Halo Island</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+#dock-b-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease;
+}
+
+#stage[data-fullscreen="true"] #dock-b-wrap,
+#dock-b-wrap[data-user-hidden="true"] {
+  transform: translateX(-50%) translateY(68px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#dock-b-rail {
+  height: 54px;
+  padding: 0 10px;
+  border-radius: 13px 13px 0 0;
+  background: rgba(15, 19, 28, 0.88);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-bottom: none;
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 -8px 30px rgba(0,0,0,0.42);
+}
+
+#stage[data-wall="light"] #dock-b-rail {
+  background: rgba(247, 250, 255, 0.9);
+  border-color: rgba(15, 25, 45, 0.16);
+  box-shadow: 0 -8px 28px rgba(15, 25, 45, 0.16);
+}
+
+.flush-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease;
+}
+
+.flush-btn:hover,
+.flush-btn[data-hovered="true"] {
+  background: rgba(255,255,255,0.11);
+}
+#stage[data-wall="light"] .flush-btn:hover,
+#stage[data-wall="light"] .flush-btn[data-hovered="true"] {
+  background: rgba(15,25,45,0.08);
+}
+
+/* Grouped multi-window subtle backplate */
+.flush-btn[data-win-count="2"]::before {
+  content: "";
+  position: absolute;
+  inset: 4px 2px 4px 6px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  border-right: 2px solid rgba(255,255,255,0.22);
+  pointer-events: none;
+}
+#stage[data-wall="light"] .flush-btn[data-win-count="2"]::before {
+  background: rgba(15,25,45,0.04);
+  border-right-color: rgba(15,25,45,0.24);
+}
+
+.flush-btn img {
+  width: 28px;
+  height: 28px;
+  display: block;
+  pointer-events: none;
+}
+
+.flush-bar {
+  position: absolute;
+  bottom: 3px;
+  height: 3px;
+  width: 0;
+  border-radius: 3px;
+  background: transparent;
+  transition: width 0.14s ease, background 0.14s ease;
+}
+.flush-btn[data-running="true"] .flush-bar {
+  width: 6px;
+  background: rgba(220,230,248,0.68);
+}
+.flush-btn[data-active="true"] .flush-bar {
+  width: 16px;
+  background: #58adff;
+}
+#stage[data-wall="light"] .flush-btn[data-running="true"] .flush-bar {
+  background: rgba(20,32,52,0.55);
+}
+#stage[data-wall="light"] .flush-btn[data-active="true"] .flush-bar {
+  background: #1868d8;
+}
+
+.rail-sep {
+  width: 1px;
+  height: 26px;
+  background: rgba(255,255,255,0.13);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+#stage[data-wall="light"] .rail-sep { background: rgba(15,25,45,0.14); }
+
+.overflow-chip {
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.07);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.overflow-chip:hover { background: rgba(255,255,255,0.15); }
+#stage[data-wall="light"] .overflow-chip {
+  border-color: rgba(15,25,45,0.18);
+  background: rgba(15,25,45,0.06);
+}
+
+.tuck-btn {
+  width: 32px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
+}
+.tuck-btn:hover { background: rgba(255,255,255,0.1); opacity: 1; }
+
+#dock-b-restore {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 71;
+  height: 18px;
+  padding: 0 14px;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-bottom: none;
+  background: rgba(15,19,28,0.88);
+  color: #cdd8ec;
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+}
+#dock-b-restore.visible { display: block; }
+
+.dock-empty-flush {
+  padding: 0 12px;
+  font-size: 12.5px;
+  color: #b7c3d9;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#stage[data-wall="light"] .dock-empty-flush { color: #2f3e56; }
+.dock-empty-flush button {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.09);
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+#winlist-pop {
+  max-height: 340px;
+  overflow-y: auto;
+  width: 310px;
+}
+</style>
+</head>
+<body>
+<div id="viewport-fit">
+  <div id="stage">
+    <div id="dpi-plane">
+      <div class="wall-grid"></div>
+      <div id="halo-notch-wrap"></div>
+      <div id="windows-layer"></div>
+      <div id="fs-surface"></div>
+
+      <aside id="qa-hud" aria-label="Mockup state controls">
+        <div class="qa-top">
+          <a href="index.html">← All 3 directions</a>
+          <span class="qa-variant-tag">B · Flush Dock</span>
+        </div>
+        <div class="chip-row">
+          <button type="button" class="state-chip" data-chip="idle" aria-pressed="true">idle</button>
+          <button type="button" class="state-chip" data-chip="hover" aria-pressed="false">cursor hovering one icon (magnified)</button>
+          <button type="button" class="state-chip" data-chip="many" aria-pressed="false">30 running apps</button>
+          <button type="button" class="state-chip" data-chip="empty" aria-pressed="false">no running apps, nothing pinned (empty)</button>
+          <button type="button" class="state-chip" data-chip="fullscreen" aria-pressed="false">fullscreen app active (dock hidden)</button>
+          <button type="button" class="state-chip" data-chip="wall" aria-pressed="false">light wallpaper / dark wallpaper</button>
+          <button type="button" class="state-chip" data-chip="zoom" aria-pressed="false">browser zoom 125% (DPI proxy)</button>
+        </div>
+        <div class="rules-box">
+          <div><b>Fullscreen:</b> Hides via <code>SW_HIDE</code> on <code>FullscreenWatcher</code>; closes popovers.</div>
+          <div><b>30 running apps:</b> Fixed 44 px slots never shrink; excess goes into inline <code>+N Running</code> menu.</div>
+          <div><b>Hide without Settings:</b> Click trailing <code>⌄</code> button on the dock rail (or right-click).</div>
+        </div>
+        <div id="status-toast">Ready — fixed click targets, grouped windows, right-click any app for its window list.</div>
+      </aside>
+
+      <div id="dock-b-wrap">
+        <nav id="dock-b-rail" aria-label="Flush application dock"></nav>
+      </div>
+      <button type="button" id="dock-b-restore" title="Restore flush dock">▴ Dock</button>
+      <div id="winlist-pop" class="dock-popover" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  var state = { mode: "idle", activeSlug: "antigravity", userHidden: false };
+  var apps = DockDesktop.cloneApps("idle");
+
+  var desk = DockDesktop.buildBaseShell({
+    onFocusApp: function (slug) { state.activeSlug = slug; renderRail(); },
+    onCloseWindow: function (slug) {
+      var a = apps.find(function (x) { return x.slug === slug; });
+      if (a) { a.windows.pop(); a.running = a.windows.length > 0; }
+      renderRail();
+    }
+  });
+
+  var wrap = document.getElementById("dock-b-wrap");
+  var rail = document.getElementById("dock-b-rail");
+  var restoreBtn = document.getElementById("dock-b-restore");
+  var pop = document.getElementById("winlist-pop");
+  var stage = document.getElementById("stage");
+
+  function maxVisibleSlots() {
+    var pm = DockDesktop.planeMetrics();
+    // Keep at least 96 px margin on both sides + room for overflow chip and tuck button
+    var avail = pm.width - 240;
+    return Math.max(8, Math.floor(avail / 48));
+  }
+
+  function renderRail() {
+    rail.innerHTML = "";
+    if (apps.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "dock-empty-flush";
+      empty.innerHTML = '<span>No running or pinned apps</span><button type="button" id="restore-b-btn">Pin default apps</button>';
+      rail.appendChild(empty);
+      empty.querySelector("#restore-b-btn").onclick = function () { applyChip("idle"); };
+      appendTuckButton();
+      return;
+    }
+
+    var cap = maxVisibleSlots();
+    var inlineApps = apps.length > cap ? apps.slice(0, cap - 1) : apps;
+    var overflowApps = apps.length > cap ? apps.slice(cap - 1) : [];
+
+    inlineApps.forEach(function (app, idx) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "flush-btn";
+      btn.dataset.slug = app.slug;
+      btn.dataset.running = String(!!app.running);
+      btn.dataset.active = String(app.slug === state.activeSlug && app.running);
+      btn.dataset.winCount = String(Math.min(2, app.windows.length));
+      if (state.mode === "hover" && app.slug === "msedge") {
+        btn.dataset.hovered = "true";
+      }
+      btn.title = app.name + (app.windows.length > 1 ? " (" + app.windows.length + " windows)" : "");
+      btn.setAttribute("aria-label", btn.title);
+      btn.innerHTML = '<img src="' + app.icon + '" alt=""><span class="flush-bar"></span>';
+
+      btn.addEventListener("click", function () {
+        pop.hidden = true;
+        if (!app.running) {
+          app.running = true;
+          app.windows = [app.name + " — " + app.exe];
+        }
+        state.activeSlug = app.slug;
+        desk.focusOrLaunchApp(app);
+        renderRail();
+        DockDesktop.toast("Focused " + app.name + (app.windows.length > 1 ? " (grouped: right-click for window list)" : ""));
+      });
+
+      btn.addEventListener("contextmenu", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openWindowListForApp(app, btn);
+      });
+
+      rail.appendChild(btn);
+    });
+
+    if (overflowApps.length > 0) {
+      var sep = document.createElement("div");
+      sep.className = "rail-sep";
+      rail.appendChild(sep);
+
+      var ov = document.createElement("button");
+      ov.type = "button";
+      ov.className = "overflow-chip";
+      ov.id = "overflow-btn";
+      ov.textContent = "+" + overflowApps.length + " Running ▴";
+      ov.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        openOverflowPopover(overflowApps, ov);
+      });
+      rail.appendChild(ov);
+    }
+
+    appendTuckButton();
+
+    if (state.mode === "hover") {
+      var edgeBtn = rail.querySelector('.flush-btn[data-slug="msedge"]');
+      if (edgeBtn) openWindowListForApp(apps.find(function (a) { return a.slug === "msedge"; }), edgeBtn);
+    }
+  }
+
+  function appendTuckButton() {
+    var sep = document.createElement("div");
+    sep.className = "rail-sep";
+    rail.appendChild(sep);
+    var tuck = document.createElement("button");
+    tuck.type = "button";
+    tuck.className = "tuck-btn";
+    tuck.title = "Hide dock without opening Settings";
+    tuck.setAttribute("aria-label", "Hide dock");
+    tuck.textContent = "⌄";
+    tuck.onclick = function () { setUserHidden(true); };
+    rail.appendChild(tuck);
+  }
+
+  function positionPopoverAbove(anchorEl) {
+    var pm = DockDesktop.planeMetrics();
+    var fit = document.getElementById("viewport-fit").getBoundingClientRect();
+    var totalScale = (fit.width / 1920) * pm.scale;
+    var r = anchorEl.getBoundingClientRect();
+    var cx = (r.left + r.width / 2 - fit.left) / totalScale;
+    var left = Math.min(pm.width - 326, Math.max(16, Math.round(cx - 155)));
+    pop.style.left = left + "px";
+    pop.style.bottom = "62px";
+    pop.style.top = "auto";
+  }
+
+  function openWindowListForApp(app, anchorEl) {
+    if (!app) return;
+    positionPopoverAbove(anchorEl);
+    var html = '<div class="pop-head">' + DockDesktop.escapeHtml(app.name) + ' · Fixed size (no magnify)</div>';
+    if (app.windows.length > 0) {
+      app.windows.forEach(function (wTitle, idx) {
+        html += '<button type="button" class="pop-item" data-widx="' + idx + '"><img src="' + app.icon + '" alt=""><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + DockDesktop.escapeHtml(wTitle) + '</span></button>';
+      });
+    } else {
+      html += '<button type="button" class="pop-item" data-widx="0"><img src="' + app.icon + '" alt="">Launch ' + DockDesktop.escapeHtml(app.name) + '</button>';
+    }
+    html += '<div class="pop-sep"></div>';
+    html += '<button type="button" class="pop-item" data-act="pin">' + (app.pinned ? 'Unpin from dock' : 'Pin to dock') + '</button>';
+    html += '<button type="button" class="pop-item" data-act="hide">Hide dock (collapse to tab)</button>';
+    pop.innerHTML = html;
+    pop.hidden = false;
+
+    pop.querySelectorAll(".pop-item").forEach(function (item) {
+      item.onclick = function () {
+        pop.hidden = true;
+        if (item.dataset.widx !== undefined) {
+          app.running = true;
+          if (!app.windows.length) app.windows = [app.name + " — " + app.exe];
+          state.activeSlug = app.slug;
+          desk.focusOrLaunchApp(app);
+          renderRail();
+          DockDesktop.toast("Switched to window: " + app.windows[Number(item.dataset.widx) || 0]);
+        } else if (item.dataset.act === "pin") {
+          app.pinned = !app.pinned;
+          if (!app.pinned && !app.running) apps = apps.filter(function (x) { return x.slug !== app.slug; });
+          renderRail();
+        } else if (item.dataset.act === "hide") {
+          setUserHidden(true);
+        }
+      };
+    });
+  }
+
+  function openOverflowPopover(overflowApps, anchorEl) {
+    positionPopoverAbove(anchorEl);
+    var html = '<div class="pop-head">Overflow Running Apps (' + overflowApps.length + ')</div>';
+    overflowApps.forEach(function (app) {
+      html += '<button type="button" class="pop-item" data-slug="' + app.slug + '"><img src="' + app.icon + '" alt=""><span>' + DockDesktop.escapeHtml(app.name) + '</span></button>';
+    });
+    pop.innerHTML = html;
+    pop.hidden = false;
+    pop.querySelectorAll(".pop-item").forEach(function (b) {
+      b.onclick = function () {
+        pop.hidden = true;
+        var a = apps.find(function (x) { return x.slug === b.dataset.slug; });
+        if (a) {
+          state.activeSlug = a.slug;
+          desk.focusOrLaunchApp(a);
+          renderRail();
+          DockDesktop.toast("Focused overflow app: " + a.name);
+        }
+      };
+    });
+  }
+
+  document.addEventListener("click", function (ev) {
+    if (!pop.hidden && !pop.contains(ev.target) && !ev.target.closest("#overflow-btn")) {
+      if (state.mode !== "hover") pop.hidden = true;
+    }
+  });
+
+  function setUserHidden(h) {
+    state.userHidden = h;
+    pop.hidden = true;
+    wrap.dataset.userHidden = String(h);
+    restoreBtn.classList.toggle("visible", h && stage.dataset.fullscreen !== "true");
+    DockDesktop.toast(h ? "Flush dock collapsed — click bottom '▴ Dock' tab to restore." : "Flush dock restored.");
+  }
+  restoreBtn.onclick = function () { setUserHidden(false); };
+
+  function applyChip(chip) {
+    pop.hidden = true;
+    if (chip === "wall") {
+      stage.dataset.wall = stage.dataset.wall === "dark" ? "light" : "dark";
+      document.querySelector('[data-chip="wall"]').setAttribute("aria-pressed", String(stage.dataset.wall === "light"));
+      DockDesktop.toast("Switched to " + stage.dataset.wall + " wallpaper.");
+      return;
+    }
+    if (chip === "zoom") {
+      stage.dataset.zoom = stage.dataset.zoom === "100" ? "125" : "100";
+      document.querySelector('[data-chip="zoom"]').setAttribute("aria-pressed", String(stage.dataset.zoom === "125"));
+      renderRail();
+      DockDesktop.toast("DPI proxy: " + stage.dataset.zoom + "% scale.");
+      return;
+    }
+
+    setUserHidden(false);
+    state.mode = chip;
+    stage.dataset.fullscreen = String(chip === "fullscreen");
+    apps = DockDesktop.cloneApps(chip === "many" ? "many" : (chip === "empty" ? "empty" : "idle"));
+
+    ["idle", "hover", "many", "empty", "fullscreen"].forEach(function (c) {
+      var el = document.querySelector('[data-chip="' + c + '"]');
+      if (el) el.setAttribute("aria-pressed", String(c === chip));
+    });
+
+    renderRail();
+    DockDesktop.toast("State: " + chip);
+  }
+
+  document.querySelectorAll(".state-chip").forEach(function (btn) {
+    btn.addEventListener("click", function () { applyChip(btn.dataset.chip); });
+  });
+
+  var q = new URLSearchParams(window.location.search).get("state");
+  renderRail();
+  if (q === "light") applyChip("wall");
+  else if (q === "zoom125") applyChip("zoom");
+  else if (q && ["idle", "hover", "many", "empty", "fullscreen"].indexOf(q) >= 0) applyChip(q);
+
+  window.__setMockupState = applyChip;
+})();
+</script>
+</body>
+</html>

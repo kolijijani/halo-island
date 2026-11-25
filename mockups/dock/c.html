@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction C — Island Strip · Halo Island</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Unified Notch + App Strip growing directly from top bezel */
+#island-c-shell {
+  background: #050608;
+  color: #f3f5fa;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 14px 38px rgba(0,0,0,0.48);
+  padding: 6px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: min-width 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.c-head {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12.5px;
+}
+
+.c-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.c-status-label {
+  color: #9aa8bf;
+  font-size: 12px;
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.c-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.c-tuck-btn {
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.07);
+  color: #d6e1f2;
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.c-tuck-btn:hover { background: rgba(255,255,255,0.16); }
+
+.c-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.c-nav-btn {
+  width: 26px;
+  height: 38px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: #e6edf8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.c-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.c-nav-btn:not(:disabled):hover {
+  background: rgba(255,255,255,0.15);
+}
+
+#c-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  scroll-behavior: smooth;
+}
+#c-viewport::-webkit-scrollbar { display: none; }
+
+.c-icon-btn {
+  width: 42px;
+  height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.c-icon-btn:hover,
+.c-icon-btn[data-magnified="true"] {
+  background: rgba(255,255,255,0.12);
+  transform: scale(1.16);
+}
+.c-icon-btn img {
+  width: 26px;
+  height: 26px;
+  display: block;
+  pointer-events: none;
+}
+.c-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 4px;
+  margin-top: 3px;
+  background: transparent;
+}
+.c-icon-btn[data-running="true"] .c-dot {
+  background: rgba(235,242,255,0.72);
+}
+.c-icon-btn[data-active="true"] .c-dot {
+  width: 10px;
+  background: #ffb868;
+}
+
+/* Compact resting notch when strip is tucked */
+#island-c-resting {
+  height: 32px;
+  padding: 0 15px;
+  background: #050608;
+  border-radius: 0 0 16px 16px;
+  border: none;
+  color: #f3f5fa;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.38);
+}
+.micro-strip-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.09);
+}
+.micro-strip-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffb868;
+  display: inline-block;
+}
+
+.c-empty {
+  font-size: 12px;
+  color: #a9b6cc;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.c-empty button {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.09);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="viewport-fit">
+  <div id="stage">
+    <div id="dpi-plane">
+      <div class="wall-grid"></div>
+      <div id="halo-notch-wrap"></div>
+      <div id="windows-layer"></div>
+      <div id="fs-surface"></div>
+
+      <aside id="qa-hud" aria-label="Mockup state controls">
+        <div class="qa-top">
+          <a href="index.html">← All 3 directions</a>
+          <span class="qa-variant-tag">C · Island Strip</span>
+        </div>
+        <div class="chip-row">
+          <button type="button" class="state-chip" data-chip="idle" aria-pressed="true">idle</button>
+          <button type="button" class="state-chip" data-chip="hover" aria-pressed="false">cursor hovering one icon (magnified)</button>
+          <button type="button" class="state-chip" data-chip="many" aria-pressed="false">30 running apps</button>
+          <button type="button" class="state-chip" data-chip="empty" aria-pressed="false">no running apps, nothing pinned (empty)</button>
+          <button type="button" class="state-chip" data-chip="fullscreen" aria-pressed="false">fullscreen app active (dock hidden)</button>
+          <button type="button" class="state-chip" data-chip="wall" aria-pressed="false">light wallpaper / dark wallpaper</button>
+          <button type="button" class="state-chip" data-chip="zoom" aria-pressed="false">browser zoom 125% (DPI proxy)</button>
+        </div>
+        <div class="rules-box">
+          <div><b>Fullscreen:</b> Uses Halo's existing <code>App::apply_fullscreen</code>; zero second HWND.</div>
+          <div><b>30 running apps:</b> Single-row 16-slot viewport inside the island with <code>‹ / ›</code> + wheel + Tab scroll.</div>
+          <div><b>Hide without Settings:</b> Click <code>▴ Tuck</code> or move pointer away to collapse into 32 px notch.</div>
+        </div>
+        <div id="status-toast">Ready — zero bottom bar; dock strip grows directly out of Halo Island's top notch.</div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  var state = { mode: "idle", expanded: true, pinnedOpen: true, activeSlug: "antigravity", hoverName: "" };
+  var apps = DockDesktop.cloneApps("idle");
+
+  var desk = DockDesktop.buildBaseShell({
+    customNotch: true,
+    onFocusApp: function (slug) { state.activeSlug = slug; renderIsland(); },
+    onCloseWindow: function (slug) {
+      var a = apps.find(function (x) { return x.slug === slug; });
+      if (a) a.running = false;
+      renderIsland();
+    }
+  });
+
+  var nw = document.getElementById("halo-notch-wrap");
+  var stage = document.getElementById("stage");
+
+  function maxStripViewportPx() {
+    var pm = DockDesktop.planeMetrics();
+    // Leave generous room so QA panel on left (x:20..490) never collides even at 125% DPI (1536 px wide -> center 768)
+    if (pm.width <= 1536) {
+      return 460; // center 768 - half(550) = 493 > 490! Zero collision with QA panel at 125% zoom!
+    }
+    return 736; // center 960 - half(820) = 550 > 490!
+  }
+
+  function renderIsland() {
+    var earL = '<svg class="notch-ear" viewBox="0 0 12 12"><path d="M0 0 H12 V12 A12 12 0 0 0 0 0 Z" fill="#050608"/></svg>';
+    var earR = '<svg class="notch-ear" viewBox="0 0 12 12"><path d="M0 0 H12 A12 12 0 0 0 0 12 V0 Z" fill="#050608"/></svg>';
+
+    if (!state.expanded) {
+      var runCount = apps.filter(function (a) { return a.running; }).length;
+      var dots = "";
+      for (var i = 0; i < Math.min(5, runCount); i++) dots += "<i></i>";
+      nw.innerHTML = earL +
+        '<button type="button" id="island-c-resting" title="Click to unfurl Island Strip">' +
+          '<span class="mascot-eyes"><span></span><span></span></span>' +
+          (runCount > 0 ? '<span class="micro-strip-dots">' + dots + '</span>' : '') +
+          '<span class="notch-clock" id="live-clock">' + DockDesktop.formatRealClock() + '</span>' +
+        '</button>' + earR;
+      nw.querySelector("#island-c-resting").onclick = function () {
+        state.expanded = true;
+        state.pinnedOpen = true;
+        renderIsland();
+        DockDesktop.toast("Unfurled Island Strip from notch.");
+      };
+      return;
+    }
+
+    var vpMax = maxStripViewportPx();
+    var needScroll = apps.length * 46 > vpMax;
+    var subtitle = state.hoverName || (apps.length ? (apps.filter(function (a) { return a.running; }).length + " running · " + apps.length + " in strip") : "Empty strip");
+
+    var bodyHtml = "";
+    if (apps.length === 0) {
+      bodyHtml = '<div class="c-empty"><span>No running or pinned apps</span><button type="button" id="c-restore-pins">Pin default apps</button></div>';
+    } else {
+      bodyHtml =
+        '<div class="c-strip-row">' +
+          (needScroll ? '<button type="button" class="c-nav-btn" id="c-prev" aria-label="Scroll strip left">‹</button>' : '') +
+          '<div id="c-viewport" style="max-width:' + vpMax + 'px"></div>' +
+          (needScroll ? '<button type="button" class="c-nav-btn" id="c-next" aria-label="Scroll strip right">›</button>' : '') +
+        '</div>';
+    }
+
+    nw.innerHTML = earL +
+      '<div id="island-c-shell">' +
+        '<div class="c-head">' +
+          '<div class="c-left">' +
+            '<span class="mascot-eyes"><span></span><span></span></span>' +
+            '<span class="c-status-label" id="c-status">' + DockDesktop.escapeHtml(subtitle) + '</span>' +
+          '</div>' +
+          '<div class="c-right">' +
+            '<button type="button" class="c-tuck-btn" id="c-tuck" title="Hide strip back into resting notch">▴ Tuck</button>' +
+            '<span class="notch-clock" id="live-clock">' + DockDesktop.formatRealClock() + '</span>' +
+          '</div>' +
+        '</div>' +
+        bodyHtml +
+      '</div>' + earR;
+
+    nw.querySelector("#c-tuck").onclick = function () {
+      state.expanded = false;
+      state.pinnedOpen = false;
+      renderIsland();
+      DockDesktop.toast("Tucked strip into 32 px resting notch without opening Settings.");
+    };
+
+    var restorePins = nw.querySelector("#c-restore-pins");
+    if (restorePins) {
+      restorePins.onclick = function () { applyChip("idle"); };
+    }
+
+    var vp = nw.querySelector("#c-viewport");
+    if (vp) {
+      apps.forEach(function (app, idx) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "c-icon-btn";
+        b.dataset.slug = app.slug;
+        b.dataset.running = String(!!app.running);
+        b.dataset.active = String(app.slug === state.activeSlug && app.running);
+        if (state.mode === "hover" && idx === 2) {
+          b.dataset.magnified = "true";
+        }
+        b.setAttribute("aria-label", app.name);
+        b.innerHTML = '<img src="' + app.icon + '" alt=""><span class="c-dot"></span>';
+
+        b.addEventListener("mouseenter", function () {
+          var st = document.getElementById("c-status");
+          if (st) st.textContent = app.name + (app.running ? " · Running" : " · Pinned");
+        });
+        b.addEventListener("mouseleave", function () {
+          var st = document.getElementById("c-status");
+          if (st) st.textContent = subtitle;
+        });
+        b.addEventListener("focus", function () {
+          b.scrollIntoView({ block: "nearest", inline: "nearest" });
+          var st = document.getElementById("c-status");
+          if (st) st.textContent = app.name;
+        });
+        b.addEventListener("click", function () {
+          app.running = true;
+          state.activeSlug = app.slug;
+          desk.focusOrLaunchApp(app);
+          renderIsland();
+          DockDesktop.toast("Focused " + app.name + " from Island Strip.");
+        });
+        vp.appendChild(b);
+      });
+
+      vp.addEventListener("wheel", function (ev) {
+        if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX)) {
+          ev.preventDefault();
+          vp.scrollLeft += ev.deltaY;
+        }
+      }, { passive: false });
+
+      var prev = nw.querySelector("#c-prev");
+      var next = nw.querySelector("#c-next");
+      if (prev && next) {
+        prev.onclick = function () { vp.scrollLeft -= 260; };
+        next.onclick = function () { vp.scrollLeft += 260; };
+      }
+    }
+
+    var shell = nw.querySelector("#island-c-shell");
+    if (shell) {
+      shell.addEventListener("mouseleave", function () {
+        if (!state.pinnedOpen && state.mode === "idle") {
+          state.expanded = false;
+          renderIsland();
+        }
+      });
+    }
+  }
+
+  function applyChip(chip) {
+    if (chip === "wall") {
+      stage.dataset.wall = stage.dataset.wall === "dark" ? "light" : "dark";
+      document.querySelector('[data-chip="wall"]').setAttribute("aria-pressed", String(stage.dataset.wall === "light"));
+      DockDesktop.toast("Switched to " + stage.dataset.wall + " wallpaper.");
+      return;
+    }
+    if (chip === "zoom") {
+      stage.dataset.zoom = stage.dataset.zoom === "100" ? "125" : "100";
+      document.querySelector('[data-chip="zoom"]').setAttribute("aria-pressed", String(stage.dataset.zoom === "125"));
+      renderIsland();
+      DockDesktop.toast("DPI proxy: " + stage.dataset.zoom + "% scale.");
+      return;
+    }
+
+    state.mode = chip;
+    state.expanded = true;
+    state.pinnedOpen = true;
+    state.hoverName = chip === "hover" ? "Microsoft Edge · Running (2 windows)" : "";
+    stage.dataset.fullscreen = String(chip === "fullscreen");
+    apps = DockDesktop.cloneApps(chip === "many" ? "many" : (chip === "empty" ? "empty" : "idle"));
+
+    ["idle", "hover", "many", "empty", "fullscreen"].forEach(function (c) {
+      var el = document.querySelector('[data-chip="' + c + '"]');
+      if (el) el.setAttribute("aria-pressed", String(c === chip));
+    });
+
+    renderIsland();
+    DockDesktop.toast("State: " + chip);
+  }
+
+  document.querySelectorAll(".state-chip").forEach(function (btn) {
+    btn.addEventListener("click", function () { applyChip(btn.dataset.chip); });
+  });
+
+  var q = new URLSearchParams(window.location.search).get("state");
+  renderIsland();
+  if (q === "light") applyChip("wall");
+  else if (q === "zoom125") applyChip("zoom");
+  else if (q && ["idle", "hover", "many", "empty", "fullscreen"].indexOf(q) >= 0) applyChip(q);
+
+  window.__setMockupState = applyChip;
+})();
+</script>
+</body>
+</html>
