@@ -3651,6 +3651,8 @@ impl SelfTest {
                 // Diorama's night island casts the window's warm glow.
                 let shadow = look.frame.map_or([0, 0, 0], |f| rgb8(f.shadow));
                 pill_checks(&frame, body, scale, shadow, &mut checks);
+            } else if self.glass.is_none() && scene == Scene::IdleClock && app.st.settings.island_x.is_none() {
+                notch_checks(app.hwnd(), &frame, body, scale, &mut checks);
             }
             // In the Diorama theme the clock rests as the picture, and so does
             // the status bar's look (the bar itself is the Pill theme's own).
@@ -4304,6 +4306,62 @@ fn window_check(hwnd: HWND, surface: (i32, i32, i32, i32), present: (i32, i32), 
         visible && styles_ok && rect_ok,
         format!("visible {visible}, ex-style {ex:#x} (needs {need:#x}), rect {rect_s} (laid out ({sx}, {sy}) {sw}x{sh}), frame at ({}, {}) {w}x{h}", present.0, present.1),
     )
+}
+
+/// Independent monitor placement and silhouette check for the Classic top notch
+/// (`IdleClock`, centred): guards `place_surface` and the concave top-bezel
+/// outline while secondary windows (such as the bottom dock) are added.
+fn notch_checks(hwnd: HWND, frame: &Frame, body: Rect, scale: f32, checks: &mut Vec<Check>) {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTOPRIMARY};
+    let placed = unsafe {
+        let mut wr = RECT::default();
+        let got = GetWindowRect(hwnd, &mut wr).is_ok();
+        let mon = crate::window::monitor_info(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY));
+        (got, wr, mon)
+    };
+    let (mon_ok, mon_detail) = match placed {
+        (true, wr, Some(m)) => {
+            let win_cx = (wr.left + wr.right) / 2;
+            let want_top = m.top();
+            let want_cx = m.center_x();
+            (
+                wr.top == want_top && (win_cx - want_cx).abs() <= 1,
+                format!("window top {} (monitor top {want_top}), cx {win_cx} (monitor cx {want_cx})", wr.top),
+            )
+        }
+        _ => (false, "monitor/window rect unavailable".into()),
+    };
+    checks.push(check("notch-monitor-anchor", mon_ok, mon_detail));
+
+    let cx = ((body.x + body.w / 2.0) * scale).floor() as i32;
+    let shoulder = crate::island::SHOULDER;
+    let body_l = (body.x * scale).ceil() as i32 + 1;
+    let body_r = (body.right() * scale).floor() as i32 - 1;
+    let out_l = ((body.x - shoulder) * scale).floor() as i32 - 2;
+    let out_r = ((body.right() + shoulder) * scale).ceil() as i32 + 2;
+    let bezel_opaque = body_l < body_r && (body_l..=body_r).all(|x| frame.at(x, 0)[3] == 255);
+    let bezel_clear = (0..out_l.max(0)).all(|x| frame.at(x, 0)[3] == 0)
+        && (out_r.min(frame.w)..frame.w).all(|x| frame.at(x, 0)[3] == 0);
+    let mid_y = ((body.h * 0.5) * scale).round() as i32;
+    let top_span = (0..frame.w).filter(|&x| frame.at(x, 0)[3] >= 16).count() as i32;
+    let mid_span = frame.opaque_run(cx, mid_y);
+    let want_mid = body.w * scale;
+    let shoulders_flare = top_span >= mid_span + (shoulder * scale) as i32 && (mid_span as f32 - want_mid).abs() <= 2.0;
+
+    let bot_opaque = (body.h * scale).floor() as i32 - 1;
+    let bot_clear = (body.h * scale).ceil() as i32 + 2;
+    let height_ok = bot_opaque > 0
+        && (0..=bot_opaque.min(frame.h - 1)).all(|y| frame.at(cx, y)[3] == 255)
+        && (bot_clear.min(frame.h)..frame.h).all(|y| frame.at(cx, y)[3] <= 1);
+
+    checks.push(check(
+        "notch-silhouette",
+        bezel_opaque && bezel_clear && shoulders_flare && height_ok,
+        format!(
+            "row 0 span {top_span} px vs mid row {mid_y} span {mid_span} px (want {:.1} px + shoulders), bezel opaque {bezel_opaque}, outside clear {bezel_clear}, height scan {height_ok}",
+            want_mid
+        ),
+    ));
 }
 
 /// Pill: what the gap above the floating body may hold besides the invisible

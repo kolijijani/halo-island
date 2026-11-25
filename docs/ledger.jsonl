@@ -76,3 +76,5 @@
 {"id": "dock-phase-1-investigate-window-layer-an", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase1", "who": "ag", "ts": 1795622254}
 {"id": "dock-phase-1-investigate-window-layer-an", "ev": "blocked", "owner": "ag", "who": "ag", "note": "Investigation + A/B/C mockups committed on ag/dock-phase1; waiting on owner choice for CHOSEN.md", "ts": 1795622949}
 {"id": "dock-phase-1-investigate-window-layer-an", "ev": "done", "owner": "ag", "who": "ag", "commit": "833520d", "note": "Direction A (Magnification shelf + Genie) chosen in mockups/dock/CHOSEN.md", "ts": 1795623954}
+{"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "open", "title": "Dock phase 2 - Direct2D bottom shelf window and settings toggle", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795624406}
+{"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-2-direct2d-bottom-shelf-windo", "who": "ag", "ts": 1795624416}
