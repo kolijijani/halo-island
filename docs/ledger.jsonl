@@ -97,3 +97,6 @@
 {"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "open", "title": "Dock Visual Parity Phase 2: Launchpad slot, squircle tiles and badges", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795628661}
 {"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "doing", "owner": "ag", "branch": "ag/dock-visual-parity-phase-2-launchpad-slo", "who": "ag", "ts": 1795628676}
 {"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "done", "owner": "ag", "who": "ag", "commit": "0c4aba5", "note": "Added 9-dot Launchpad slot, squircle tiles with bevels/shadows/glowing dots, red/blue notification badges, and download progress ring", "ts": 1795628873}
+{"id": "dock-visual-parity-phase-3-fan-out-downl", "ev": "open", "title": "Dock Visual Parity Phase 3: Fan-out downloads stack and minimized window thumbnail", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795628938}
+{"id": "dock-visual-parity-phase-3-fan-out-downl", "ev": "doing", "owner": "ag", "branch": "ag/dock-visual-parity-phase-3-fan-out-downl", "who": "ag", "ts": 1795628938}
+{"id": "dock-visual-parity-phase-3-fan-out-downl", "ev": "done", "owner": "ag", "who": "ag", "commit": "17f2365", "note": "Added fan-out Downloads stack cards with file-type badges/NEW tag, Downloads folder stack icon, and minimized window thumbnail card with corner app badge", "ts": 1795629181}
