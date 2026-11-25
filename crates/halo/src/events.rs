@@ -133,6 +133,8 @@ pub enum AppEvent {
     /// Another window came to the foreground on a monitor that isn't
     /// full-screen. It may have made itself topmost and now cover the island.
     Foreground,
+    /// Running top-level windows changed (`services::dock_apps`, only active while Bottom Dock is on).
+    DockAppsChanged,
     /// Step aside: the app windows at the top edge of the island's monitor
     /// changed (a browser maximized or restored, a window snapped or dragged
     /// to the top). Screen pixels (left, top, right, bottom), each clipped

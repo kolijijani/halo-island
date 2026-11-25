@@ -9,6 +9,7 @@ pub mod audio;
 pub mod backdrop;
 pub mod bluetooth;
 pub mod clipboard;
+pub mod dock_apps;
 pub mod frames;
 pub mod fullscreen;
 pub mod cities;

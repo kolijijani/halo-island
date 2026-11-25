@@ -440,6 +440,8 @@ pub struct App {
     settings_win: Option<SettingsWindow>,
     /// Floating bottom dock shelf, alive only while `Settings::dock_enabled` is true.
     dock: Option<crate::dock::Dock>,
+    /// Running-apps WinEvent watcher, alive only while the bottom dock is enabled.
+    dock_apps: Option<services::dock_apps::DockAppsWatcher>,
     clock: FrameClock,
     sink: EventSink,
     rx: Receiver<AppEvent>,
@@ -752,6 +754,7 @@ impl App {
             monitor,
             settings_win: None,
             dock: None,
+            dock_apps: None,
             clock,
             sink,
             rx,
@@ -903,6 +906,7 @@ impl App {
         self.save_now();
         self.settings_win = None;
         self.dock = None;
+        self.dock_apps = None;
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
         self.set_peek_hotkey(false);
@@ -1804,15 +1808,21 @@ impl App {
                 match crate::dock::Dock::new(&self.monitor, light, shared) {
                     Ok(mut d) => {
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
+                        let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
+                        d.set_apps(watcher.refresh());
                         pinfo!("dock: enabled");
                         self.dock = Some(d);
+                        self.dock_apps = Some(watcher);
                         self.request_frame();
                     }
                     Err(e) => pwarn!("dock: couldn't create window ({e})"),
                 }
             }
-        } else if self.dock.take().is_some() {
-            pinfo!("dock: disabled");
+        } else {
+            self.dock_apps = None;
+            if self.dock.take().is_some() {
+                pinfo!("dock: disabled");
+            }
         }
     }
 
@@ -1853,6 +1863,9 @@ impl App {
             crate::dock::DockAction::OpenSettings => {
                 self.collapse();
                 self.open_settings_window(Some(Section::Island), deferred);
+            }
+            crate::dock::DockAction::FocusWindow(target) => {
+                services::dock_apps::focus_window(target);
             }
             crate::dock::DockAction::ShowMenu(pt, tucked) => deferred.push(Deferred::DockMenu(pt, tucked)),
         }
@@ -2750,6 +2763,15 @@ impl App {
                     self.refresh_monitor();
                 }
                 self.start_raises();
+            }
+            AppEvent::DockAppsChanged => {
+                if !self.locked && !self.display_off {
+                    if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
+                        if d.set_apps(w.refresh()) {
+                            self.request_frame();
+                        }
+                    }
+                }
             }
             AppEvent::TopWindows(places) => {
                 // The self-test puts its own window under the island.

@@ -6,6 +6,7 @@
 use crate::gfx::{Canvas, Gfx, HitMask, SharedD3d, TextStyle, Weight};
 use crate::icons::Icon;
 use crate::pages::PageKind;
+use crate::services::dock_apps::RunningApp;
 use crate::window::MonitorInfo;
 use halo_core::geom::{palette, Color, Point, Rect};
 use halo_core::look;
@@ -37,8 +38,12 @@ pub const SLOT_MAX: f32 = 44.0;
 pub const SLOT_MIN: f32 = 28.0;
 pub const SLOT_GAP: f32 = 8.0;
 pub const SHELF_PAD_X: f32 = 12.0;
+pub const SEP_W: f32 = 12.0;
+pub const MAX_MAG: f32 = 1.48;
+pub const MAG_RADIUS_SLOTS: f32 = 2.6;
 const MASK_INTERVAL: f64 = 1.0 / 30.0;
 const TUCK_EPS: f32 = 0.004;
+const MAG_EPS: f32 = 0.004;
 
 /// Shadow ramp around the floating shelf capsule (distance outside body in DIPs, alpha).
 const SHELF_SHADOW: &[(f32, f32)] = &[(-2.0, 0.34), (0.0, 0.28), (5.0, 0.14), (12.0, 0.04), (20.0, 0.0)];
@@ -57,6 +62,7 @@ pub enum DockAction {
     ToggleIsland,
     OpenPage(PageKind),
     OpenSettings,
+    FocusWindow(HWND),
     ShowMenu(POINT, bool),
 }
 
@@ -118,11 +124,29 @@ pub fn surface_rect(mon: &MonitorInfo) -> (i32, i32, i32, i32) {
     (x, y, w, h)
 }
 
+/// Raised-cosine parabolic magnification scale (`1.0..=MAX_MAG`) for a slot
+/// whose resting center is `dist_x` DIPs from the cursor.
+pub fn mag_scale(dist_x: f32, step: f32) -> f32 {
+    let radius = (step * MAG_RADIUS_SLOTS).max(1.0);
+    let d = dist_x.abs();
+    if d >= radius {
+        1.0
+    } else {
+        let t = 0.5 * (1.0 + (std::f32::consts::PI * d / radius).cos());
+        1.0 + (MAX_MAG - 1.0) * t
+    }
+}
+
 /// Single-row slot size in DIPs for `count` items inside `surf_w` DIPs:
 /// shrinks proportionally at high counts (e.g. 30 apps) so icons never wrap or clip.
 pub fn slot_metrics(surf_w: f32, count: usize) -> (f32, f32) {
+    slot_metrics_with_sep(surf_w, count, false)
+}
+
+fn slot_metrics_with_sep(surf_w: f32, count: usize, has_sep: bool) -> (f32, f32) {
     let n = count.max(1) as f32;
-    let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0).max(64.0);
+    let sep = if has_sep { SEP_W } else { 0.0 };
+    let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0 - sep).max(64.0);
     let natural = n * SLOT_MAX + (n - 1.0) * SLOT_GAP;
     if natural <= avail {
         (SLOT_MAX, SLOT_GAP)
@@ -146,6 +170,64 @@ pub fn shelf_rect(surf_w: f32, count: usize, tuck_t: f32) -> Rect {
     Rect::new(x, base_y + slide, shelf_w, shelf_h)
 }
 
+/// Magnified dock layout: returns `(shelf_rect, optional_divider_x, slot_rects)`.
+/// Icons grow upward from the shelf baseline and extra width is damped so the
+/// shelf never overflows `surf_w`.
+pub fn layout_slots(
+    surf_w: f32,
+    anchor_count: usize,
+    app_count: usize,
+    scales: &[f32],
+    tuck_t: f32,
+) -> (Rect, Option<f32>, Vec<Rect>) {
+    let total = anchor_count + app_count;
+    let has_sep = anchor_count > 0 && app_count > 0;
+    let (base_slot, base_gap) = slot_metrics_with_sep(surf_w, total, has_sep);
+    let sep_w = if has_sep { SEP_W } else { 0.0 };
+    let gap_count = total.saturating_sub(1).saturating_sub(usize::from(has_sep)) as f32;
+    let base_w = total as f32 * base_slot + gap_count * base_gap + sep_w + 2.0 * SHELF_PAD_X;
+    let max_shelf_w = (surf_w - 8.0).max(64.0);
+
+    let mut raw_extra = 0.0f32;
+    for i in 0..total {
+        let s = scales.get(i).copied().unwrap_or(1.0).max(1.0);
+        raw_extra += base_slot * (s - 1.0);
+    }
+    let avail_extra = (max_shelf_w - base_w).max(0.0);
+    let damp = if raw_extra > 0.001 && raw_extra > avail_extra {
+        avail_extra / raw_extra
+    } else {
+        1.0
+    };
+
+    let shelf_h = (base_slot + 14.0).clamp(42.0, SHELF_H);
+    let shelf_w = (base_w + raw_extra * damp).min(max_shelf_w);
+    let x0 = (surf_w - shelf_w) * 0.5;
+    let base_y = SURF_H - FLOAT_GAP - shelf_h;
+    let slide = tuck_t.clamp(0.0, 1.0) * (shelf_h + FLOAT_GAP + 4.0);
+    let shelf = Rect::new(x0, base_y + slide, shelf_w, shelf_h);
+    let bottom_pad = (shelf_h - base_slot) * 0.5;
+
+    let mut rects = Vec::with_capacity(total);
+    let mut sep_x = None;
+    let mut x = shelf.x + SHELF_PAD_X;
+    for i in 0..total {
+        if has_sep && i == anchor_count {
+            sep_x = Some(x + SEP_W * 0.5);
+            x += SEP_W;
+        }
+        let s = 1.0 + (scales.get(i).copied().unwrap_or(1.0).max(1.0) - 1.0) * damp;
+        let sz = base_slot * s;
+        let y = shelf.bottom() - bottom_pad - sz;
+        rects.push(Rect::new(x, y, sz, sz));
+        x += sz;
+        if i + 1 < total && !(has_sep && i + 1 == anchor_count) {
+            x += base_gap;
+        }
+    }
+    (shelf, sep_x, rects)
+}
+
 /// Bottom 4 DIP peek handle shown while tucked (`CHOSEN.md` §3).
 pub fn peek_rect(surf_w: f32) -> Rect {
     let w = PEEK_W.min((surf_w - 16.0).max(48.0));
@@ -161,19 +243,30 @@ pub fn peek_hit_rect(surf_w: f32) -> Rect {
 /// Layered hit-test mask for the dock window: strictly wraps the visible shelf
 /// capsule (or the tucked peek handle) so empty desktop areas stay click-through.
 pub fn hit_mask_for(surf_w: f32, count: usize, tucked: bool, tuck_t: f32) -> HitMask {
+    let r = shelf_rect(surf_w, count, tuck_t);
+    hit_mask_for_shelf(surf_w, r, 0.0, tucked, tuck_t)
+}
+
+fn hit_mask_for_shelf(surf_w: f32, shelf: Rect, lift: f32, tucked: bool, tuck_t: f32) -> HitMask {
     if tucked && tuck_t >= 0.85 {
         HitMask { rect: Some(peek_hit_rect(surf_w)), notch: None, pill: None }
     } else {
-        let r = shelf_rect(surf_w, count, tuck_t);
-        HitMask { rect: None, notch: None, pill: Some((r, SHELF_R.min(r.h * 0.5))) }
+        let lift = lift.max(0.0);
+        let r = Rect::new(shelf.x, (shelf.y - lift).max(0.0), shelf.w, shelf.h + lift);
+        HitMask { rect: None, notch: None, pill: Some((r, SHELF_R.min(shelf.h * 0.5))) }
     }
 }
 
+#[cfg(test)]
 fn slot_rect(shelf: Rect, index: usize, count: usize, surf_w: f32) -> Rect {
     let (slot, gap) = slot_metrics(surf_w, count);
     let x = shelf.x + SHELF_PAD_X + index as f32 * (slot + gap);
     let y = shelf.y + (shelf.h - slot) * 0.5;
     Rect::new(x, y, slot, slot)
+}
+
+fn mag_spring(value: f32) -> Spring {
+    Spring::new(value, 460.0, 38.0)
 }
 
 pub struct Dock {
@@ -187,6 +280,8 @@ pub struct Dock {
     fs_hidden: bool,
     tucked: bool,
     tuck: Spring,
+    apps: Vec<RunningApp>,
+    scales: Vec<Spring>,
     tracking: bool,
     mouse: Option<Point>,
     hovered: Option<usize>,
@@ -248,6 +343,8 @@ impl Dock {
             fs_hidden: false,
             tucked: false,
             tuck: Spring::smooth(0.0),
+            apps: Vec::new(),
+            scales: (0..ANCHOR_SLOTS.len()).map(|_| mag_spring(1.0)).collect(),
             tracking: false,
             mouse: None,
             hovered: None,
@@ -265,10 +362,88 @@ impl Dock {
         self.at.2 as f32 / self.scale().max(1.0)
     }
 
-    /// True only while a visual change or tuck animation needs vblank frames;
+    /// True only while a visual change, tuck, or magnification spring needs vblank frames;
     /// false at rest so `FrameClock` parks at 0% CPU.
     pub fn needs_frame(&self) -> bool {
-        !self.fs_hidden && (self.dirty || !self.tuck.is_settled_eps(TUCK_EPS))
+        !self.fs_hidden
+            && (self.dirty
+                || !self.tuck.is_settled_eps(TUCK_EPS)
+                || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS)))
+    }
+
+    pub fn total_slots(&self) -> usize {
+        ANCHOR_SLOTS.len() + self.apps.len()
+    }
+
+    /// Replace the running-apps slice; returns `true` only if the dock changed visually.
+    pub fn set_apps(&mut self, apps: Vec<RunningApp>) -> bool {
+        if self.apps.len() == apps.len() && self.apps.iter().zip(&apps).all(|(a, b)| a.visual_eq(b)) {
+            return false;
+        }
+        self.apps = apps;
+        let total = self.total_slots();
+        self.scales.resize_with(total, || mag_spring(1.0));
+        if self.hovered.is_some_and(|i| i >= total) {
+            self.hovered = None;
+        }
+        if self.pressed.is_some_and(|i| i != usize::MAX && i >= total) {
+            self.pressed = None;
+        }
+        self.update_mag_targets(false);
+        self.dirty = true;
+        true
+    }
+
+    fn current_scales(&self) -> Vec<f32> {
+        self.scales.iter().map(|s| s.value).collect()
+    }
+
+    fn reset_mag_targets(&mut self, instant: bool) {
+        for s in &mut self.scales {
+            if instant {
+                s.snap(1.0);
+            } else {
+                s.set_target(1.0);
+            }
+        }
+    }
+
+    fn update_mag_targets(&mut self, instant: bool) {
+        let total = self.total_slots();
+        self.scales.resize_with(total, || mag_spring(1.0));
+        if self.tucked || self.tuck.value >= 0.25 || self.fs_hidden {
+            self.reset_mag_targets(instant);
+            return;
+        }
+        let Some(p) = self.mouse else {
+            self.reset_mag_targets(instant);
+            return;
+        };
+        let sw = self.surf_w_dip();
+        let rest_scales = vec![1.0f32; total];
+        let (rest_shelf, _, rest_rects) =
+            layout_slots(sw, ANCHOR_SLOTS.len(), self.apps.len(), &rest_scales, self.tuck.value);
+        let active_band = Rect::new(
+            rest_shelf.x - 16.0,
+            (rest_shelf.y - 36.0).max(0.0),
+            rest_shelf.w + 32.0,
+            rest_shelf.h + 44.0,
+        );
+        if !active_band.contains(p) {
+            self.reset_mag_targets(instant);
+            return;
+        }
+        let has_sep = !self.apps.is_empty();
+        let (base_slot, base_gap) = slot_metrics_with_sep(sw, total, has_sep);
+        let step = base_slot + base_gap;
+        for (i, r) in rest_rects.iter().enumerate() {
+            let target = mag_scale(p.x - (r.x + r.w * 0.5), step);
+            if instant {
+                self.scales[i].snap(target);
+            } else {
+                self.scales[i].set_target(target);
+            }
+        }
     }
 
     pub fn set_monitor(&mut self, mon: &MonitorInfo, light: bool) {
@@ -296,6 +471,7 @@ impl Dock {
             self.hovered = None;
             self.pressed = None;
             self.tracking = false;
+            self.reset_mag_targets(true);
             if self.shown {
                 unsafe {
                     let _ = ShowWindow(self.hwnd, SW_HIDE);
@@ -339,6 +515,9 @@ impl Dock {
         }
         self.hovered = None;
         self.pressed = None;
+        if tucked {
+            self.reset_mag_targets(instant);
+        }
         self.mask = None;
         self.dirty = true;
     }
@@ -352,11 +531,9 @@ impl Dock {
             return None;
         }
         let sw = self.surf_w_dip();
-        let shelf = shelf_rect(sw, ANCHOR_SLOTS.len(), self.tuck.value);
-        if !shelf.contains(p) {
-            return None;
-        }
-        (0..ANCHOR_SLOTS.len()).find(|&i| slot_rect(shelf, i, ANCHOR_SLOTS.len(), sw).inset(-2.0, -4.0).contains(p))
+        let scales = self.current_scales();
+        let (_, _, rects) = layout_slots(sw, ANCHOR_SLOTS.len(), self.apps.len(), &scales, self.tuck.value);
+        rects.iter().position(|r| r.inset(-3.0, -6.0).contains(p))
     }
 
     pub fn handle_message(&mut self, hwnd: HWND, msg: u32, _wp: WPARAM, lp: LPARAM, instant: bool) -> (Option<LRESULT>, DockAction) {
@@ -388,10 +565,15 @@ impl Dock {
                     }
                 }
                 let p = to_dip(lp, self.scale());
+                let moved = self.mouse != Some(p);
                 self.mouse = Some(p);
                 let next_hover = self.slot_at(p);
-                if next_hover != self.hovered {
-                    self.hovered = next_hover;
+                let hover_changed = next_hover != self.hovered;
+                self.hovered = next_hover;
+                if moved && !self.tucked {
+                    self.update_mag_targets(instant);
+                }
+                if hover_changed || (moved && !self.tucked) {
                     self.dirty = true;
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
@@ -400,7 +582,10 @@ impl Dock {
             WM_MOUSELEAVE => {
                 self.tracking = false;
                 self.mouse = None;
-                if self.hovered.take().is_some() || self.pressed.take().is_some() {
+                let had_ui = self.hovered.take().is_some() || self.pressed.take().is_some();
+                let had_mag = self.scales.iter().any(|s| s.target > 1.0 + MAG_EPS || s.value > 1.0 + MAG_EPS);
+                self.reset_mag_targets(instant);
+                if had_ui || had_mag {
                     self.dirty = true;
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
@@ -435,12 +620,17 @@ impl Dock {
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
-                    let act = match ANCHOR_SLOTS[i].action {
-                        SlotAction::ToggleIsland => DockAction::ToggleIsland,
-                        SlotAction::Page(pk) => DockAction::OpenPage(pk),
-                        SlotAction::Settings => DockAction::OpenSettings,
-                    };
-                    return (Some(LRESULT(0)), act);
+                    if i < ANCHOR_SLOTS.len() {
+                        let act = match ANCHOR_SLOTS[i].action {
+                            SlotAction::ToggleIsland => DockAction::ToggleIsland,
+                            SlotAction::Page(pk) => DockAction::OpenPage(pk),
+                            SlotAction::Settings => DockAction::OpenSettings,
+                        };
+                        return (Some(LRESULT(0)), act);
+                    }
+                    if let Some(app) = self.apps.get(i - ANCHOR_SLOTS.len()) {
+                        return (Some(LRESULT(0)), DockAction::FocusWindow(app.hwnd));
+                    }
                 }
                 (Some(LRESULT(0)), DockAction::RequestFrame)
             }
@@ -482,8 +672,14 @@ impl Dock {
         }
         if instant {
             self.tuck.snap(self.tuck.target);
+            for s in &mut self.scales {
+                s.snap(s.target);
+            }
         } else {
             self.tuck.step_eps(dt, TUCK_EPS);
+            for s in &mut self.scales {
+                s.step_eps(dt, MAG_EPS);
+            }
         }
         let (x, y, w, h) = self.at;
         let surf_w = self.surf_w_dip();
@@ -491,6 +687,9 @@ impl Dock {
         let light = self.light;
         let hovered = self.hovered;
         let pressed = self.pressed;
+        let scales = self.current_scales();
+        let (shelf, sep_x, slot_rects) = layout_slots(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), &scales, tuck_t);
+        let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
 
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -504,7 +703,7 @@ impl Dock {
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         match gfx.begin(full) {
             Ok(mut c) => {
-                draw_dock(&mut c, surf_w, light, tuck_t, hovered, pressed);
+                draw_dock(&mut c, surf_w, light, tuck_t, shelf, sep_x, &slot_rects, &self.apps, hovered, pressed);
                 if let Err(e) = gfx.end() {
                     crate::pwarn!("dock: EndDraw failed ({e})");
                 }
@@ -526,8 +725,9 @@ impl Dock {
         }
 
         if gfx.needs_hit_mask() {
-            let mask = hit_mask_for(surf_w, ANCHOR_SLOTS.len(), self.tucked, tuck_t);
-            let settled = self.tuck.is_settled_eps(TUCK_EPS);
+            let mask = hit_mask_for_shelf(surf_w, shelf, max_lift, self.tucked, tuck_t);
+            let settled = self.tuck.is_settled_eps(TUCK_EPS)
+                && self.scales.iter().all(|s| s.is_settled_eps(MAG_EPS));
             let due = match &self.mask {
                 None => true,
                 Some((m, at)) => *m != mask && (settled || now - at >= MASK_INTERVAL),
@@ -556,12 +756,22 @@ impl Dock {
     }
 }
 
-fn draw_dock(c: &mut Canvas<'_>, surf_w: f32, light: bool, tuck_t: f32, hovered: Option<usize>, pressed: Option<usize>) {
+fn draw_dock(
+    c: &mut Canvas<'_>,
+    surf_w: f32,
+    light: bool,
+    tuck_t: f32,
+    shelf: Rect,
+    sep_x: Option<f32>,
+    slot_rects: &[Rect],
+    apps: &[RunningApp],
+    hovered: Option<usize>,
+    pressed: Option<usize>,
+) {
     c.unthemed(|c| {
         if tuck_t < 0.995 {
             let alpha = (1.0 - tuck_t).clamp(0.0, 1.0);
             c.with_alpha(alpha, |c| {
-                let shelf = shelf_rect(surf_w, ANCHOR_SLOTS.len(), tuck_t);
                 let r = SHELF_R.min(shelf.h * 0.5);
                 c.rrect_shadow(shelf, r, Color::black(1.0), SHELF_SHADOW);
                 let ground = if light {
@@ -573,12 +783,15 @@ fn draw_dock(c: &mut Canvas<'_>, surf_w: f32, light: bool, tuck_t: f32, hovered:
                 c.fill_rrect(shelf, r, ground);
                 c.stroke_rrect(shelf, r, rim, 1.0);
 
+                let dot_y = shelf.bottom() - 4.0;
+                let dot_ink = if light { Color::hex(0x1C1C1E) } else { Color::white(1.0) };
+
                 for (i, slot) in ANCHOR_SLOTS.iter().enumerate() {
-                    let sr = slot_rect(shelf, i, ANCHOR_SLOTS.len(), surf_w);
+                    let Some(&sr) = slot_rects.get(i) else { continue };
                     let is_hover = hovered == Some(i);
                     let is_press = pressed == Some(i);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
-                    let tr = (tile.w * 0.26).clamp(8.0, 12.0);
+                    let tr = (tile.w * 0.26).clamp(8.0, 16.0);
                     let fill_a = if is_press { 0.30 } else if is_hover { 0.24 } else { 0.15 };
                     c.fill_rrect(tile, tr, slot.accent.with_alpha(fill_a));
                     let tile_rim = if is_hover {
@@ -595,34 +808,92 @@ fn draw_dock(c: &mut Canvas<'_>, surf_w: f32, light: bool, tuck_t: f32, hovered:
                     c.icon(slot.icon, icon_box, icon_ink);
 
                     if slot.active {
-                        let dot_y = shelf.bottom() - 4.0;
-                        let dot_c = if light { Color::hex(0x1C1C1E).with_alpha(0.75) } else { Color::white(0.85) };
-                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.0, dot_c);
+                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.0, dot_ink.with_alpha(0.82));
                     }
                 }
 
-                if let Some(i) = hovered.filter(|&i| i < ANCHOR_SLOTS.len()) {
-                    let label = ANCHOR_SLOTS[i].label;
-                    let sr = slot_rect(shelf, i, ANCHOR_SLOTS.len(), surf_w);
-                    let st = TextStyle::caption()
-                        .weight(Weight::Medium)
-                        .center()
-                        .color(if light { Color::hex(0x1C1C1E) } else { palette::TEXT });
-                    let (tw, _) = c.measure(label, &st, 220.0);
-                    let pw = (tw + 18.0).max(52.0);
-                    let ph = 24.0;
-                    let px = (sr.x + sr.w * 0.5 - pw * 0.5).clamp(4.0, (surf_w - pw - 4.0).max(4.0));
-                    let py = (shelf.y - ph - 8.0).max(2.0);
-                    let pill = Rect::new(px, py, pw, ph);
-                    let tip_bg = if light {
-                        Color::rgba(0.97, 0.97, 0.99, 0.94)
+                if let Some(sx) = sep_x {
+                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
+                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
+                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
+                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                }
+
+                for (j, app) in apps.iter().enumerate() {
+                    let idx = ANCHOR_SLOTS.len() + j;
+                    let Some(&sr) = slot_rects.get(idx) else { continue };
+                    let is_hover = hovered == Some(idx);
+                    let is_press = pressed == Some(idx);
+                    let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
+                    let tr = (tile.w * 0.24).clamp(7.0, 15.0);
+                    let tile_alpha = if app.minimized { 0.68 } else { 1.0 };
+
+                    c.with_alpha(tile_alpha, |c| {
+                        let back = if is_hover {
+                            if light { Color::black(0.09) } else { Color::white(0.16) }
+                        } else if app.focused {
+                            if light { Color::black(0.06) } else { Color::white(0.11) }
+                        } else if app.icon.is_some() {
+                            if light { Color::black(0.03) } else { Color::white(0.05) }
+                        } else if light {
+                            Color::black(0.08)
+                        } else {
+                            Color::white(0.12)
+                        };
+                        c.fill_rrect(tile, tr, back);
+                        if let Some(img) = app.icon.as_ref() {
+                            let img_box = tile.inset(tile.w * 0.10, tile.h * 0.10);
+                            c.image(img, img_box, (tr - 2.0).max(4.0));
+                        } else {
+                            let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+                            let icon_ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
+                            c.icon(Icon::AppWindow, icon_box, icon_ink);
+                        }
+                        if is_hover || app.focused {
+                            let r_c = if is_hover {
+                                Color::hex(0x0A84FF).with_alpha(0.55)
+                            } else if light {
+                                Color::black(0.12)
+                            } else {
+                                Color::white(0.22)
+                            };
+                            c.stroke_rrect(tile, tr, r_c, 1.0);
+                        }
+                    });
+
+                    // Active running-app indicator dot (focused = brighter & slightly larger).
+                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.5 } else { 1.8 };
+                    let dot_a = if app.focused { 0.95 } else if app.minimized { 0.42 } else { 0.72 };
+                    c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink.with_alpha(dot_a));
+                }
+
+                if let Some(i) = hovered {
+                    let label = if i < ANCHOR_SLOTS.len() {
+                        Some(ANCHOR_SLOTS[i].label)
                     } else {
-                        Color::rgba(0.14, 0.15, 0.18, 0.94)
+                        apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
                     };
-                    let tip_rim = if light { Color::black(0.10) } else { Color::white(0.14) };
-                    c.fill_rrect(pill, ph * 0.5, tip_bg);
-                    c.stroke_rrect(pill, ph * 0.5, tip_rim, 1.0);
-                    c.text(label, pill, &st);
+                    if let (Some(label), Some(&sr)) = (label, slot_rects.get(i)) {
+                        let st = TextStyle::caption()
+                            .weight(Weight::Medium)
+                            .center()
+                            .color(if light { Color::hex(0x1C1C1E) } else { palette::TEXT });
+                        let (tw, _) = c.measure(label, &st, 220.0);
+                        let pw = (tw + 18.0).max(52.0);
+                        let ph = 24.0;
+                        let px = (sr.x + sr.w * 0.5 - pw * 0.5).clamp(4.0, (surf_w - pw - 4.0).max(4.0));
+                        let py = (sr.y.min(shelf.y) - ph - 8.0).max(2.0);
+                        let pill = Rect::new(px, py, pw, ph);
+                        let tip_bg = if light {
+                            Color::rgba(0.97, 0.97, 0.99, 0.94)
+                        } else {
+                            Color::rgba(0.14, 0.15, 0.18, 0.94)
+                        };
+                        let tip_rim = if light { Color::black(0.10) } else { Color::white(0.14) };
+                        c.fill_rrect(pill, ph * 0.5, tip_bg);
+                        c.stroke_rrect(pill, ph * 0.5, tip_rim, 1.0);
+                        c.text(label, pill, &st);
+                    }
                 }
             });
         }
@@ -756,5 +1027,34 @@ mod tests {
 
         drop(dock);
         assert!(!unsafe { IsWindow(hwnd).as_bool() }, "dropping dock must destroy HWND");
+    }
+
+    #[test]
+    fn parabolic_magnification_is_symmetric_peaked_and_bounded() {
+        let step = SLOT_MAX + SLOT_GAP;
+        assert!((mag_scale(0.0, step) - MAX_MAG).abs() < 1e-4);
+        assert!((mag_scale(step, step) - mag_scale(-step, step)).abs() < 1e-5);
+        assert!(mag_scale(0.0, step) > mag_scale(step, step));
+        assert!(mag_scale(step, step) > mag_scale(2.0 * step, step));
+        assert_eq!(mag_scale(MAG_RADIUS_SLOTS * step + 1.0, step), 1.0);
+    }
+
+    #[test]
+    fn magnified_layout_stays_within_surface_at_thirty_items() {
+        for dpi in [96u32, 120u32] {
+            let m = mon(1920, 1080, 1080, dpi);
+            let (_, _, w, _) = surface_rect(&m);
+            let surf_w = w as f32 / m.scale();
+            let mut scales = vec![1.0f32; 30];
+            scales[15] = MAX_MAG;
+            scales[14] = 1.28;
+            scales[16] = 1.28;
+            let (shelf, sep_x, rects) = layout_slots(surf_w, 5, 25, &scales, 0.0);
+            assert!(sep_x.is_some());
+            assert!(shelf.x >= 0.0 && shelf.right() <= surf_w, "dpi {dpi}: shelf {shelf:?} > {surf_w}");
+            assert_eq!(rects.len(), 30);
+            assert!(rects[15].y < rects[0].y, "magnified slot must grow upward");
+            assert!(rects[29].right() <= shelf.right() - SHELF_PAD_X + 0.5);
+        }
     }
 }
