@@ -82,3 +82,6 @@
 {"id": "dock-phase-3-parabolic-magnification-and", "ev": "open", "title": "Dock Phase 3: Parabolic magnification and running apps", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795625782}
 {"id": "dock-phase-3-parabolic-magnification-and", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-3-parabolic-magnification-and", "who": "ag", "ts": 1795625782}
 {"id": "dock-phase-3-parabolic-magnification-and", "ev": "done", "owner": "ag", "who": "ag", "commit": "5df4bcb", "note": "Parabolic magnification springs, SetWinEventHook running apps watcher with cached icons and active dots, click-to-focus", "ts": 1795625782}
+{"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "open", "title": "Dock Phase 4: Stacks, Downloads, and Genie effect", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795625981}
+{"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-4-stacks-downloads-and-genie-", "who": "ag", "ts": 1795625988}
+{"id": "dock-phase-4-stacks-downloads-and-genie-", "ev": "done", "owner": "ag", "who": "ag", "commit": "160010b", "note": "Added Downloads stack popover (lazy scan, 0 idle cost) and transient 72-slice S-curve Genie minimize/restore overlay", "ts": 1795626322}
