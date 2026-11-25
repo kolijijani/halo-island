@@ -220,6 +220,16 @@
 
   var genieCanvas = document.getElementById("genie-canvas");
   var gctx = genieCanvas.getContext("2d");
+  var lastDirty = null;
+
+  function clearGenieDirty() {
+    if (lastDirty) {
+      gctx.clearRect(lastDirty[0], lastDirty[1], lastDirty[2], lastDirty[3]);
+      lastDirty = null;
+    } else {
+      gctx.clearRect(0, 0, genieCanvas.width, genieCanvas.height);
+    }
+  }
 
   function buildWindowSnapshot(winEl, app) {
     var w = Math.max(200, Math.round(winEl.offsetWidth));
@@ -272,34 +282,47 @@
     if (genieCanvas.width !== pm.width || genieCanvas.height !== pm.height) {
       genieCanvas.width = pm.width;
       genieCanvas.height = pm.height;
+      lastDirty = null;
     }
-    gctx.clearRect(0, 0, genieCanvas.width, genieCanvas.height);
-    var slices = 30;
-    var ease = function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
-    var slidePhase = Math.max(0, Math.min(1, (p - 0.14) / 0.86));
-    var topY = sy + (ty - sy) * ease(slidePhase);
-    var botY = sy + sh + (ty - (sy + sh)) * ease(Math.min(1, p * 1.38));
-    var pinchStrength = ease(Math.min(1, p * 1.25));
+    clearGenieDirty();
 
+    var slices = 72;
+    var smooth = function (t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+    // Continuous motion from frame 1 (no initial freeze):
+    // bottom edge reaches dock quickly while top glides down smoothly along the S-curve funnel
+    var pinchT = smooth(p / 0.58);
+    var botT = smooth(p / 0.65);
+    var topT = smooth(Math.max(0, (p - 0.06) / 0.94));
+    var topY = sy + (ty - sy) * (topT * topT * 0.72 + topT * 0.28);
+    var botY = (sy + sh) + (ty - (sy + sh)) * botT;
+    var totalH = Math.max(2, botY - topY);
+
+    var minX = 1e9, maxX = -1e9;
     gctx.save();
-    gctx.globalAlpha = Math.max(0, 1 - Math.max(0, p - 0.84) / 0.16);
+    gctx.imageSmoothingEnabled = true;
+    gctx.globalAlpha = p > 0.88 ? Math.max(0, (1 - p) / 0.12) : 1;
+
+    var srcSliceH = snap.height / slices;
     for (var i = 0; i < slices; i++) {
-      var u0 = i / slices;
-      var u1 = (i + 1) / slices;
-      var y0 = topY + (botY - topY) * u0;
-      var y1 = topY + (botY - topY) * u1;
-      var sliceH = Math.max(1, y1 - y0 + 0.6);
-      // macOS S-curve funnel: bottom pinches into icon width first, top follows smoothly
-      var curve = Math.pow(u0, 1.45) * pinchStrength + (1 - Math.pow(u0, 1.45)) * Math.pow(slidePhase, 1.6);
-      var l = sx + (tx - 16 - sx) * curve;
-      var r = (sx + sw) + (tx + 16 - (sx + sw)) * curve;
-      gctx.drawImage(snap, 0, u0 * snap.height, snap.width, snap.height / slices, l, y0, Math.max(4, r - l), sliceH);
+      var u = i / slices;
+      var y = topY + totalH * u;
+      var dy = (totalH / slices) + 0.85;
+      // Cosine S-curve funnel along the screen vertical span from sy..ty
+      var vy = Math.max(0, Math.min(1, (y - sy) / Math.max(1, ty - sy)));
+      var sCurve = 0.5 - 0.5 * Math.cos(Math.PI * vy);
+      var k = sCurve * pinchT;
+      var l = sx + (tx - 18 - sx) * k;
+      var r = (sx + sw) + (tx + 18 - (sx + sw)) * k;
+      if (l < minX) minX = l;
+      if (r > maxX) maxX = r;
+      gctx.drawImage(snap, 0, i * srcSliceH, snap.width, srcSliceH, l, y, Math.max(4, r - l), dy);
     }
     gctx.restore();
+    lastDirty = [Math.max(0, Math.floor(minX) - 4), Math.max(0, Math.floor(topY) - 4), Math.ceil(maxX - minX) + 8, Math.ceil(totalH) + 8];
   }
 
   function runGenie(slug, winEl, restore, fixedProgress) {
-    if (!winEl) return;
+    if (!winEl || state.genieBusy) return;
     var app = apps.find(function (a) { return a.slug === slug; });
     var sx = winEl.offsetLeft, sy = winEl.offsetTop, sw = winEl.offsetWidth, sh = winEl.offsetHeight;
     var snap = buildWindowSnapshot(winEl, app);
@@ -312,8 +335,9 @@
     }
 
     state.genieBusy = true;
+    winEl.style.transition = "none";
     winEl.style.visibility = "hidden";
-    var dur = 310;
+    var dur = 420;
     var t0 = performance.now();
     function step(now) {
       var raw = Math.min(1, (now - t0) / dur);
@@ -322,8 +346,7 @@
       if (raw < 1) {
         requestAnimationFrame(step);
       } else {
-        gctx.clearRect(0, 0, genieCanvas.width, genieCanvas.height);
-        winEl.style.visibility = "";
+        clearGenieDirty();
         if (restore) {
           winEl.classList.remove("minimized");
           if (app) desk.focusOrLaunchApp(app);
@@ -332,6 +355,8 @@
           winEl.classList.add("minimized");
           DockDesktop.toast("Genie minimized " + (app ? app.name : slug) + " into shelf — click icon to restore.");
         }
+        winEl.style.visibility = "";
+        requestAnimationFrame(function () { winEl.style.transition = ""; });
         state.genieBusy = false;
       }
     }
