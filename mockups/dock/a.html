@@ -148,6 +148,14 @@
 #dock-a-peek.visible {
   display: flex;
 }
+#genie-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 68;
+}
 </style>
 </head>
 <body>
@@ -157,6 +165,7 @@
       <div class="wall-grid"></div>
       <div id="halo-notch-wrap"></div>
       <div id="windows-layer"></div>
+      <canvas id="genie-canvas" width="1920" height="1080"></canvas>
       <div id="fs-surface"></div>
 
       <!-- QA & State Chips -->
@@ -196,17 +205,143 @@
 <script src="shared.js"></script>
 <script>
 (function () {
-  var state = { mode: "idle", activeSlug: "antigravity", hoverX: null, pinnedHoverIdx: null, userHidden: false };
+  var state = { mode: "idle", activeSlug: "antigravity", hoverX: null, pinnedHoverIdx: null, userHidden: false, genieBusy: false };
   var apps = DockDesktop.cloneApps("idle");
 
   var desk = DockDesktop.buildBaseShell({
     onFocusApp: function (slug) { state.activeSlug = slug; syncDots(); },
+    onMinimizeWindow: function (slug, winEl) { runGenie(slug, winEl, false); },
     onCloseWindow: function (slug) {
       var a = apps.find(function (x) { return x.slug === slug; });
       if (a) a.running = false;
       syncDots();
     }
   });
+
+  var genieCanvas = document.getElementById("genie-canvas");
+  var gctx = genieCanvas.getContext("2d");
+
+  function buildWindowSnapshot(winEl, app) {
+    var w = Math.max(200, Math.round(winEl.offsetWidth));
+    var h = Math.max(120, Math.round(winEl.offsetHeight));
+    var off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    var c = off.getContext("2d");
+    var light = stage.dataset.wall === "light";
+    c.fillStyle = light ? "#f8fafd" : "#121722";
+    c.beginPath();
+    c.roundRect(0, 0, w, h, 10);
+    c.fill();
+    c.strokeStyle = light ? "rgba(15,23,38,0.22)" : "rgba(110,178,255,0.38)";
+    c.lineWidth = 2;
+    c.stroke();
+    c.fillStyle = light ? "rgba(15,23,38,0.06)" : "rgba(255,255,255,0.05)";
+    c.fillRect(1, 1, w - 2, 34);
+    c.fillStyle = light ? "#182030" : "#e3e9f5";
+    c.font = '500 12px "Outfit","Segoe UI",sans-serif';
+    var titleEl = winEl.querySelector(".win-title");
+    c.fillText(titleEl ? titleEl.textContent.slice(0, 62) : (app ? app.name : "Window"), 34, 21);
+    var imgEl = winEl.querySelector(".win-bar img");
+    if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+      c.drawImage(imgEl, 11, 9, 16, 16);
+    }
+    c.fillStyle = light ? "rgba(24,32,48,0.12)" : "rgba(220,232,250,0.11)";
+    for (var row = 0; row < 8; row++) {
+      var rw = ((row * 137 + 210) % Math.max(120, w - 120)) + 80;
+      c.fillRect(20, 56 + row * 24, Math.min(rw, w - 40), 9);
+    }
+    return off;
+  }
+
+  function targetIconCoords(slug) {
+    var pm = DockDesktop.planeMetrics();
+    var fit = document.getElementById("viewport-fit").getBoundingClientRect();
+    var totalScale = (fit.width / 1920) * pm.scale;
+    var btn = shelf.querySelector('.dock-slot[data-slug="' + slug + '"]') || shelf.firstElementChild;
+    if (!btn) return { x: pm.width / 2, y: pm.height - 28 };
+    var r = btn.getBoundingClientRect();
+    return {
+      x: (r.left + r.width / 2 - fit.left) / totalScale,
+      y: (r.top + r.height * 0.45 - fit.top) / totalScale
+    };
+  }
+
+  function drawGenieFrame(snap, sx, sy, sw, sh, tx, ty, p) {
+    var pm = DockDesktop.planeMetrics();
+    if (genieCanvas.width !== pm.width || genieCanvas.height !== pm.height) {
+      genieCanvas.width = pm.width;
+      genieCanvas.height = pm.height;
+    }
+    gctx.clearRect(0, 0, genieCanvas.width, genieCanvas.height);
+    var slices = 30;
+    var ease = function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+    var slidePhase = Math.max(0, Math.min(1, (p - 0.14) / 0.86));
+    var topY = sy + (ty - sy) * ease(slidePhase);
+    var botY = sy + sh + (ty - (sy + sh)) * ease(Math.min(1, p * 1.38));
+    var pinchStrength = ease(Math.min(1, p * 1.25));
+
+    gctx.save();
+    gctx.globalAlpha = Math.max(0, 1 - Math.max(0, p - 0.84) / 0.16);
+    for (var i = 0; i < slices; i++) {
+      var u0 = i / slices;
+      var u1 = (i + 1) / slices;
+      var y0 = topY + (botY - topY) * u0;
+      var y1 = topY + (botY - topY) * u1;
+      var sliceH = Math.max(1, y1 - y0 + 0.6);
+      // macOS S-curve funnel: bottom pinches into icon width first, top follows smoothly
+      var curve = Math.pow(u0, 1.45) * pinchStrength + (1 - Math.pow(u0, 1.45)) * Math.pow(slidePhase, 1.6);
+      var l = sx + (tx - 16 - sx) * curve;
+      var r = (sx + sw) + (tx + 16 - (sx + sw)) * curve;
+      gctx.drawImage(snap, 0, u0 * snap.height, snap.width, snap.height / slices, l, y0, Math.max(4, r - l), sliceH);
+    }
+    gctx.restore();
+  }
+
+  function runGenie(slug, winEl, restore, fixedProgress) {
+    if (!winEl) return;
+    var app = apps.find(function (a) { return a.slug === slug; });
+    var sx = winEl.offsetLeft, sy = winEl.offsetTop, sw = winEl.offsetWidth, sh = winEl.offsetHeight;
+    var snap = buildWindowSnapshot(winEl, app);
+    var tgt = targetIconCoords(slug);
+
+    if (typeof fixedProgress === "number") {
+      winEl.style.visibility = "hidden";
+      drawGenieFrame(snap, sx, sy, sw, sh, tgt.x, tgt.y, fixedProgress);
+      return;
+    }
+
+    state.genieBusy = true;
+    winEl.style.visibility = "hidden";
+    var dur = 310;
+    var t0 = performance.now();
+    function step(now) {
+      var raw = Math.min(1, (now - t0) / dur);
+      var p = restore ? (1 - raw) : raw;
+      drawGenieFrame(snap, sx, sy, sw, sh, tgt.x, tgt.y, p);
+      if (raw < 1) {
+        requestAnimationFrame(step);
+      } else {
+        gctx.clearRect(0, 0, genieCanvas.width, genieCanvas.height);
+        winEl.style.visibility = "";
+        if (restore) {
+          winEl.classList.remove("minimized");
+          if (app) desk.focusOrLaunchApp(app);
+          DockDesktop.toast("Genie restored " + (app ? app.name : slug) + " from shelf.");
+        } else {
+          winEl.classList.add("minimized");
+          DockDesktop.toast("Genie minimized " + (app ? app.name : slug) + " into shelf — click icon to restore.");
+        }
+        state.genieBusy = false;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+  window.__genieMidframe = function (slug, progress) {
+    var wl = document.getElementById("windows-layer");
+    var w = wl.querySelector('.desk-win[data-app="' + (slug || "antigravity") + '"]');
+    if (w) runGenie(slug || "antigravity", w, false, typeof progress === "number" ? progress : 0.48);
+  };
 
   var shelf = document.getElementById("dock-a-shelf");
   var wrap = document.getElementById("dock-a-wrap");
@@ -258,11 +393,24 @@
 
       btn.addEventListener("click", function () {
         closeMenu();
+        var wl = document.getElementById("windows-layer");
+        var existing = wl.querySelector('.desk-win[data-app="' + app.slug + '"]');
+        if (existing && !existing.classList.contains("minimized") && state.activeSlug === app.slug) {
+          runGenie(app.slug, existing, false);
+          return;
+        }
+        if (existing && existing.classList.contains("minimized")) {
+          state.activeSlug = app.slug;
+          app.running = true;
+          syncDots();
+          runGenie(app.slug, existing, true);
+          return;
+        }
         app.running = true;
         state.activeSlug = app.slug;
         desk.focusOrLaunchApp(app);
         syncDots();
-        DockDesktop.toast((app.running ? "Focused " : "Launched ") + app.name + " (" + app.exe + ")");
+        DockDesktop.toast("Focused " + app.name + " (" + app.exe + ") — click again or ─ for Genie minimize.");
       });
 
       btn.addEventListener("focus", function () {

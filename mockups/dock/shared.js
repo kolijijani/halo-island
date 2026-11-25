@@ -117,8 +117,12 @@ window.DockDesktop = (function () {
           var act = b.dataset.winAct;
           var slug = w.dataset.app;
           if (act === "min") {
-            w.classList.add("minimized");
-            toast("Minimized " + slug + " — click its dock icon to restore.");
+            if (opts.onMinimizeWindow) {
+              opts.onMinimizeWindow(slug, w);
+            } else {
+              w.classList.add("minimized");
+              toast("Minimized " + slug + " — click its dock icon to restore.");
+            }
           } else if (act === "close") {
             w.classList.add("minimized");
             if (opts.onCloseWindow) opts.onCloseWindow(slug);
@@ -191,7 +195,10 @@ window.DockDesktop = (function () {
             '<div style="font-size:12px;opacity:0.72">' + escapeHtml(app.exe) + '</div></div></div>' +
             '<div class="file-row"><span>Process image</span><span>' + escapeHtml(app.exe) + '</span></div>' +
             '<div class="file-row"><span>Activation</span><span>SetForegroundWindow / SW_RESTORE</span></div></div>';
-          dyn.querySelector("#dyn-min").onclick = function () { dyn.classList.add("minimized"); };
+          dyn.querySelector("#dyn-min").onclick = function () {
+            if (opts.onMinimizeWindow) opts.onMinimizeWindow(app.slug, dyn);
+            else dyn.classList.add("minimized");
+          };
           dyn.querySelector("#dyn-close").onclick = function () {
             dyn.classList.add("minimized");
             if (opts.onCloseWindow) opts.onCloseWindow(app.slug);
