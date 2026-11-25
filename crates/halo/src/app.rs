@@ -1866,6 +1866,7 @@ impl App {
     }
 
     fn dock_tray_state(&self) -> crate::dock::DockTrayState {
+        let dl_pill = self.st.downloads.pill();
         crate::dock::DockTrayState {
             hour: self.st.local.hour,
             minute: self.st.local.minute,
@@ -1878,6 +1879,12 @@ impl App {
             charging: self.st.power.charging,
             on_ac: self.st.power.on_ac,
             wifi_connected: self.wifi_connected,
+            tasks_open: self.st.store.tasks.open_count().min(u16::MAX as usize) as u16,
+            shelf_count: self.st.store.shelf.items.len().min(u16::MAX as usize) as u16,
+            downloads_active: dl_pill.as_ref().map_or(0, |p| p.count.min(u16::MAX as usize) as u16),
+            download_progress: dl_pill
+                .and_then(|p| p.fraction)
+                .map(|f| (f.clamp(0.0, 1.0) * 100.0).round() as u8),
         }
     }
 
@@ -1946,6 +1953,27 @@ impl App {
         match act {
             crate::dock::DockAction::None => {}
             crate::dock::DockAction::RequestFrame => self.request_frame(),
+            crate::dock::DockAction::OpenLaunchpad => {
+                self.close_dock_stack();
+                unsafe {
+                    use windows::Win32::UI::Input::KeyboardAndMouse::{
+                        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN,
+                    };
+                    let inputs = [
+                        INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_LWIN, ..Default::default() } },
+                        },
+                        INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 {
+                                ki: KEYBDINPUT { wVk: VK_LWIN, dwFlags: KEYEVENTF_KEYUP, ..Default::default() },
+                            },
+                        },
+                    ];
+                    let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                }
+            }
             crate::dock::DockAction::ToggleIsland => {
                 self.close_dock_stack();
                 if self.expanded {
@@ -3103,8 +3131,14 @@ impl App {
             AppEvent::Notify(ev) => self.on_notify(ev),
             AppEvent::Usage(ev) => self.on_usage(ev),
             AppEvent::AdzanEnded => self.adzan_ended(),
-            AppEvent::Download { id, line } => self.download_line(id, line),
-            AppEvent::DownloadEnded { id, ok } => self.download_ended(id, ok),
+            AppEvent::Download { id, line } => {
+                self.download_line(id, line);
+                self.sync_dock_tray();
+            }
+            AppEvent::DownloadEnded { id, ok } => {
+                self.download_ended(id, ok);
+                self.sync_dock_tray();
+            }
             AppEvent::Log(s) => pinfo!("{s}"),
         }
         if let Some(before) = media_before {

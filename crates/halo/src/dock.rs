@@ -148,6 +148,10 @@ pub struct DockTrayState {
     pub charging: bool,
     pub on_ac: bool,
     pub wifi_connected: Option<bool>,
+    pub tasks_open: u16,
+    pub shelf_count: u16,
+    pub downloads_active: u16,
+    pub download_progress: Option<u8>,
 }
 
 impl DockTrayState {
@@ -198,6 +202,7 @@ pub enum DockCmd {
 pub enum DockAction {
     None,
     RequestFrame,
+    OpenLaunchpad,
     ToggleIsland,
     OpenPage(PageKind),
     OpenSettings,
@@ -215,14 +220,16 @@ struct AnchorSlot {
     active: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum SlotAction {
+    Launchpad,
     ToggleIsland,
     Page(PageKind),
     Settings,
 }
 
 const ANCHOR_SLOTS: &[AnchorSlot] = &[
+    AnchorSlot { icon: Icon::AppWindow, label: "Launchpad & Search", accent: Color::hex(0x38BDF8), action: SlotAction::Launchpad, active: false },
     AnchorSlot { icon: Icon::AppWindow, label: "Halo Island", accent: Color::hex(0x0A84FF), action: SlotAction::ToggleIsland, active: true },
     AnchorSlot { icon: Icon::Tray, label: "Shelf", accent: Color::hex(0x5E5CE6), action: SlotAction::Page(PageKind::Shelf), active: false },
     AnchorSlot { icon: Icon::ListChecks, label: "Tasks", accent: Color::hex(0x30D158), action: SlotAction::Page(PageKind::Tasks), active: false },
@@ -939,6 +946,7 @@ impl Dock {
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
                     if i < ANCHOR_SLOTS.len() {
                         let act = match ANCHOR_SLOTS[i].action {
+                            SlotAction::Launchpad => DockAction::OpenLaunchpad,
                             SlotAction::ToggleIsland => DockAction::ToggleIsland,
                             SlotAction::Page(pk) => DockAction::OpenPage(pk),
                             SlotAction::Settings => DockAction::OpenSettings,
@@ -1206,6 +1214,136 @@ fn draw_liquid_glass_shelf(c: &mut Canvas<'_>, surf_w: f32, shelf: Rect, r: f32,
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DockBadgeStyle {
+    Red,
+    Blue,
+}
+
+/// Whether a running app key belongs to a known desktop browser (for download progress ring).
+pub fn is_browser_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    matches!(
+        k.as_str(),
+        "chrome" | "msedge" | "firefox" | "brave" | "opera" | "vivaldi" | "arc" | "zen" | "chromium"
+    )
+}
+
+/// Compute the notification badge pill rectangle anchored at the top-right corner of a tile.
+pub fn badge_rect(tile: Rect, count: u16) -> Rect {
+    let h = 16.0f32.min((tile.h * 0.42).max(13.0));
+    let w = if count >= 100 {
+        h + 10.0
+    } else if count >= 10 {
+        h + 5.0
+    } else {
+        h
+    };
+    Rect::new(tile.right() - w + 3.0, tile.y - 3.0, w, h)
+}
+
+/// Radius of the circular download progress ring wrapped around a dock tile.
+pub fn progress_ring_radius(tile: Rect) -> f32 {
+    tile.w * 0.5 + 3.0
+}
+
+fn draw_squircle_shadow(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool) {
+    let a1 = if light { 0.14 } else { 0.34 };
+    let a2 = if light { 0.06 } else { 0.16 };
+    c.fill_rrect(Rect::new(tile.x, tile.y + 3.0, tile.w, tile.h), tr, Color::black(a1));
+    c.fill_rrect(Rect::new(tile.x - 1.0, tile.y + 5.0, tile.w + 2.0, tile.h + 1.0), tr + 1.0, Color::black(a2));
+}
+
+fn draw_active_dot(c: &mut Canvas<'_>, center: Point, radius: f32, ink: Color, alpha: f32) {
+    c.fill_circle(center, radius * 2.1, ink.with_alpha(alpha * 0.24));
+    c.fill_circle(center, radius, ink.with_alpha(alpha));
+}
+
+/// Draw the 9-dot colorful Launchpad squircle icon (3×3 rounded squares matching the mockup).
+fn draw_launchpad_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is_hover: bool) {
+    const DOTS: [u32; 9] = [
+        0x38BDF8, 0xF5A524, 0x4ADE80,
+        0xF43F5E, 0xA78BFA, 0x2DD4BF,
+        0xFBBF24, 0x60A5FA, 0xE879F9,
+    ];
+    let bg = if light {
+        Color::rgba(0.92, 0.94, 0.98, 0.94)
+    } else {
+        Color::hex(0x131D2E).with_alpha(0.96)
+    };
+    c.fill_rrect(tile, tr, bg);
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(
+        &tile_segs,
+        Color::white(1.0),
+        tile.y,
+        tile.y + tile.h * 0.55,
+        if light { 0.36 } else { 0.18 },
+        0.0,
+    );
+    let rim = if is_hover {
+        Color::hex(0x38BDF8).with_alpha(0.75)
+    } else if light {
+        Color::black(0.14)
+    } else {
+        Color::white(0.24)
+    };
+    c.stroke_rrect(tile, tr, rim, 1.1);
+
+    let pad = tile.w * 0.17;
+    let inner = (tile.w - pad * 2.0).max(6.0);
+    let gap = inner * 0.13;
+    let cell = ((inner - gap * 2.0) / 3.0).max(2.0);
+    let cell_r = (cell * 0.30).clamp(1.2, 3.5);
+    for (idx, &hex) in DOTS.iter().enumerate() {
+        let row = (idx / 3) as f32;
+        let col = (idx % 3) as f32;
+        let x = tile.x + pad + col * (cell + gap);
+        let y = tile.y + pad + row * (cell + gap);
+        c.fill_rrect(Rect::new(x, y, cell, cell), cell_r, Color::hex(hex));
+    }
+}
+
+/// Draw a macOS-style top-right notification badge pill (`.dock-badge` / `.dock-badge.blue`).
+fn draw_dock_badge(c: &mut Canvas<'_>, tile: Rect, count: u16, style: DockBadgeStyle) {
+    if count == 0 {
+        return;
+    }
+    let br = badge_rect(tile, count);
+    let r = br.h * 0.5;
+    let (base, glow) = match style {
+        DockBadgeStyle::Red => (Color::hex(0xE62E3D), Color::hex(0xE62E3D).with_alpha(0.42)),
+        DockBadgeStyle::Blue => (Color::hex(0x2563EB), Color::hex(0x2563EB).with_alpha(0.42)),
+    };
+    c.fill_rrect(Rect::new(br.x, br.y + 1.5, br.w, br.h), r, glow);
+    c.fill_rrect(br, r, base);
+    let segs = crate::pill::shape::segments(br, r);
+    c.fill_path_fade(&segs, Color::white(1.0), br.y, br.y + br.h * 0.55, 0.28, 0.0);
+    c.stroke_rrect(br, r, Color::white(0.28), 1.1);
+
+    let label = if count > 99 { "99+".to_string() } else { count.to_string() };
+    let st = TextStyle::new((br.h * 0.62).clamp(9.0, 11.0))
+        .weight(Weight::Bold)
+        .center()
+        .color(Color::white(1.0));
+    c.text(&label, br, &st);
+}
+
+/// Draw a circular download progress ring around a dock slot tile (`.dl-ring-svg`).
+fn draw_progress_ring(c: &mut Canvas<'_>, tile: Rect, progress: f32) {
+    let p = progress.clamp(0.0, 1.0);
+    let center = Point::new(tile.x + tile.w * 0.5, tile.y + tile.h * 0.5);
+    let radius = progress_ring_radius(tile);
+    c.ring(
+        center,
+        radius,
+        2.5,
+        p,
+        Color::hex(0x38BDF8).with_alpha(0.24),
+        Color::hex(0x38BDF8).with_alpha(0.96),
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_dock(
     c: &mut Canvas<'_>,
@@ -1246,27 +1384,62 @@ fn draw_dock(
                     let is_hover = hovered == Some(i);
                     let is_press = pressed == Some(i);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
-                    let tr = (tile.w * 0.26).clamp(8.0, 16.0);
-                    let slot_acc = if i == 0 && look.accent.is_some() { theme_accent } else { slot.accent };
-                    let fill_a = if is_press { 0.34 } else if is_hover { 0.26 } else { 0.17 };
-                    c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
-                    // Top inner bevel on tile
-                    let tile_segs = crate::pill::shape::segments(tile, tr);
-                    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.5, if light { 0.24 } else { 0.14 }, 0.0);
-                    let tile_rim = if is_hover {
-                        slot_acc.with_alpha(0.62)
-                    } else if light {
-                        Color::black(0.10)
-                    } else {
-                        Color::white(0.16)
-                    };
-                    c.stroke_rrect(tile, tr, tile_rim, 1.0);
+                    let tr = (tile.w * 0.25).clamp(8.0, 15.0);
+                    draw_squircle_shadow(c, tile, tr, light);
 
-                    let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                    c.icon(slot.icon, icon_box, theme_ink);
+                    if slot.action == SlotAction::Launchpad {
+                        draw_launchpad_icon(c, tile, tr, light, is_hover);
+                    } else {
+                        let slot_acc = if slot.action == SlotAction::ToggleIsland && look.accent.is_some() {
+                            theme_accent
+                        } else {
+                            slot.accent
+                        };
+                        let fill_a = if is_press { 0.34 } else if is_hover { 0.26 } else { 0.18 };
+                        c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
+                        // Top inner bevel sheen + subtle bottom depth
+                        let tile_segs = crate::pill::shape::segments(tile, tr);
+                        c.fill_path_fade(
+                            &tile_segs,
+                            Color::white(1.0),
+                            tile.y,
+                            tile.y + tile.h * 0.5,
+                            if light { 0.26 } else { 0.16 },
+                            0.0,
+                        );
+                        c.fill_path_fade(
+                            &tile_segs,
+                            Color::black(1.0),
+                            tile.y + tile.h * 0.65,
+                            tile.bottom(),
+                            0.0,
+                            if light { 0.06 } else { 0.14 },
+                        );
+                        let tile_rim = if is_hover {
+                            slot_acc.with_alpha(0.68)
+                        } else if light {
+                            Color::black(0.11)
+                        } else {
+                            Color::white(0.18)
+                        };
+                        c.stroke_rrect(tile, tr, tile_rim, 1.0);
+
+                        let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+                        c.icon(slot.icon, icon_box, theme_ink);
+                    }
+
+                    match slot.action {
+                        SlotAction::Page(PageKind::Tasks) if tray.tasks_open > 0 => {
+                            draw_dock_badge(c, tile, tray.tasks_open, DockBadgeStyle::Red);
+                        }
+                        SlotAction::Page(PageKind::Shelf) if tray.shelf_count > 0 => {
+                            draw_dock_badge(c, tile, tray.shelf_count, DockBadgeStyle::Blue);
+                        }
+                        _ => {}
+                    }
 
                     if slot.active {
-                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, dot_ink.with_alpha(0.88));
+                        draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, dot_ink, 0.90);
                     }
                 }
 
@@ -1274,28 +1447,55 @@ fn draw_dock(
                     draw_glass_divider(c, sx, shelf, light);
                 }
 
+                let dl_frac = tray.download_progress.map(|p| (p as f32 / 100.0).clamp(0.0, 1.0));
+                let mut browser_ring_drawn = false;
+
                 for (j, app) in apps.iter().enumerate() {
                     let idx = ANCHOR_SLOTS.len() + j;
                     let Some(&sr) = slot_rects.get(idx) else { continue };
                     let is_hover = hovered == Some(idx);
                     let is_press = pressed == Some(idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
-                    let tr = (tile.w * 0.24).clamp(7.0, 15.0);
+                    let tr = (tile.w * 0.25).clamp(8.0, 15.0);
                     let tile_alpha = if app.minimized { 0.68 } else { 1.0 };
 
+                    let ring_p = app.progress.or_else(|| {
+                        if !browser_ring_drawn && is_browser_key(&app.key) {
+                            dl_frac
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(p) = ring_p {
+                        if app.progress.is_none() {
+                            browser_ring_drawn = true;
+                        }
+                        draw_progress_ring(c, tile, p);
+                    }
+
                     c.with_alpha(tile_alpha, |c| {
+                        draw_squircle_shadow(c, tile, tr, light);
                         let back = if is_hover {
                             if light { Color::black(0.10) } else { Color::white(0.18) }
                         } else if app.focused {
                             if light { Color::black(0.07) } else { Color::white(0.12) }
                         } else if app.icon.is_some() {
-                            if light { Color::black(0.035) } else { Color::white(0.06) }
+                            if light { Color::black(0.04) } else { Color::white(0.07) }
                         } else if light {
                             Color::black(0.08)
                         } else {
                             Color::white(0.12)
                         };
                         c.fill_rrect(tile, tr, back);
+                        let tile_segs = crate::pill::shape::segments(tile, tr);
+                        c.fill_path_fade(
+                            &tile_segs,
+                            Color::white(1.0),
+                            tile.y,
+                            tile.y + tile.h * 0.45,
+                            if light { 0.20 } else { 0.12 },
+                            0.0,
+                        );
                         if let Some(img) = app.icon.as_ref() {
                             let img_box = tile.inset(tile.w * 0.10, tile.h * 0.10);
                             c.image(img, img_box, (tr - 2.0).max(4.0));
@@ -1303,22 +1503,26 @@ fn draw_dock(
                             let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
                             c.icon(Icon::AppWindow, icon_box, theme_ink);
                         }
-                        if is_hover || app.focused {
-                            let r_c = if is_hover {
-                                theme_accent.with_alpha(0.60)
-                            } else if light {
-                                Color::black(0.14)
-                            } else {
-                                Color::white(0.24)
-                            };
-                            c.stroke_rrect(tile, tr, r_c, 1.0);
-                        }
+                        let r_c = if is_hover {
+                            theme_accent.with_alpha(0.64)
+                        } else if app.focused {
+                            if light { Color::black(0.15) } else { Color::white(0.26) }
+                        } else if light {
+                            Color::black(0.08)
+                        } else {
+                            Color::white(0.13)
+                        };
+                        c.stroke_rrect(tile, tr, r_c, 1.0);
                     });
+
+                    if app.badge > 0 {
+                        draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
+                    }
 
                     // Active running-app indicator dot (focused = brighter & slightly larger).
                     let dot_r = if app.focused { 2.3 } else if app.minimized { 1.5 } else { 1.9 };
-                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.44 } else { 0.76 };
-                    c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink.with_alpha(dot_a));
+                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.44 } else { 0.78 };
+                    draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
                 }
 
                 if let Some(sx) = sep2_x {
@@ -1330,24 +1534,38 @@ fn draw_dock(
                     let is_hover = hovered == Some(dl_idx);
                     let is_press = pressed == Some(dl_idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
-                    let tr = (tile.w * 0.26).clamp(8.0, 16.0);
+                    let tr = (tile.w * 0.25).clamp(8.0, 15.0);
                     let accent = look.accent.unwrap_or(Color::hex(0x007AFF));
-                    let fill_a = if is_press || stack_open { 0.32 } else if is_hover { 0.26 } else { 0.17 };
+                    if let Some(p) = dl_frac {
+                        draw_progress_ring(c, tile, p);
+                    }
+                    draw_squircle_shadow(c, tile, tr, light);
+                    let fill_a = if is_press || stack_open { 0.32 } else if is_hover { 0.26 } else { 0.18 };
                     c.fill_rrect(tile, tr, accent.with_alpha(fill_a));
                     let tile_segs = crate::pill::shape::segments(tile, tr);
-                    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.5, if light { 0.22 } else { 0.14 }, 0.0);
+                    c.fill_path_fade(
+                        &tile_segs,
+                        Color::white(1.0),
+                        tile.y,
+                        tile.y + tile.h * 0.5,
+                        if light { 0.24 } else { 0.16 },
+                        0.0,
+                    );
                     let tile_rim = if is_hover || stack_open {
-                        accent.with_alpha(0.62)
+                        accent.with_alpha(0.68)
                     } else if light {
-                        Color::black(0.10)
+                        Color::black(0.11)
                     } else {
-                        Color::white(0.16)
+                        Color::white(0.18)
                     };
                     c.stroke_rrect(tile, tr, tile_rim, 1.0);
                     let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
                     c.icon(Icon::Download, icon_box, theme_ink);
+                    if tray.downloads_active > 0 {
+                        draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue);
+                    }
                     if stack_open {
-                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent.with_alpha(0.95));
+                        draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent, 0.95);
                     }
                 }
 
@@ -2103,5 +2321,24 @@ mod tests {
         let gp_halo = dock_glass_params(shelf, SHELF_R, &look::HALO, 1.0);
         assert_eq!(gp_halo.light_mix, 1.0);
         assert_eq!(gp_halo.ground_light, look::HALO.ground);
+    }
+
+    #[test]
+    fn launchpad_slot_badges_and_progress_ring_geometry() {
+        assert_eq!(ANCHOR_SLOTS[0].label, "Launchpad & Search");
+        assert!(ANCHOR_SLOTS[0].action == SlotAction::Launchpad);
+        assert!(ANCHOR_SLOTS.len() == 6);
+
+        assert!(is_browser_key("chrome"));
+        assert!(is_browser_key("MSEdge"));
+        assert!(!is_browser_key("notepad"));
+
+        let tile = Rect::new(200.0, 80.0, 44.0, 44.0);
+        let b1 = badge_rect(tile, 3);
+        let b2 = badge_rect(tile, 42);
+        let b3 = badge_rect(tile, 120);
+        assert!(b1.w == b1.h && b2.w > b1.w && b3.w > b2.w);
+        assert!(b1.right() > tile.right() && b1.y < tile.y);
+        assert!(progress_ring_radius(tile) > tile.w * 0.5);
     }
 }

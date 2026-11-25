@@ -37,6 +37,8 @@ pub struct RunningApp {
     pub minimized: bool,
     pub focused: bool,
     pub icon: Option<Image>,
+    pub badge: u16,
+    pub progress: Option<f32>,
 }
 
 impl RunningApp {
@@ -47,6 +49,9 @@ impl RunningApp {
             && self.minimized == other.minimized
             && self.focused == other.focused
             && self.icon.as_ref().map(|i| i.id) == other.icon.as_ref().map(|i| i.id)
+            && self.badge == other.badge
+            && self.progress.map(|p| (p * 100.0).round() as i32)
+                == other.progress.map(|p| (p * 100.0).round() as i32)
     }
 }
 
@@ -148,7 +153,7 @@ impl DockAppsWatcher {
             let icon = self.cached_icon(&key, hwnd, exe_path.as_deref());
             by_key.insert(
                 key.clone(),
-                RunningApp { key, name, hwnd, minimized, focused: is_fg, icon },
+                RunningApp { key, name, hwnd, minimized, focused: is_fg, icon, badge: 0, progress: None },
             );
         }
 
