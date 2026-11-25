@@ -4,13 +4,16 @@
 //! handle, fullscreen hide, and zero idle CPU when settled.
 
 use crate::gfx::{Canvas, Gfx, HitMask, SharedD3d, TextStyle, Weight};
+use crate::glass::GlassParams;
 use crate::icons::Icon;
 use crate::pages::PageKind;
 use crate::services::dock_apps::RunningApp;
 use crate::window::MonitorInfo;
-use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::look;
+use halo_core::geom::{Color, Point, Rect};
+use halo_core::look::{self, Look};
+use halo_core::settings::{NotchTheme, NotchType};
 use halo_core::spring::Spring;
+use halo_core::svgpath::Seg;
 use windows::core::{w, Result, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -46,8 +49,84 @@ const MASK_INTERVAL: f64 = 1.0 / 30.0;
 const TUCK_EPS: f32 = 0.004;
 const MAG_EPS: f32 = 0.004;
 
-/// Shadow ramp around the floating shelf capsule (distance outside body in DIPs, alpha).
-const SHELF_SHADOW: &[(f32, f32)] = &[(-2.0, 0.34), (0.0, 0.28), (5.0, 0.14), (12.0, 0.04), (20.0, 0.0)];
+/// Downward drop (DIPs) and multi-stop Gaussian contact + ambient shadow ramp
+/// around the floating shelf capsule, matching the macOS Sequoia liquid glass mockup.
+const SHELF_SHADOW_DROP: f32 = 4.0;
+const SHELF_SHADOW: &[(f32, f32)] = &[
+    (-5.0, 0.48),
+    (-3.5, 0.42),
+    (-2.0, 0.36),
+    (-0.5, 0.29),
+    (1.0, 0.22),
+    (3.5, 0.15),
+    (7.0, 0.085),
+    (11.5, 0.040),
+    (16.5, 0.015),
+    (22.0, 0.0),
+];
+const TIP_SHADOW: &[(f32, f32)] = &[(-2.0, 0.32), (0.0, 0.24), (3.0, 0.11), (7.0, 0.03), (11.0, 0.0)];
+
+/// Resolve the active [`Look`] for the dock from the island's theme settings.
+pub fn resolve_dock_look(
+    theme: NotchTheme,
+    ty: NotchType,
+    app_light: bool,
+    diorama_night: bool,
+    custom: Option<&'static Look>,
+) -> &'static Look {
+    match theme {
+        NotchTheme::Glass => look::glass(app_light),
+        NotchTheme::Halo => &look::HALO,
+        NotchTheme::Diorama => look::diorama(diorama_night),
+        NotchTheme::Classic => {
+            if let Some(c) = custom {
+                c
+            } else if ty == NotchType::Pill {
+                &look::PILL
+            } else {
+                look::halo(app_light)
+            }
+        }
+    }
+}
+
+/// Build [`GlassParams`] for a floating rounded capsule (`shoulder = -1.0`) so the
+/// dock shelf renders through Halo Island's GPU `res/glass.hlsl` liquid-glass pass.
+pub fn dock_glass_params(body: Rect, radius: f32, look: &Look, scale: f32) -> GlassParams {
+    let th = halo_core::glass::thickness(body.h);
+    let mix = if look.light { 1.0 } else { 0.0 };
+    let (ground_dark, ground_light) = if look.light {
+        (look::GLASS_DARK.ground, look.ground)
+    } else {
+        (look.ground, look::GLASS_LIGHT.ground)
+    };
+    GlassParams {
+        body,
+        radius,
+        shoulder: -1.0,
+        bevel: th.bevel,
+        mag: th.mag,
+        frost_mix: th.t,
+        light_mix: mix,
+        tint_dark: 0.34,
+        tint_light: 0.42,
+        ground_dark,
+        ground_light,
+        rim: 0.86 + 0.12 * mix,
+        glow: 0.11 + 0.02 * mix,
+        light_dir: (-0.45, -0.89),
+        shadow_alpha: halo_core::glass::shadow_alpha(0.38, th.t),
+        shadow_reach: th.shadow_reach,
+        shadow_drop: th.shadow_drop,
+        saturation: 1.45,
+        dispersion: 0.03,
+        lens: 1.0,
+        use_copy: false,
+        probe: false,
+        copy_origin: (0.0, 0.0),
+        probe_x: crate::glass::probe_x(body, scale),
+    }
+}
 
 /// Whether the bottom dock should be active (Halo Pro required, disabled in selftest).
 pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
@@ -409,6 +488,7 @@ pub struct Dock {
     at: (i32, i32, i32, i32),
     dpi: u32,
     light: bool,
+    look: &'static Look,
     shown: bool,
     fs_hidden: bool,
     tucked: bool,
@@ -442,6 +522,10 @@ impl Drop for Dock {
 
 impl Dock {
     pub fn new(mon: &MonitorInfo, light: bool, shared: Option<SharedD3d>) -> Result<Self> {
+        Self::with_look(mon, look::glass(light), shared)
+    }
+
+    pub fn with_look(mon: &MonitorInfo, look: &'static Look, shared: Option<SharedD3d>) -> Result<Self> {
         let (x, y, w, h) = surface_rect(mon);
         let hwnd = unsafe {
             CreateWindowExW(
@@ -475,7 +559,8 @@ impl Dock {
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
-            light,
+            light: look.light,
+            look,
             shown: false,
             fs_hidden: false,
             tucked: false,
@@ -493,6 +578,17 @@ impl Dock {
             dirty: true,
             mask: None,
         })
+    }
+
+    /// Synchronize the dock's active [`Look`] with the island's theme; returns `true` only if it changed.
+    pub fn set_look(&mut self, look: &'static Look) -> bool {
+        if self.look == look && self.light == look.light {
+            return false;
+        }
+        self.look = look;
+        self.light = look.light;
+        self.dirty = true;
+        true
     }
 
     pub fn set_stack_open(&mut self, open: bool) {
@@ -917,9 +1013,11 @@ impl Dock {
             }
         }
         let (x, y, w, h) = self.at;
+        let scale = self.scale().max(1.0);
         let surf_w = self.surf_w_dip();
         let tuck_t = self.tuck.value.clamp(0.0, 1.0);
-        let light = self.light;
+        let look = self.look;
+        let spec_x = self.mouse.map(|p| p.x);
         let hovered = self.hovered;
         let pressed = self.pressed;
         let hovered_tray = self.hovered_tray;
@@ -940,14 +1038,24 @@ impl Dock {
             crate::pwarn!("dock: set_surface failed ({e})");
             return;
         }
-        gfx.set_look(look::glass(light));
+        gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        let glass_params = if tuck_t < 0.995 && look.frame.is_none() {
+            let r = SHELF_R.min(shelf.h * 0.5);
+            let gp = dock_glass_params(shelf, r, look, scale);
+            gfx.prepare_glass(&gp, full);
+            Some(gp)
+        } else {
+            None
+        };
         match gfx.begin(full) {
             Ok(mut c) => {
                 draw_dock(
                     &mut c,
                     surf_w,
-                    light,
+                    look,
+                    glass_params.as_ref(),
+                    spec_x,
                     tuck_t,
                     shelf,
                     sep_x,
@@ -1015,10 +1123,96 @@ impl Dock {
     }
 }
 
+fn draw_glass_divider(c: &mut Canvas<'_>, sx: f32, shelf: Rect, light: bool) {
+    let div_h = (shelf.h * 0.62).clamp(22.0, 38.0);
+    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
+    let mid_y = div_y + div_h * 0.5;
+    let col = if light { Color::black(1.0) } else { Color::white(1.0) };
+    let peak = if light { 0.18 } else { 0.28 };
+    let top_seg = crate::pill::shape::segments(Rect::new(sx - 0.5, div_y, 1.0, div_h * 0.5), 0.5);
+    let bot_seg = crate::pill::shape::segments(Rect::new(sx - 0.5, mid_y, 1.0, div_h * 0.5), 0.5);
+    c.fill_path_fade(&top_seg, col, div_y, mid_y, 0.0, peak);
+    c.fill_path_fade(&bot_seg, col, mid_y, div_y + div_h, peak, 0.0);
+}
+
+fn draw_liquid_glass_shelf(c: &mut Canvas<'_>, surf_w: f32, shelf: Rect, r: f32, look: &Look, glass: Option<&GlassParams>, spec_x: Option<f32>) {
+    let light = look.light;
+    if look.frame.is_some() {
+        // Diorama theme: raised 3D picture frame around the themed pane, with liquid glass sheen.
+        crate::pill::shape::draw_body(c, shelf, r, look.ground.with_alpha(0.94), Some(look.border));
+    } else {
+        // Multi-stop ambient + contact drop shadow (0 24px 56px rgba(0,0,0,0.68)).
+        c.rrect_shadow(shelf.offset(0.0, SHELF_SHADOW_DROP), r, Color::black(0.96), SHELF_SHADOW);
+
+        // Island GPU Glass shader pass (or smoked glass fallback).
+        if let Some(gp) = glass {
+            c.glass(gp, Rect::new(0.0, 0.0, surf_w, SURF_H));
+        }
+
+        // Theme-tinted translucent frosted glass body (#dockShelf base).
+        let is_halo_cream = look.ground == look::HALO.ground;
+        let base = if is_halo_cream {
+            look.ground.with_alpha(0.56)
+        } else if light {
+            Color::lerp(Color::rgba(0.95, 0.96, 0.99, 1.0), look.ground, 0.45).with_alpha(0.54)
+        } else {
+            Color::lerp(Color::rgba(0.07, 0.09, 0.14, 1.0), look.ground, 0.35).with_alpha(0.58)
+        };
+        c.fill_rrect(shelf, r, base);
+    }
+
+    // Clipped Liquid Glass shading layers: top specular sheen, bottom depth, and pointer-reactive #dockSpecular.
+    let segs = crate::pill::shape::segments(shelf, r);
+    c.push_outline_mask(&segs);
+
+    // 1. Top-to-mid liquid glass reflection (linear-gradient 180deg, rgba(255,255,255,0.17) 0% -> 38%).
+    let top_sheen_a = if light { 0.38 } else { 0.19 };
+    c.fill_path_fade(&segs, Color::white(1.0), shelf.y, shelf.y + shelf.h * 0.44, top_sheen_a, 0.0);
+
+    // 2. Mid-to-bottom deep glass grounding (38% -> 100%).
+    let depth_col = if light { look.ink } else { Color::hex(0x050811) };
+    let depth_a = if light { 0.06 } else { 0.34 };
+    c.fill_path_fade(&segs, depth_col, shelf.y + shelf.h * 0.36, shelf.bottom(), 0.0, depth_a);
+
+    // 3. #dockSpecular: radial-gradient(250px 62px at var(--spec-x, 50%) 0%, rgba(255,255,255,0.26), transparent 72%).
+    let sx = spec_x.unwrap_or(shelf.center().x).clamp(shelf.x + r, (shelf.right() - r).max(shelf.x + r));
+    let spec_col = look.accent.unwrap_or(Color::white(1.0));
+    let glow_tint = Color::lerp(Color::white(1.0), spec_col, if look.accent.is_some() { 0.22 } else { 0.0 });
+    for (gw, gh, ga) in [(240.0f32, 52.0f32, 0.042f32), (164.0, 36.0, 0.055), (104.0, 22.0, 0.068), (56.0, 12.0, 0.075)] {
+        let gr = Rect::new(sx - gw * 0.5, shelf.y - gh * 0.42, gw, gh);
+        c.fill_rrect(gr, gh * 0.5, glow_tint.with_alpha(if light { ga * 1.15 } else { ga }));
+    }
+
+    // 4. Crisp top specular highlight rim (inset 0 1px 0 rgba(255,255,255,0.46)).
+    let inner = shelf.inset(1.0, 1.0);
+    let inner_r = (r - 1.0).max(1.0);
+    let top_band = Rect::new(inner.x + inner_r * 0.35, inner.y, (inner.w - inner_r * 0.70).max(1.0), 1.5);
+    c.fill_rrect(top_band, 0.75, Color::white(if light { 0.68 } else { 0.44 }));
+
+    // 5. Subtle bottom inner reflection (inset 0 -1px 0 rgba(255,255,255,0.10)).
+    let bot_band = Rect::new(inner.x + inner_r * 0.45, inner.bottom() - 1.0, (inner.w - inner_r * 0.90).max(1.0), 1.0);
+    c.fill_rrect(bot_band, 0.5, Color::white(if light { 0.28 } else { 0.11 }));
+
+    c.pop_shape_mask();
+
+    // 6. Outer glass border rim (1px solid rgba(255, 255, 255, 0.22) or theme border).
+    if look.frame.is_none() {
+        let outer_rim = if light {
+            look.border.with_alpha(look.border.a.max(0.14))
+        } else {
+            Color::white(0.22)
+        };
+        c.stroke_rrect(shelf, r, outer_rim, 1.0);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_dock(
     c: &mut Canvas<'_>,
     surf_w: f32,
-    light: bool,
+    look: &Look,
+    glass: Option<&GlassParams>,
+    spec_x: Option<f32>,
     tuck_t: f32,
     shelf: Rect,
     sep_x: Option<f32>,
@@ -1034,23 +1228,18 @@ fn draw_dock(
     hovered_tray: Option<DockTrayZone>,
     pressed_tray: Option<DockTrayZone>,
 ) {
+    let light = look.light;
+    let theme_ink = look.ink;
+    let theme_accent = look.accent.unwrap_or(Color::hex(0x0A84FF));
     c.unthemed(|c| {
         if tuck_t < 0.995 {
             let alpha = (1.0 - tuck_t).clamp(0.0, 1.0);
             c.with_alpha(alpha, |c| {
                 let r = SHELF_R.min(shelf.h * 0.5);
-                c.rrect_shadow(shelf, r, Color::black(1.0), SHELF_SHADOW);
-                let ground = if light {
-                    Color::rgba(0.95, 0.96, 0.98, 0.84)
-                } else {
-                    Color::rgba(0.11, 0.12, 0.15, 0.82)
-                };
-                let rim = if light { Color::black(0.10) } else { Color::white(0.16) };
-                c.fill_rrect(shelf, r, ground);
-                c.stroke_rrect(shelf, r, rim, 1.0);
+                draw_liquid_glass_shelf(c, surf_w, shelf, r, look, glass, spec_x);
 
-                let dot_y = shelf.bottom() - 4.0;
-                let dot_ink = if light { Color::hex(0x1C1C1E) } else { Color::white(1.0) };
+                let dot_y = shelf.bottom() - 4.5;
+                let dot_ink = theme_ink;
 
                 for (i, slot) in ANCHOR_SLOTS.iter().enumerate() {
                     let Some(&sr) = slot_rects.get(i) else { continue };
@@ -1058,31 +1247,31 @@ fn draw_dock(
                     let is_press = pressed == Some(i);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.26).clamp(8.0, 16.0);
-                    let fill_a = if is_press { 0.30 } else if is_hover { 0.24 } else { 0.15 };
-                    c.fill_rrect(tile, tr, slot.accent.with_alpha(fill_a));
+                    let slot_acc = if i == 0 && look.accent.is_some() { theme_accent } else { slot.accent };
+                    let fill_a = if is_press { 0.34 } else if is_hover { 0.26 } else { 0.17 };
+                    c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
+                    // Top inner bevel on tile
+                    let tile_segs = crate::pill::shape::segments(tile, tr);
+                    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.5, if light { 0.24 } else { 0.14 }, 0.0);
                     let tile_rim = if is_hover {
-                        slot.accent.with_alpha(0.55)
+                        slot_acc.with_alpha(0.62)
                     } else if light {
-                        Color::black(0.08)
+                        Color::black(0.10)
                     } else {
-                        Color::white(0.12)
+                        Color::white(0.16)
                     };
                     c.stroke_rrect(tile, tr, tile_rim, 1.0);
 
                     let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                    let icon_ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
-                    c.icon(slot.icon, icon_box, icon_ink);
+                    c.icon(slot.icon, icon_box, theme_ink);
 
                     if slot.active {
-                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.0, dot_ink.with_alpha(0.82));
+                        c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, dot_ink.with_alpha(0.88));
                     }
                 }
 
                 if let Some(sx) = sep_x {
-                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
-                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
-                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
-                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                    draw_glass_divider(c, sx, shelf, light);
                 }
 
                 for (j, app) in apps.iter().enumerate() {
@@ -1096,11 +1285,11 @@ fn draw_dock(
 
                     c.with_alpha(tile_alpha, |c| {
                         let back = if is_hover {
-                            if light { Color::black(0.09) } else { Color::white(0.16) }
+                            if light { Color::black(0.10) } else { Color::white(0.18) }
                         } else if app.focused {
-                            if light { Color::black(0.06) } else { Color::white(0.11) }
+                            if light { Color::black(0.07) } else { Color::white(0.12) }
                         } else if app.icon.is_some() {
-                            if light { Color::black(0.03) } else { Color::white(0.05) }
+                            if light { Color::black(0.035) } else { Color::white(0.06) }
                         } else if light {
                             Color::black(0.08)
                         } else {
@@ -1112,32 +1301,28 @@ fn draw_dock(
                             c.image(img, img_box, (tr - 2.0).max(4.0));
                         } else {
                             let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                            let icon_ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
-                            c.icon(Icon::AppWindow, icon_box, icon_ink);
+                            c.icon(Icon::AppWindow, icon_box, theme_ink);
                         }
                         if is_hover || app.focused {
                             let r_c = if is_hover {
-                                Color::hex(0x0A84FF).with_alpha(0.55)
+                                theme_accent.with_alpha(0.60)
                             } else if light {
-                                Color::black(0.12)
+                                Color::black(0.14)
                             } else {
-                                Color::white(0.22)
+                                Color::white(0.24)
                             };
                             c.stroke_rrect(tile, tr, r_c, 1.0);
                         }
                     });
 
                     // Active running-app indicator dot (focused = brighter & slightly larger).
-                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.5 } else { 1.8 };
-                    let dot_a = if app.focused { 0.95 } else if app.minimized { 0.42 } else { 0.72 };
+                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.5 } else { 1.9 };
+                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.44 } else { 0.76 };
                     c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink.with_alpha(dot_a));
                 }
 
                 if let Some(sx) = sep2_x {
-                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
-                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
-                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
-                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                    draw_glass_divider(c, sx, shelf, light);
                 }
 
                 let dl_idx = ANCHOR_SLOTS.len() + apps.len();
@@ -1146,57 +1331,67 @@ fn draw_dock(
                     let is_press = pressed == Some(dl_idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.26).clamp(8.0, 16.0);
-                    let accent = Color::hex(0x007AFF);
-                    let fill_a = if is_press || stack_open { 0.30 } else if is_hover { 0.24 } else { 0.15 };
+                    let accent = look.accent.unwrap_or(Color::hex(0x007AFF));
+                    let fill_a = if is_press || stack_open { 0.32 } else if is_hover { 0.26 } else { 0.17 };
                     c.fill_rrect(tile, tr, accent.with_alpha(fill_a));
+                    let tile_segs = crate::pill::shape::segments(tile, tr);
+                    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.5, if light { 0.22 } else { 0.14 }, 0.0);
                     let tile_rim = if is_hover || stack_open {
-                        accent.with_alpha(0.60)
+                        accent.with_alpha(0.62)
                     } else if light {
-                        Color::black(0.08)
+                        Color::black(0.10)
                     } else {
-                        Color::white(0.12)
+                        Color::white(0.16)
                     };
                     c.stroke_rrect(tile, tr, tile_rim, 1.0);
                     let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                    let icon_ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
-                    c.icon(Icon::Download, icon_box, icon_ink);
+                    c.icon(Icon::Download, icon_box, theme_ink);
                     if stack_open {
                         c.fill_circle(Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent.with_alpha(0.95));
                     }
                 }
 
                 if let Some(sx) = sep3_x {
-                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
-                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
-                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
-                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                    draw_glass_divider(c, sx, shelf, light);
                 }
 
                 if let Some(tr) = tray_rect {
+                    // Outer recessed glass well (#dockSysTray: rgba(8, 12, 20, 0.34), border rgba(255,255,255,0.11)).
+                    let well = tr.inset(-3.0, -3.0);
+                    let well_r = (well.h * 0.38).min(16.0);
+                    let well_bg = if light {
+                        Color::black(0.055)
+                    } else {
+                        Color::rgba(0.03, 0.05, 0.08, 0.36)
+                    };
+                    let well_rim = if light { Color::black(0.08) } else { Color::white(0.12) };
+                    c.fill_rrect(well, well_r, well_bg);
+                    c.stroke_rrect(well, well_r, well_rim, 1.0);
+
                     let (status_r, clock_r) = tray_zone_rects(tr, tray.has_battery);
-                    let ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
-                    let dim = if light { Color::black(0.55) } else { Color::white(0.65) };
+                    let ink = theme_ink;
+                    let dim = theme_ink.with_alpha(if light { 0.56 } else { 0.64 });
 
                     for (zone, zr) in [(DockTrayZone::Status, status_r), (DockTrayZone::Clock, clock_r)] {
                         let is_h = hovered_tray == Some(zone);
                         let is_p = pressed_tray == Some(zone);
                         let bg = if is_p {
-                            if light { Color::black(0.12) } else { Color::white(0.18) }
+                            if light { Color::black(0.13) } else { Color::white(0.19) }
                         } else if is_h {
-                            if light { Color::black(0.07) } else { Color::white(0.12) }
+                            if light { Color::black(0.08) } else { Color::white(0.13) }
                         } else if light {
-                            Color::black(0.04)
+                            Color::white(0.42)
                         } else {
                             Color::white(0.06)
                         };
                         let rim = if is_h {
-                            if light { Color::black(0.12) } else { Color::white(0.20) }
+                            theme_accent.with_alpha(0.42)
                         } else if light {
-                            Color::black(0.06)
+                            Color::black(0.07)
                         } else {
-                            Color::white(0.09)
+                            Color::white(0.10)
                         };
-                        let pill_r = (zr.h * 0.42).min(14.0);
+                        let pill_r = (zr.h * 0.36).min(12.0);
                         c.fill_rrect(zr, pill_r, bg);
                         c.stroke_rrect(zr, pill_r, rim, 1.0);
                     }
@@ -1267,21 +1462,37 @@ fn draw_dock(
                     let st = TextStyle::caption()
                         .weight(Weight::Medium)
                         .center()
-                        .color(if light { Color::hex(0x1C1C1E) } else { palette::TEXT });
+                        .color(theme_ink);
                     let (tw, _) = c.measure(label, &st, 220.0);
-                    let pw = (tw + 18.0).max(52.0);
-                    let ph = 24.0;
+                    let pw = (tw + 20.0).max(54.0);
+                    let ph = 25.0;
                     let px = (sr.x + sr.w * 0.5 - pw * 0.5).clamp(4.0, (surf_w - pw - 4.0).max(4.0));
-                    let py = (sr.y.min(shelf.y) - ph - 8.0).max(2.0);
+                    let py = (sr.y.min(shelf.y) - ph - 10.0).max(2.0);
                     let pill = Rect::new(px, py, pw, ph);
-                    let tip_bg = if light {
-                        Color::rgba(0.97, 0.97, 0.99, 0.94)
+                    let tip_r = 9.0f32.min(ph * 0.5);
+                    let tip_bg = if look.ground == look::HALO.ground || look.frame.is_some() {
+                        look.ground.with_alpha(0.95)
+                    } else if light {
+                        Color::rgba(0.96, 0.97, 0.99, 0.92)
                     } else {
-                        Color::rgba(0.14, 0.15, 0.18, 0.94)
+                        Color::rgba(0.08, 0.10, 0.15, 0.90)
                     };
-                    let tip_rim = if light { Color::black(0.10) } else { Color::white(0.14) };
-                    c.fill_rrect(pill, ph * 0.5, tip_bg);
-                    c.stroke_rrect(pill, ph * 0.5, tip_rim, 1.0);
+                    let tip_rim = if light { Color::black(0.12) } else { Color::white(0.20) };
+                    c.rrect_shadow(pill.offset(0.0, 2.0), tip_r, Color::black(0.9), TIP_SHADOW);
+                    c.fill_rrect(pill, tip_r, tip_bg);
+                    let tip_segs = crate::pill::shape::segments(pill, tip_r);
+                    c.fill_path_fade(&tip_segs, Color::white(1.0), pill.y, pill.y + pill.h * 0.55, if light { 0.30 } else { 0.16 }, 0.0);
+                    c.stroke_rrect(pill, tip_r, tip_rim, 1.0);
+                    // Downward pointer caret (.dock-tip::after)
+                    let cx = (sr.x + sr.w * 0.5).clamp(pill.x + tip_r + 4.0, pill.right() - tip_r - 4.0);
+                    let cy = pill.bottom();
+                    let caret = [
+                        Seg::MoveTo(cx - 4.5, cy - 0.5),
+                        Seg::LineTo(cx, cy + 4.2),
+                        Seg::LineTo(cx + 4.5, cy - 0.5),
+                        Seg::Close,
+                    ];
+                    c.path(&caret, Some(tip_bg), Some((tip_rim, 1.0)));
                     c.text(label, pill, &st);
                 }
             });
@@ -1291,7 +1502,7 @@ fn draw_dock(
             let alpha = ((tuck_t - 0.05) / 0.95).clamp(0.0, 1.0);
             c.with_alpha(alpha, |c| {
                 let pr = peek_rect(surf_w);
-                let fill = if light { Color::black(0.38) } else { Color::white(0.45) };
+                let fill = theme_ink.with_alpha(if light { 0.42 } else { 0.48 });
                 c.fill_rrect(pr, pr.h * 0.5, fill);
             });
         }
@@ -1414,6 +1625,7 @@ pub struct DockStack {
     at: (i32, i32, i32, i32),
     dpi: u32,
     light: bool,
+    look: &'static Look,
     dir: std::path::PathBuf,
     items: Vec<DownloadItem>,
     hovered: Option<usize>, // usize::MAX = "Open Folder" header button
@@ -1436,7 +1648,7 @@ impl Drop for DockStack {
 }
 
 impl DockStack {
-    pub fn open(mon: &MonitorInfo, anchor_screen: Rect, light: bool, shared: Option<SharedD3d>) -> Result<Self> {
+    pub fn open(mon: &MonitorInfo, anchor_screen: Rect, look: &'static Look, shared: Option<SharedD3d>) -> Result<Self> {
         let dir = crate::paths::media_downloads_dir();
         let items = scan_downloads_in(&dir, STACK_MAX_ITEMS);
         let (x, y, w, h) = stack_surface_rect(mon, anchor_screen, items.len());
@@ -1472,7 +1684,8 @@ impl DockStack {
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
-            light,
+            light: look.light,
+            look,
             dir,
             items,
             hovered: None,
@@ -1480,6 +1693,16 @@ impl DockStack {
             shown: false,
             dirty: true,
         })
+    }
+
+    pub fn set_look(&mut self, look: &'static Look) -> bool {
+        if self.look == look && self.light == look.light {
+            return false;
+        }
+        self.look = look;
+        self.light = look.light;
+        self.dirty = true;
+        true
     }
 
     pub fn needs_frame(&self) -> bool {
@@ -1592,9 +1815,11 @@ impl DockStack {
             return;
         }
         let (x, y, w, h) = self.at;
+        let scale = self.scale();
         let card = self.card_dip();
         let open_btn = self.open_btn_rect();
-        let light = self.light;
+        let look = self.look;
+        let light = look.light;
         let hovered = self.hovered;
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -1603,27 +1828,47 @@ impl DockStack {
         if gfx.set_surface(w, h).is_err() {
             return;
         }
-        gfx.set_look(look::glass(light));
+        gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        let body = card.inset(1.0, 1.0);
+        let glass_params = if look.frame.is_none() {
+            let gp = dock_glass_params(body, STACK_R, look, scale);
+            gfx.prepare_glass(&gp, full);
+            Some(gp)
+        } else {
+            None
+        };
         if let Ok(mut c) = gfx.begin(full) {
             c.unthemed(|c| {
-                let bg = if light {
-                    Color::rgba(0.96, 0.97, 0.99, 0.94)
+                let ink = look.ink;
+                let accent = look.accent.unwrap_or(Color::hex(0x0A84FF));
+                let sub = ink.with_alpha(0.56);
+                let rim = if light { Color::black(0.14) } else { Color::white(0.20) };
+                if look.frame.is_some() {
+                    crate::pill::shape::draw_body(c, body, STACK_R, look.ground.with_alpha(0.95), Some(look.border));
                 } else {
-                    Color::rgba(0.12, 0.13, 0.16, 0.94)
-                };
-                let rim = if light { Color::black(0.12) } else { Color::white(0.16) };
-                let ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
-                let sub = if light { Color::black(0.55) } else { Color::white(0.55) };
-                c.fill_rrect(card.inset(1.0, 1.0), STACK_R, bg);
-                c.stroke_rrect(card.inset(1.0, 1.0), STACK_R, rim, 1.0);
+                    if let Some(gp) = glass_params.as_ref() {
+                        c.glass(gp, card);
+                    }
+                    let bg = if look.ground == look::HALO.ground {
+                        look.ground.with_alpha(0.68)
+                    } else if light {
+                        Color::rgba(0.96, 0.97, 0.99, 0.64)
+                    } else {
+                        Color::rgba(0.08, 0.10, 0.15, 0.68)
+                    };
+                    c.fill_rrect(body, STACK_R, bg);
+                    let segs = crate::pill::shape::segments(body, STACK_R);
+                    c.fill_path_fade(&segs, Color::white(1.0), body.y, body.y + body.h * 0.38, if light { 0.34 } else { 0.16 }, 0.0);
+                    c.stroke_rrect(body, STACK_R, rim, 1.0);
+                }
 
                 // Header
                 let hdr_st = TextStyle::body().weight(Weight::Semibold).color(ink);
                 c.text("Downloads", Rect::new(STACK_PAD + 4.0, STACK_PAD + 4.0, card.w - 90.0, 24.0), &hdr_st);
 
                 let btn_bg = if hovered == Some(usize::MAX) {
-                    Color::hex(0x007AFF).with_alpha(0.28)
+                    accent.with_alpha(0.28)
                 } else if light {
                     Color::black(0.06)
                 } else {
@@ -1645,11 +1890,11 @@ impl DockStack {
                     for (i, item) in self.items.iter().enumerate() {
                         let rr = Rect::new(STACK_PAD, div_y + 4.0 + i as f32 * STACK_ROW_H, card.w - 2.0 * STACK_PAD, STACK_ROW_H - 2.0);
                         if hovered == Some(i) {
-                            let hb = if light { Color::black(0.07) } else { Color::white(0.11) };
+                            let hb = accent.with_alpha(if light { 0.16 } else { 0.24 });
                             c.fill_rrect(rr, 8.0, hb);
                         }
                         let ic = if item.is_dir { Icon::Folder } else { Icon::File };
-                        let ic_c = if item.is_dir { Color::hex(0x0A84FF) } else { sub };
+                        let ic_c = if item.is_dir { accent } else { sub };
                         c.icon(ic, Rect::new(rr.x + 6.0, rr.y + 7.0, 16.0, 16.0), ic_c);
                         c.text(&item.name, Rect::new(rr.x + 28.0, rr.y + 6.0, rr.w - 90.0, 18.0), &row_st);
                         let meta = if item.is_dir { "Folder".to_string() } else { format_file_size(item.size) };
@@ -1838,5 +2083,25 @@ mod tests {
         let (status_r, clock_r) = tray_zone_rects(tr, true);
         assert!(status_r.right() < clock_r.x);
         assert!(clock_r.right() <= tr.right() + 0.5);
+    }
+
+    #[test]
+    fn dock_theme_sync_and_liquid_glass_params_match_island_themes() {
+        assert_eq!(resolve_dock_look(NotchTheme::Glass, NotchType::Notch, false, false, None), &look::GLASS_DARK);
+        assert_eq!(resolve_dock_look(NotchTheme::Glass, NotchType::Notch, true, false, None), &look::GLASS_LIGHT);
+        assert_eq!(resolve_dock_look(NotchTheme::Halo, NotchType::Notch, false, false, None), &look::HALO);
+        assert_eq!(resolve_dock_look(NotchTheme::Diorama, NotchType::Pill, false, false, None), &look::DIORAMA_DAY);
+        assert_eq!(resolve_dock_look(NotchTheme::Diorama, NotchType::Pill, false, true, None), &look::DIORAMA_NIGHT);
+        assert_eq!(resolve_dock_look(NotchTheme::Classic, NotchType::Pill, false, false, None), &look::PILL);
+
+        let shelf = Rect::new(120.0, 70.0, 640.0, SHELF_H);
+        let gp_dark = dock_glass_params(shelf, SHELF_R, &look::GLASS_DARK, 1.25);
+        assert!(gp_dark.shoulder < 0.0, "dock glass must use floating capsule SDF (shoulder < 0)");
+        assert_eq!(gp_dark.light_mix, 0.0);
+        assert_eq!(gp_dark.ground_dark, look::GLASS_DARK.ground);
+
+        let gp_halo = dock_glass_params(shelf, SHELF_R, &look::HALO, 1.0);
+        assert_eq!(gp_halo.light_mix, 1.0);
+        assert_eq!(gp_halo.ground_light, look::HALO.ground);
     }
 }

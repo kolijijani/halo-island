@@ -91,3 +91,6 @@
 {"id": "dock-phase-6-performance-audit-and-verif", "ev": "open", "title": "Dock Phase 6: Performance audit and verification", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795627058}
 {"id": "dock-phase-6-performance-audit-and-verif", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-6-performance-audit-and-verif", "who": "ag", "ts": 1795627065}
 {"id": "dock-phase-6-performance-audit-and-verif", "ev": "done", "owner": "ag", "who": "ag", "commit": "98137a2", "note": "Release binary 9.52 MB (0 new crates), 9/9 dock tests & 26/26 settings_window tests pass; ci-weight skipped while live halo.exe is running", "ts": 1795627217}
+{"id": "dock-visual-parity-phase-1-island-glass-", "ev": "open", "title": "Dock Visual Parity Phase 1: Island glass, liquid specular and theme sync", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795627990}
+{"id": "dock-visual-parity-phase-1-island-glass-", "ev": "doing", "owner": "ag", "branch": "ag/dock-visual-parity-phase-1-island-glass-", "who": "ag", "ts": 1795627990}
+{"id": "dock-visual-parity-phase-1-island-glass-", "ev": "done", "owner": "ag", "who": "ag", "commit": "3267454", "note": "Integrated res/glass.hlsl floating capsule pass, liquid glass specular highlight rim, pointer-following radial sheen, and full island theme sync", "ts": 1795628543}

@@ -1599,6 +1599,7 @@ impl App {
                         self.st.accent = a;
                     }
                 }
+                self.sync_dock_tray();
                 Some(LRESULT(0))
             }
             WM_CLOSE => {
@@ -1824,13 +1825,21 @@ impl App {
         self.settings_win.as_ref().is_some_and(|w| w.view.moving)
     }
 
+    fn dock_look(&self) -> &'static halo_core::look::Look {
+        if self.st.settings.notch_theme == NotchTheme::Glass {
+            halo_core::look::glass(self.st.app_light)
+        } else {
+            pill::look(&self.st, false)
+        }
+    }
+
     /// Create or destroy the bottom dock window to match `Settings::dock_enabled` + Halo Pro.
     fn sync_dock(&mut self) {
         if crate::dock::dock_allowed(self.st.settings.dock_enabled, self.st.settings.pro, self.in_selftest) {
+            let look = self.dock_look();
             if self.dock.is_none() {
                 let shared = self.gfx.d3d_handles();
-                let light = services::apps_use_light_theme();
-                match crate::dock::Dock::new(&self.monitor, light, shared) {
+                match crate::dock::Dock::with_look(&self.monitor, look, shared) {
                     Ok(mut d) => {
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
@@ -1843,6 +1852,8 @@ impl App {
                     }
                     Err(e) => pwarn!("dock: couldn't create window ({e})"),
                 }
+            } else {
+                self.sync_dock_tray();
             }
         } else {
             self.dock_apps = None;
@@ -1870,14 +1881,23 @@ impl App {
         }
     }
 
-    /// Push passive `AppState` changes to the dock's System Tray Capsule;
+    /// Push passive `AppState` and island theme changes to the dock and its System Tray Capsule;
     /// rests while locked or display is off and marks dirty only on visible change.
     fn sync_dock_tray(&mut self) {
         if self.locked || self.display_off {
             return;
         }
         let tray = self.dock_tray_state();
-        if self.dock.as_mut().is_some_and(|d| d.set_tray(tray)) {
+        let look = self.dock_look();
+        let mut changed = false;
+        if let Some(d) = self.dock.as_mut() {
+            changed |= d.set_tray(tray);
+            changed |= d.set_look(look);
+        }
+        if let Some(s) = self.dock_stack.as_mut() {
+            changed |= s.set_look(look);
+        }
+        if changed {
             self.request_frame();
         }
     }
@@ -1996,9 +2016,9 @@ impl App {
                 if self.dock_stack.is_some() {
                     self.close_dock_stack();
                 } else {
-                    let light = services::apps_use_light_theme();
+                    let look = self.dock_look();
                     let shared = self.gfx.d3d_handles();
-                    match crate::dock::DockStack::open(&self.monitor, icon_rect, light, shared) {
+                    match crate::dock::DockStack::open(&self.monitor, icon_rect, look, shared) {
                         Ok(s) => {
                             self.dock_stack = Some(s);
                             if let Some(d) = self.dock.as_mut() {
@@ -2615,7 +2635,12 @@ impl App {
             // Step aside starts or stops watching the top of the screen.
             self.sync_top_watch();
         }
-        if before.dock_enabled != self.st.settings.dock_enabled && !self.in_selftest {
+        if (before.dock_enabled != self.st.settings.dock_enabled
+            || before.notch_theme != self.st.settings.notch_theme
+            || before.notch_type != self.st.settings.notch_type
+            || before.custom_look != self.st.settings.custom_look)
+            && !self.in_selftest
+        {
             self.sync_dock();
         }
         let now = &self.st.settings;
