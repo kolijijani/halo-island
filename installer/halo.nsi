@@ -12,7 +12,7 @@ Target amd64-unicode
 SetCompressor /SOLID lzma
 
 !define APPNAME "Halo Island"
-!define VERSION "0.2.55"
+!define VERSION "0.3.0"
 !define PUBLISHER "kolijijani"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Halo"
 !define RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
@@ -31,7 +31,7 @@ InstallDir "$LOCALAPPDATA\Programs\Halo"
 InstallDirRegKey HKCU "Software\Halo" "InstallDir"
 BrandingText "${APPNAME} ${VERSION}"
 
-VIProductVersion "0.2.55.0"
+VIProductVersion "0.3.0.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "FileDescription" "Halo Island installer"

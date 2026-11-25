@@ -13,12 +13,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "kolijijani\0"
       VALUE "FileDescription", "Halo Island - a living notch for Windows\0"
-      VALUE "FileVersion", "0.2.55\0"
+      VALUE "FileVersion", "0.3.0\0"
       VALUE "InternalName", "halo\0"
       VALUE "LegalCopyright", "Copyright (C) 2026\0"
       VALUE "OriginalFilename", "halo.exe\0"
       VALUE "ProductName", "Halo Island\0"
-      VALUE "ProductVersion", "0.2.55\0"
+      VALUE "ProductVersion", "0.3.0\0"
     END
   END
   BLOCK "VarFileInfo"
