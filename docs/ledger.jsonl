@@ -78,3 +78,4 @@
 {"id": "dock-phase-1-investigate-window-layer-an", "ev": "done", "owner": "ag", "who": "ag", "commit": "833520d", "note": "Direction A (Magnification shelf + Genie) chosen in mockups/dock/CHOSEN.md", "ts": 1795623954}
 {"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "open", "title": "Dock phase 2 - Direct2D bottom shelf window and settings toggle", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795624406}
 {"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-2-direct2d-bottom-shelf-windo", "who": "ag", "ts": 1795624416}
+{"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "done", "owner": "ag", "who": "ag", "commit": "51a435b", "note": "Direct2D+DirectComposition Halo.Dock window sharing D3D11Device with Present(0,0), Enable Bottom Dock switch, tuck peek handle, fullscreen hide, zero-idle frame gating, and notch regression check", "ts": 1795625092}
