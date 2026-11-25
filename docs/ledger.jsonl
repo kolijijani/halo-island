@@ -94,3 +94,6 @@
 {"id": "dock-visual-parity-phase-1-island-glass-", "ev": "open", "title": "Dock Visual Parity Phase 1: Island glass, liquid specular and theme sync", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795627990}
 {"id": "dock-visual-parity-phase-1-island-glass-", "ev": "doing", "owner": "ag", "branch": "ag/dock-visual-parity-phase-1-island-glass-", "who": "ag", "ts": 1795627990}
 {"id": "dock-visual-parity-phase-1-island-glass-", "ev": "done", "owner": "ag", "who": "ag", "commit": "3267454", "note": "Integrated res/glass.hlsl floating capsule pass, liquid glass specular highlight rim, pointer-following radial sheen, and full island theme sync", "ts": 1795628543}
+{"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "open", "title": "Dock Visual Parity Phase 2: Launchpad slot, squircle tiles and badges", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795628661}
+{"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "doing", "owner": "ag", "branch": "ag/dock-visual-parity-phase-2-launchpad-slo", "who": "ag", "ts": 1795628676}
+{"id": "dock-visual-parity-phase-2-launchpad-slo", "ev": "done", "owner": "ag", "who": "ag", "commit": "0c4aba5", "note": "Added 9-dot Launchpad slot, squircle tiles with bevels/shadows/glowing dots, red/blue notification badges, and download progress ring", "ts": 1795628873}
