@@ -79,3 +79,6 @@
 {"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "open", "title": "Dock phase 2 - Direct2D bottom shelf window and settings toggle", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795624406}
 {"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-2-direct2d-bottom-shelf-windo", "who": "ag", "ts": 1795624416}
 {"id": "dock-phase-2-direct2d-bottom-shelf-windo", "ev": "done", "owner": "ag", "who": "ag", "commit": "51a435b", "note": "Direct2D+DirectComposition Halo.Dock window sharing D3D11Device with Present(0,0), Enable Bottom Dock switch, tuck peek handle, fullscreen hide, zero-idle frame gating, and notch regression check", "ts": 1795625092}
+{"id": "dock-phase-3-parabolic-magnification-and", "ev": "open", "title": "Dock Phase 3: Parabolic magnification and running apps", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795625782}
+{"id": "dock-phase-3-parabolic-magnification-and", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-3-parabolic-magnification-and", "who": "ag", "ts": 1795625782}
+{"id": "dock-phase-3-parabolic-magnification-and", "ev": "done", "owner": "ag", "who": "ag", "commit": "5df4bcb", "note": "Parabolic magnification springs, SetWinEventHook running apps watcher with cached icons and active dots, click-to-focus", "ts": 1795625782}
