@@ -49,6 +49,65 @@ const MAG_EPS: f32 = 0.004;
 /// Shadow ramp around the floating shelf capsule (distance outside body in DIPs, alpha).
 const SHELF_SHADOW: &[(f32, f32)] = &[(-2.0, 0.34), (0.0, 0.28), (5.0, 0.14), (12.0, 0.04), (20.0, 0.0)];
 
+/// Whether the bottom dock should be active (Halo Pro required, disabled in selftest).
+pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
+    enabled && pro && !in_selftest
+}
+
+/// Snapshot of system status shown in the dock's right-side System Tray Capsule.
+/// Driven passively from `AppState` (0 background threads/timers; dirty only on change).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DockTrayState {
+    pub hour: u8,
+    pub minute: u8,
+    pub use_24h: bool,
+    pub volume_pct: u8,
+    pub muted: bool,
+    pub volume_known: bool,
+    pub has_battery: bool,
+    pub battery_pct: u8,
+    pub charging: bool,
+    pub on_ac: bool,
+    pub wifi_connected: Option<bool>,
+}
+
+impl DockTrayState {
+    pub fn clock_text(&self) -> String {
+        if self.use_24h {
+            format!("{:02}:{:02}", self.hour % 24, self.minute % 60)
+        } else {
+            let h12 = match self.hour % 12 {
+                0 => 12,
+                h => h,
+            };
+            format!("{h12}:{:02}", self.minute % 60)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DockTrayZone {
+    Status,
+    Clock,
+}
+
+pub fn tray_capsule_width(tray: &DockTrayState) -> f32 {
+    if tray.has_battery {
+        156.0
+    } else {
+        112.0
+    }
+}
+
+fn tray_zone_rects(tray_rect: Rect, has_battery: bool) -> (Rect, Rect) {
+    let clock_w = 50.0f32.min(tray_rect.w * 0.48);
+    let gap = 4.0;
+    let status_w = (tray_rect.w - clock_w - gap).max(if has_battery { 72.0 } else { 42.0 });
+    let status = Rect::new(tray_rect.x, tray_rect.y, status_w.min(tray_rect.w - clock_w - gap).max(20.0), tray_rect.h);
+    let clock = Rect::new(status.right() + gap, tray_rect.y, (tray_rect.right() - (status.right() + gap)).max(24.0), tray_rect.h);
+    (status, clock)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DockCmd {
     ToggleTuck,
@@ -155,9 +214,13 @@ pub fn slot_metrics(surf_w: f32, count: usize) -> (f32, f32) {
 }
 
 fn slot_metrics_with_seps(surf_w: f32, count: usize, sep_count: usize) -> (f32, f32) {
+    slot_metrics_with_seps_and_tray(surf_w, count, sep_count, 0.0)
+}
+
+fn slot_metrics_with_seps_and_tray(surf_w: f32, count: usize, sep_count: usize, tray_w: f32) -> (f32, f32) {
     let n = count.max(1) as f32;
     let sep = sep_count as f32 * SEP_W;
-    let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0 - sep).max(64.0);
+    let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0 - sep - tray_w).max(64.0);
     let natural = n * SLOT_MAX + (n - 1.0) * SLOT_GAP;
     if natural <= avail {
         (SLOT_MAX, SLOT_GAP)
@@ -205,14 +268,33 @@ pub fn layout_slots_with_stack(
     scales: &[f32],
     tuck_t: f32,
 ) -> (Rect, Option<f32>, Option<f32>, Vec<Rect>) {
+    let (shelf, sep1, sep2, _, rects, _) = layout_slots_full(surf_w, anchor_count, app_count, stack_count, 0.0, scales, tuck_t);
+    (shelf, sep1, sep2, rects)
+}
+
+/// Full dock layout including the trailing System Tray Capsule (`tray_w > 0.0`).
+/// Returns `(shelf, sep1_x, sep2_x, sep3_x, slot_rects, tray_rect)`.
+pub fn layout_slots_full(
+    surf_w: f32,
+    anchor_count: usize,
+    app_count: usize,
+    stack_count: usize,
+    tray_w: f32,
+    scales: &[f32],
+    tuck_t: f32,
+) -> (Rect, Option<f32>, Option<f32>, Option<f32>, Vec<Rect>, Option<Rect>) {
     let total = anchor_count + app_count + stack_count;
     let has_sep1 = anchor_count > 0 && app_count > 0;
     let has_sep2 = stack_count > 0 && (anchor_count + app_count) > 0;
-    let sep_count = usize::from(has_sep1) + usize::from(has_sep2);
-    let (base_slot, base_gap) = slot_metrics_with_seps(surf_w, total, sep_count);
+    let has_tray = tray_w > 0.0 && surf_w >= tray_w + 180.0;
+    let eff_tray_w = if has_tray { tray_w } else { 0.0 };
+    let has_sep3 = has_tray && total > 0;
+    let sep_count = usize::from(has_sep1) + usize::from(has_sep2) + usize::from(has_sep3);
+    let (base_slot, base_gap) = slot_metrics_with_seps_and_tray(surf_w, total, sep_count, eff_tray_w);
     let sep_w = sep_count as f32 * SEP_W;
-    let gap_count = total.saturating_sub(1).saturating_sub(sep_count) as f32;
-    let base_w = total as f32 * base_slot + gap_count * base_gap + sep_w + 2.0 * SHELF_PAD_X;
+    let slot_seps = usize::from(has_sep1) + usize::from(has_sep2);
+    let gap_count = total.saturating_sub(1).saturating_sub(slot_seps) as f32;
+    let base_w = total as f32 * base_slot + gap_count * base_gap + sep_w + eff_tray_w + 2.0 * SHELF_PAD_X;
     let max_shelf_w = (surf_w - 8.0).max(64.0);
 
     let mut raw_extra = 0.0f32;
@@ -239,6 +321,7 @@ pub fn layout_slots_with_stack(
     let mut rects = Vec::with_capacity(total);
     let mut sep1_x = None;
     let mut sep2_x = None;
+    let mut sep3_x = None;
     let mut x = shelf.x + SHELF_PAD_X;
     for i in 0..total {
         if has_sep1 && i == anchor_count {
@@ -258,7 +341,24 @@ pub fn layout_slots_with_stack(
             x += base_gap;
         }
     }
-    (shelf, sep1_x, sep2_x, rects)
+    let tray_rect = if has_tray {
+        if has_sep3 {
+            sep3_x = Some(x + SEP_W * 0.5);
+            x += SEP_W;
+        }
+        let th = (shelf_h - 18.0).clamp(28.0, 38.0);
+        let ty = shelf.y + (shelf_h - th) * 0.5;
+        let tw = (shelf.right() - SHELF_PAD_X - x).max(0.0).min(eff_tray_w);
+        if tw >= 48.0 {
+            Some(Rect::new(x, ty, tw, th))
+        } else {
+            sep3_x = None;
+            None
+        }
+    } else {
+        None
+    };
+    (shelf, sep1_x, sep2_x, sep3_x, rects, tray_rect)
 }
 
 /// Bottom 4 DIP peek handle shown while tucked (`CHOSEN.md` §3).
@@ -319,6 +419,9 @@ pub struct Dock {
     mouse: Option<Point>,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    tray: DockTrayState,
+    hovered_tray: Option<DockTrayZone>,
+    pressed_tray: Option<DockTrayZone>,
     stack_open: bool,
     dirty: bool,
     mask: Option<(HitMask, f64)>,
@@ -383,6 +486,9 @@ impl Dock {
             mouse: None,
             hovered: None,
             pressed: None,
+            tray: DockTrayState::default(),
+            hovered_tray: None,
+            pressed_tray: None,
             stack_open: false,
             dirty: true,
             mask: None,
@@ -394,6 +500,16 @@ impl Dock {
             self.stack_open = open;
             self.dirty = true;
         }
+    }
+
+    /// Update the right-side System Tray Capsule snapshot; returns `true` only if it changed.
+    pub fn set_tray(&mut self, tray: DockTrayState) -> bool {
+        if self.tray == tray {
+            return false;
+        }
+        self.tray = tray;
+        self.dirty = true;
+        true
     }
 
     pub fn scale(&self) -> f32 {
@@ -420,7 +536,9 @@ impl Dock {
     fn slot_screen_rect(&self, index: usize) -> Rect {
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let (_, _, _, rects) = layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, self.tuck.value);
+        let tray_w = tray_capsule_width(&self.tray);
+        let (_, _, _, _, rects, _) =
+            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
         let r = rects.get(index).copied().unwrap_or(Rect::new(sw * 0.5 - 22.0, SURF_H - 58.0, 44.0, 44.0));
         let sc = self.scale().max(1.0);
         Rect::new(
@@ -477,20 +595,23 @@ impl Dock {
         };
         let sw = self.surf_w_dip();
         let rest_scales = vec![1.0f32; total];
-        let (rest_shelf, _, _, rest_rects) =
-            layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &rest_scales, self.tuck.value);
+        let tray_w = tray_capsule_width(&self.tray);
+        let (rest_shelf, _, _, sep3_x, rest_rects, _) =
+            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &rest_scales, self.tuck.value);
+        let icons_right = sep3_x.unwrap_or_else(|| rest_shelf.right());
         let active_band = Rect::new(
             rest_shelf.x - 16.0,
             (rest_shelf.y - 36.0).max(0.0),
-            rest_shelf.w + 32.0,
+            (icons_right - rest_shelf.x + 20.0).max(32.0),
             rest_shelf.h + 44.0,
         );
         if !active_band.contains(p) {
             self.reset_mag_targets(instant);
             return;
         }
-        let sep_count = usize::from(!self.apps.is_empty()) + 1;
-        let (base_slot, base_gap) = slot_metrics_with_seps(sw, total, sep_count);
+        let sep_count = usize::from(!self.apps.is_empty()) + 1 + usize::from(sep3_x.is_some());
+        let eff_tray = if sep3_x.is_some() { tray_w } else { 0.0 };
+        let (base_slot, base_gap) = slot_metrics_with_seps_and_tray(sw, total, sep_count, eff_tray);
         let step = base_slot + base_gap;
         for (i, r) in rest_rects.iter().enumerate() {
             let target = mag_scale(p.x - (r.x + r.w * 0.5), step);
@@ -526,6 +647,8 @@ impl Dock {
             self.mouse = None;
             self.hovered = None;
             self.pressed = None;
+            self.hovered_tray = None;
+            self.pressed_tray = None;
             self.tracking = false;
             self.reset_mag_targets(true);
             if self.shown {
@@ -571,6 +694,8 @@ impl Dock {
         }
         self.hovered = None;
         self.pressed = None;
+        self.hovered_tray = None;
+        self.pressed_tray = None;
         if tucked {
             self.reset_mag_targets(instant);
         }
@@ -588,8 +713,33 @@ impl Dock {
         }
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let (_, _, _, rects) = layout_slots_with_stack(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, self.tuck.value);
+        let tray_w = tray_capsule_width(&self.tray);
+        let (_, _, _, _, rects, _) =
+            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
         rects.iter().position(|r| r.inset(-3.0, -6.0).contains(p))
+    }
+
+    fn tray_zone_at(&self, p: Point) -> Option<DockTrayZone> {
+        if self.tucked && self.tuck.value >= 0.5 {
+            return None;
+        }
+        let sw = self.surf_w_dip();
+        let scales = self.current_scales();
+        let tray_w = tray_capsule_width(&self.tray);
+        let (_, _, _, _, _, tray_rect) =
+            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tr = tray_rect?;
+        if !tr.inset(-2.0, -4.0).contains(p) {
+            return None;
+        }
+        let (status_r, clock_r) = tray_zone_rects(tr, self.tray.has_battery);
+        if clock_r.inset(-2.0, -4.0).contains(p) {
+            Some(DockTrayZone::Clock)
+        } else if status_r.inset(-2.0, -4.0).contains(p) {
+            Some(DockTrayZone::Status)
+        } else {
+            Some(DockTrayZone::Status)
+        }
     }
 
     pub fn handle_message(&mut self, hwnd: HWND, msg: u32, _wp: WPARAM, lp: LPARAM, instant: bool) -> (Option<LRESULT>, DockAction) {
@@ -624,8 +774,10 @@ impl Dock {
                 let moved = self.mouse != Some(p);
                 self.mouse = Some(p);
                 let next_hover = self.slot_at(p);
-                let hover_changed = next_hover != self.hovered;
+                let next_tray = if next_hover.is_none() { self.tray_zone_at(p) } else { None };
+                let hover_changed = next_hover != self.hovered || next_tray != self.hovered_tray;
                 self.hovered = next_hover;
+                self.hovered_tray = next_tray;
                 if moved && !self.tucked {
                     self.update_mag_targets(instant);
                 }
@@ -638,7 +790,10 @@ impl Dock {
             WM_MOUSELEAVE => {
                 self.tracking = false;
                 self.mouse = None;
-                let had_ui = self.hovered.take().is_some() || self.pressed.take().is_some();
+                let had_ui = self.hovered.take().is_some()
+                    || self.pressed.take().is_some()
+                    || self.hovered_tray.take().is_some()
+                    || self.pressed_tray.take().is_some();
                 let had_mag = self.scales.iter().any(|s| s.target > 1.0 + MAG_EPS || s.value > 1.0 + MAG_EPS);
                 self.reset_mag_targets(instant);
                 if had_ui || had_mag {
@@ -657,8 +812,10 @@ impl Dock {
                     return (Some(LRESULT(0)), DockAction::None);
                 }
                 let hit = self.slot_at(p);
-                if hit != self.pressed {
+                let tray_hit = if hit.is_none() { self.tray_zone_at(p) } else { None };
+                if hit != self.pressed || tray_hit != self.pressed_tray {
                     self.pressed = hit;
+                    self.pressed_tray = tray_hit;
                     self.dirty = true;
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
@@ -670,10 +827,18 @@ impl Dock {
                     let _ = ReleaseCapture();
                 }
                 let down = self.pressed.take();
+                let down_tray = self.pressed_tray.take();
                 self.dirty = true;
                 if down == Some(usize::MAX) && self.tucked && peek_hit_rect(self.surf_w_dip()).contains(p) {
                     self.set_tucked(false, instant);
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
+                }
+                if let Some(z) = down_tray.filter(|&z| Some(z) == self.tray_zone_at(p)) {
+                    let page = match z {
+                        DockTrayZone::Status => PageKind::System,
+                        DockTrayZone::Clock => PageKind::Today,
+                    };
+                    return (Some(LRESULT(0)), DockAction::OpenPage(page));
                 }
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
                     if i < ANCHOR_SLOTS.len() {
@@ -714,7 +879,7 @@ impl Dock {
                 (Some(LRESULT(0)), DockAction::ShowMenu(pt, self.tucked))
             }
             WM_CAPTURECHANGED => {
-                if self.pressed.take().is_some() {
+                if self.pressed.take().is_some() || self.pressed_tray.take().is_some() {
                     self.dirty = true;
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
@@ -722,6 +887,7 @@ impl Dock {
             }
             WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
                 let hand = self.hovered.is_some()
+                    || self.hovered_tray.is_some()
                     || (self.tucked && self.mouse.is_some_and(|p| peek_hit_rect(self.surf_w_dip()).contains(p)));
                 unsafe {
                     let id = if hand { IDC_HAND } else { IDC_ARROW };
@@ -756,9 +922,13 @@ impl Dock {
         let light = self.light;
         let hovered = self.hovered;
         let pressed = self.pressed;
+        let hovered_tray = self.hovered_tray;
+        let pressed_tray = self.pressed_tray;
+        let tray = self.tray;
+        let tray_w = tray_capsule_width(&tray);
         let scales = self.current_scales();
-        let (shelf, sep_x, sep2_x, slot_rects) =
-            layout_slots_with_stack(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), 1, &scales, tuck_t);
+        let (shelf, sep_x, sep2_x, sep3_x, slot_rects, tray_rect) =
+            layout_slots_full(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, tuck_t);
         let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
         let stack_open = self.stack_open;
 
@@ -782,11 +952,16 @@ impl Dock {
                     shelf,
                     sep_x,
                     sep2_x,
+                    sep3_x,
                     &slot_rects,
                     &self.apps,
                     stack_open,
                     hovered,
                     pressed,
+                    tray_rect,
+                    &tray,
+                    hovered_tray,
+                    pressed_tray,
                 );
                 if let Err(e) = gfx.end() {
                     crate::pwarn!("dock: EndDraw failed ({e})");
@@ -848,11 +1023,16 @@ fn draw_dock(
     shelf: Rect,
     sep_x: Option<f32>,
     sep2_x: Option<f32>,
+    sep3_x: Option<f32>,
     slot_rects: &[Rect],
     apps: &[RunningApp],
     stack_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    tray_rect: Option<Rect>,
+    tray: &DockTrayState,
+    hovered_tray: Option<DockTrayZone>,
+    pressed_tray: Option<DockTrayZone>,
 ) {
     c.unthemed(|c| {
         if tuck_t < 0.995 {
@@ -985,7 +1165,87 @@ fn draw_dock(
                     }
                 }
 
-                if let Some(i) = hovered {
+                if let Some(sx) = sep3_x {
+                    let div_h = (shelf.h * 0.52).clamp(18.0, 30.0);
+                    let div_y = shelf.y + (shelf.h - div_h) * 0.5;
+                    let div_c = if light { Color::black(0.14) } else { Color::white(0.18) };
+                    c.fill_rrect(Rect::new(sx - 0.5, div_y, 1.0, div_h), 0.5, div_c);
+                }
+
+                if let Some(tr) = tray_rect {
+                    let (status_r, clock_r) = tray_zone_rects(tr, tray.has_battery);
+                    let ink = if light { Color::hex(0x1C1C1E) } else { palette::TEXT };
+                    let dim = if light { Color::black(0.55) } else { Color::white(0.65) };
+
+                    for (zone, zr) in [(DockTrayZone::Status, status_r), (DockTrayZone::Clock, clock_r)] {
+                        let is_h = hovered_tray == Some(zone);
+                        let is_p = pressed_tray == Some(zone);
+                        let bg = if is_p {
+                            if light { Color::black(0.12) } else { Color::white(0.18) }
+                        } else if is_h {
+                            if light { Color::black(0.07) } else { Color::white(0.12) }
+                        } else if light {
+                            Color::black(0.04)
+                        } else {
+                            Color::white(0.06)
+                        };
+                        let rim = if is_h {
+                            if light { Color::black(0.12) } else { Color::white(0.20) }
+                        } else if light {
+                            Color::black(0.06)
+                        } else {
+                            Color::white(0.09)
+                        };
+                        let pill_r = (zr.h * 0.42).min(14.0);
+                        c.fill_rrect(zr, pill_r, bg);
+                        c.stroke_rrect(zr, pill_r, rim, 1.0);
+                    }
+
+                    // Status zone: Wi-Fi, Volume, and optional Battery %.
+                    let mut ix = status_r.x + 8.0;
+                    let icon_sz = 13.0;
+                    let iy = status_r.y + (status_r.h - icon_sz) * 0.5;
+                    let (wifi_ic, wifi_c) = match tray.wifi_connected {
+                        Some(false) => (Icon::WifiOff, dim),
+                        _ => (Icon::Wifi, ink),
+                    };
+                    c.icon(wifi_ic, Rect::new(ix, iy, icon_sz, icon_sz), wifi_c);
+                    ix += icon_sz + 7.0;
+
+                    let (vol_ic, vol_c) = if tray.muted || (tray.volume_known && tray.volume_pct == 0) {
+                        (Icon::VolumeMute, dim)
+                    } else if tray.volume_known && tray.volume_pct < 45 {
+                        (Icon::VolumeLow, ink)
+                    } else {
+                        (Icon::Volume, ink)
+                    };
+                    c.icon(vol_ic, Rect::new(ix, iy, icon_sz, icon_sz), vol_c);
+                    ix += icon_sz + 7.0;
+
+                    if tray.has_battery && ix + 18.0 < status_r.right() {
+                        let bat_c = if tray.charging || tray.on_ac {
+                            Color::hex(0x30D158)
+                        } else if tray.battery_pct <= 20 {
+                            Color::hex(0xFF453A)
+                        } else {
+                            ink
+                        };
+                        let bat_ic = if tray.charging { Icon::Bolt } else { Icon::Battery };
+                        c.icon(bat_ic, Rect::new(ix, iy, icon_sz, icon_sz), bat_c);
+                        ix += icon_sz + 3.0;
+                        let pct_w = (status_r.right() - ix - 4.0).max(0.0);
+                        if pct_w >= 20.0 {
+                            let pct_st = TextStyle::caption().weight(Weight::Medium).color(bat_c);
+                            c.text(&format!("{}%", tray.battery_pct), Rect::new(ix, status_r.y, pct_w, status_r.h), &pct_st);
+                        }
+                    }
+
+                    // Clock zone.
+                    let clock_st = TextStyle::caption().weight(Weight::Semibold).center().color(ink);
+                    c.text(&tray.clock_text(), clock_r, &clock_st);
+                }
+
+                let tip: Option<(&str, Rect)> = if let Some(i) = hovered {
                     let label = if i < ANCHOR_SLOTS.len() {
                         Some(ANCHOR_SLOTS[i].label)
                     } else if i == dl_idx {
@@ -993,27 +1253,36 @@ fn draw_dock(
                     } else {
                         apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
                     };
-                    if let (Some(label), Some(&sr)) = (label, slot_rects.get(i)) {
-                        let st = TextStyle::caption()
-                            .weight(Weight::Medium)
-                            .center()
-                            .color(if light { Color::hex(0x1C1C1E) } else { palette::TEXT });
-                        let (tw, _) = c.measure(label, &st, 220.0);
-                        let pw = (tw + 18.0).max(52.0);
-                        let ph = 24.0;
-                        let px = (sr.x + sr.w * 0.5 - pw * 0.5).clamp(4.0, (surf_w - pw - 4.0).max(4.0));
-                        let py = (sr.y.min(shelf.y) - ph - 8.0).max(2.0);
-                        let pill = Rect::new(px, py, pw, ph);
-                        let tip_bg = if light {
-                            Color::rgba(0.97, 0.97, 0.99, 0.94)
-                        } else {
-                            Color::rgba(0.14, 0.15, 0.18, 0.94)
-                        };
-                        let tip_rim = if light { Color::black(0.10) } else { Color::white(0.14) };
-                        c.fill_rrect(pill, ph * 0.5, tip_bg);
-                        c.stroke_rrect(pill, ph * 0.5, tip_rim, 1.0);
-                        c.text(label, pill, &st);
+                    label.zip(slot_rects.get(i).copied())
+                } else if let (Some(z), Some(tr)) = (hovered_tray, tray_rect) {
+                    let (status_r, clock_r) = tray_zone_rects(tr, tray.has_battery);
+                    match z {
+                        DockTrayZone::Status => Some(("System Status", status_r)),
+                        DockTrayZone::Clock => Some(("Today", clock_r)),
                     }
+                } else {
+                    None
+                };
+                if let Some((label, sr)) = tip {
+                    let st = TextStyle::caption()
+                        .weight(Weight::Medium)
+                        .center()
+                        .color(if light { Color::hex(0x1C1C1E) } else { palette::TEXT });
+                    let (tw, _) = c.measure(label, &st, 220.0);
+                    let pw = (tw + 18.0).max(52.0);
+                    let ph = 24.0;
+                    let px = (sr.x + sr.w * 0.5 - pw * 0.5).clamp(4.0, (surf_w - pw - 4.0).max(4.0));
+                    let py = (sr.y.min(shelf.y) - ph - 8.0).max(2.0);
+                    let pill = Rect::new(px, py, pw, ph);
+                    let tip_bg = if light {
+                        Color::rgba(0.97, 0.97, 0.99, 0.94)
+                    } else {
+                        Color::rgba(0.14, 0.15, 0.18, 0.94)
+                    };
+                    let tip_rim = if light { Color::black(0.10) } else { Color::white(0.14) };
+                    c.fill_rrect(pill, ph * 0.5, tip_bg);
+                    c.stroke_rrect(pill, ph * 0.5, tip_rim, 1.0);
+                    c.text(label, pill, &st);
                 }
             });
         }
@@ -1544,5 +1813,30 @@ mod tests {
         let (sx, sy, sw, sh) = stack_surface_rect(&m, anchor, 4);
         assert!(sx >= m.work.left && sx + sw <= m.work.right);
         assert!(sy + sh < anchor.y as i32);
+    }
+
+    #[test]
+    fn pro_gating_and_tray_capsule_layout_and_clock() {
+        assert!(!dock_allowed(false, true, false));
+        assert!(!dock_allowed(true, false, false));
+        assert!(!dock_allowed(true, true, true));
+        assert!(dock_allowed(true, true, false));
+
+        let t24 = DockTrayState { hour: 13, minute: 5, use_24h: true, has_battery: true, battery_pct: 84, ..Default::default() };
+        assert_eq!(t24.clock_text(), "13:05");
+        let t12 = DockTrayState { hour: 0, minute: 9, use_24h: false, ..t24 };
+        assert_eq!(t12.clock_text(), "12:09");
+
+        let scales = vec![1.0f32; 9];
+        let tw = tray_capsule_width(&t24);
+        let (shelf, sep1, sep2, sep3, rects, tray_r) = layout_slots_full(1360.0, 5, 3, 1, tw, &scales, 0.0);
+        assert!(sep1.is_some() && sep2.is_some() && sep3.is_some());
+        let tr = tray_r.expect("tray rect present");
+        assert!(tr.x > sep3.unwrap());
+        assert!(tr.right() <= shelf.right() - SHELF_PAD_X + 0.5);
+        assert!(rects.last().unwrap().right() < sep3.unwrap());
+        let (status_r, clock_r) = tray_zone_rects(tr, true);
+        assert!(status_r.right() < clock_r.x);
+        assert!(clock_r.right() <= tr.right() + 0.5);
     }
 }

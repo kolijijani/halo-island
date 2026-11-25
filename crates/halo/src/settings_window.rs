@@ -611,9 +611,14 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 ),
             ];
             if cfg!(windows) {
+                let dock_sub = if s.pro {
+                    "Floating app shelf at the bottom edge of the screen"
+                } else {
+                    "Floating app shelf at the bottom edge of the screen (Halo Pro)"
+                };
                 out.push(Block::Group(
                     Some("Bottom dock"),
-                    vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some("Floating app shelf at the bottom edge of the screen"), s.dock_enabled)],
+                    vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some(dock_sub), s.dock_enabled && s.pro)],
                 ));
             }
             out
@@ -1008,7 +1013,13 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         }
         Key::CloudSync => s.cloud_sync = !s.cloud_sync,
         Key::StepAside => s.step_aside = !s.step_aside,
-        Key::DockEnabled => s.dock_enabled = !s.dock_enabled,
+        Key::DockEnabled => {
+            if !s.pro {
+                st.notify(Icon::Lock, palette::YELLOW, "Bottom dock is Halo Pro", "Activate Halo Pro in Settings to unlock the bottom dock", 5.0, None);
+                return;
+            }
+            s.dock_enabled = !s.dock_enabled;
+        }
         Key::Autostart => {
             if let Some(on) = st.ui.autostart {
                 st.cmd(Command::SetAutostart(!on));
@@ -2613,7 +2624,7 @@ mod tests {
                     // Start with Windows waits for its reading; the buttons open things;
                     // GameStats without Pro notifies instead of toggling and getting reverted.
                     Key::Autostart => assert!(st.cmds.is_empty()),
-                    Key::GameStats if !st.settings.pro => assert!(st.notice.is_some()),
+                    Key::GameStats | Key::DockEnabled if !st.settings.pro => assert!(st.notice.is_some()),
                     Key::DataFolder | Key::ReleaseNotes | Key::LyricsCredit => assert!(opens, "{:?}", it.key),
                     _ => assert!(saved, "{:?} didn't save", it.key),
                 }

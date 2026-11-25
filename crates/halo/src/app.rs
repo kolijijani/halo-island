@@ -461,6 +461,7 @@ pub struct App {
     dock_stack: Option<crate::dock::DockStack>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
+    wifi_connected: Option<bool>,
     clock: FrameClock,
     sink: EventSink,
     rx: Receiver<AppEvent>,
@@ -776,6 +777,7 @@ impl App {
             dock_apps: None,
             dock_stack: None,
             dock_genie: None,
+            wifi_connected: None,
             clock,
             sink,
             rx,
@@ -1822,9 +1824,9 @@ impl App {
         self.settings_win.as_ref().is_some_and(|w| w.view.moving)
     }
 
-    /// Create or destroy the bottom dock window to match `Settings::dock_enabled`.
+    /// Create or destroy the bottom dock window to match `Settings::dock_enabled` + Halo Pro.
     fn sync_dock(&mut self) {
-        if self.st.settings.dock_enabled && !self.in_selftest {
+        if crate::dock::dock_allowed(self.st.settings.dock_enabled, self.st.settings.pro, self.in_selftest) {
             if self.dock.is_none() {
                 let shared = self.gfx.d3d_handles();
                 let light = services::apps_use_light_theme();
@@ -1833,6 +1835,7 @@ impl App {
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
                         d.set_apps(watcher.refresh());
+                        d.set_tray(self.dock_tray_state());
                         pinfo!("dock: enabled");
                         self.dock = Some(d);
                         self.dock_apps = Some(watcher);
@@ -1848,6 +1851,34 @@ impl App {
             if self.dock.take().is_some() {
                 pinfo!("dock: disabled");
             }
+        }
+    }
+
+    fn dock_tray_state(&self) -> crate::dock::DockTrayState {
+        crate::dock::DockTrayState {
+            hour: self.st.local.hour,
+            minute: self.st.local.minute,
+            use_24h: self.st.settings.use_24h,
+            volume_pct: (self.st.volume.level.clamp(0.0, 1.0) * 100.0).round() as u8,
+            muted: self.st.volume.muted,
+            volume_known: self.st.volume.known,
+            has_battery: self.st.power.has_battery,
+            battery_pct: self.st.power.percent,
+            charging: self.st.power.charging,
+            on_ac: self.st.power.on_ac,
+            wifi_connected: self.wifi_connected,
+        }
+    }
+
+    /// Push passive `AppState` changes to the dock's System Tray Capsule;
+    /// rests while locked or display is off and marks dirty only on visible change.
+    fn sync_dock_tray(&mut self) {
+        if self.locked || self.display_off {
+            return;
+        }
+        let tray = self.dock_tray_state();
+        if self.dock.as_mut().is_some_and(|d| d.set_tray(tray)) {
+            self.request_frame();
         }
     }
 
@@ -2842,6 +2873,7 @@ impl App {
             AppEvent::Volume { level, muted } => {
                 let first = !self.st.volume.known;
                 self.st.volume = crate::state::VolumeState { level, muted, known: true };
+                self.sync_dock_tray();
                 if !first && self.st.settings.hud_volume {
                     self.st.show_hud(HudKind::Volume { level, muted }, 1.6);
                 }
@@ -2862,6 +2894,7 @@ impl App {
             AppEvent::Power(p) => {
                 let old = self.st.power;
                 self.st.power = p;
+                self.sync_dock_tray();
                 if self.st.settings.hud_power && p.has_battery {
                     if p.on_ac != old.on_ac {
                         self.st.show_hud(HudKind::Charging { percent: p.percent, plugged: p.on_ac }, 2.2);
@@ -2876,6 +2909,8 @@ impl App {
                 }
             }
             AppEvent::Wifi(w) => {
+                self.wifi_connected = Some(w.connected);
+                self.sync_dock_tray();
                 // Nobody can see it: old news by the time they're back.
                 if self.st.settings.hud_wifi && !self.locked && !self.display_off {
                     self.st.offer_popup(HudKind::Wifi { connected: w.connected, ssid: w.ssid, internet: w.internet });
@@ -3036,6 +3071,7 @@ impl App {
             AppEvent::License(r) => self.on_license(r),
             AppEvent::LicenseStanding { seat, standing } => {
                 services::license::on_standing(&mut self.st, seat, standing, &mut self.license_look);
+                self.sync_dock();
                 self.request_frame();
             }
             AppEvent::Stocks(ev) => self.st.stocks.apply(ev, self.st.unix),
@@ -3944,6 +3980,7 @@ impl App {
         self.st.now = clock::mono();
         self.st.local = clock::local_shown();
         self.st.unix = clock::unix_now();
+        self.sync_dock_tray();
     }
 
     fn tick(&mut self) {
@@ -5073,6 +5110,7 @@ impl App {
                 Command::ForgetLicense => {
                     services::license::forget();
                     self.st.ui.license = Some(Err(None));
+                    self.sync_dock();
                 }
                 Command::Update => self.update_now(),
                 Command::CheckForUpdates => self.check_for_updates(),
