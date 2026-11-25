@@ -88,3 +88,6 @@
 {"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "open", "title": "Dock Phase 5: System tray capsule and Halo Pro gating", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795626560}
 {"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-5-system-tray-capsule-and-hal", "who": "ag", "ts": 1795626580}
 {"id": "dock-phase-5-system-tray-capsule-and-hal", "ev": "done", "owner": "ag", "who": "ag", "commit": "9510f80", "note": "Added right-side System Tray Capsule (Wi-Fi, volume, battery, clock; 0 idle polls, pauses on lock/display-off) and Halo Pro license gating in Settings & App::sync_dock", "ts": 1795626869}
+{"id": "dock-phase-6-performance-audit-and-verif", "ev": "open", "title": "Dock Phase 6: Performance audit and verification", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795627058}
+{"id": "dock-phase-6-performance-audit-and-verif", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-6-performance-audit-and-verif", "who": "ag", "ts": 1795627065}
+{"id": "dock-phase-6-performance-audit-and-verif", "ev": "done", "owner": "ag", "who": "ag", "commit": "98137a2", "note": "Release binary 9.52 MB (0 new crates), 9/9 dock tests & 26/26 settings_window tests pass; ci-weight skipped while live halo.exe is running", "ts": 1795627217}
