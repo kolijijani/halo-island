@@ -40,6 +40,7 @@ Besides the rows below, sections hold parts that aren't rows: the version and Ch
 | In full-screen apps | Always. |
 | Only for a few seconds | Windows only. |
 | Mini handle | Always. |
+| Enable Bottom Dock | Windows only. |
 
 ## Music and lyrics
 

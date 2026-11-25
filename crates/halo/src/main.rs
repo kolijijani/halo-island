@@ -31,6 +31,8 @@ mod clock;
 #[cfg(any(windows, target_os = "macos"))]
 mod commands;
 #[cfg(windows)]
+mod dock;
+#[cfg(windows)]
 mod dragdrop;
 #[cfg(windows)]
 mod events;

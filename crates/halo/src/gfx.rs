@@ -486,9 +486,14 @@ unsafe fn dcomp_create_device(dxgi: &IDXGIDevice) -> Result<IDCompositionDevice>
     Ok(IDCompositionDevice::from_raw(out))
 }
 
+pub type SharedD3d = (ID3D11Device, ID3D11DeviceContext, bool);
+
 impl GpuTarget {
-    unsafe fn new(d2d: &ID2D1Factory1, hwnd: HWND, w: i32, h: i32) -> Result<Self> {
-        let (d3d, ctx, warp) = create_d3d_device()?;
+    unsafe fn new(d2d: &ID2D1Factory1, hwnd: HWND, w: i32, h: i32, shared: Option<SharedD3d>) -> Result<Self> {
+        let (d3d, ctx, warp) = match shared {
+            Some(s) => s,
+            None => create_d3d_device()?,
+        };
         let dxgi: IDXGIDevice = d3d.cast()?;
         let dc = d2d.CreateDevice(&dxgi)?.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
         let dxgi_adapter = dxgi.GetAdapter()?;
@@ -800,6 +805,13 @@ pub struct Gfx {
     glass_drawn: bool,
     /// ...and the last time it was called (the self-test reads this).
     glass_drew_last: bool,
+    /// Swapchain `Present` sync interval (`1` on the primary island surface,
+    /// `0` on secondary surfaces so two `Present` calls never serialize on vblank).
+    sync_interval: u32,
+    /// Whether `ensure_gpu` records its visual HWND in `window::VISUAL`.
+    track_island_visual: bool,
+    /// Optional shared D3D11 device/context from the primary `Gfx`.
+    shared_d3d: Option<SharedD3d>,
 }
 
 fn pick_font_family(dwrite: &IDWriteFactory) -> Vec<u16> {
@@ -943,8 +955,36 @@ impl Gfx {
                 glass_ok: 0,
                 glass_drawn: false,
                 glass_drew_last: false,
+                sync_interval: 1,
+                track_island_visual: true,
+                shared_d3d: None,
             })
         }
+    }
+
+    /// Configure as a secondary GPU surface (e.g. the bottom dock): uses
+    /// non-blocking `Present(0, 0)` since `FrameClock` already paces vblanks,
+    /// and keeps its visual HWND separate from the island's capture affinity.
+    pub fn secondary(mut self) -> Self {
+        self.sync_interval = 0;
+        self.track_island_visual = false;
+        self
+    }
+
+    pub fn d3d_handles(&self) -> Option<SharedD3d> {
+        self.gpu.as_ref().map(|g| (g.d3d.clone(), g.ctx.clone(), g.warp))
+    }
+
+    pub fn has_gpu(&self) -> bool {
+        self.gpu.is_some()
+    }
+
+    pub fn set_shared_d3d(&mut self, shared: Option<SharedD3d>) {
+        self.shared_d3d = shared;
+    }
+
+    pub fn visual_hwnd(&self) -> Option<HWND> {
+        self.visual
     }
 
     /// Never start the GPU renderer: a window that draws only when it
@@ -1065,12 +1105,12 @@ impl Gfx {
         }
         let visual = match self.visual {
             Some(v) => v,
-            None => match crate::window::create_visual_window(self.hwnd) {
+            None => match crate::window::create_owned_visual_window(self.hwnd, self.track_island_visual) {
                 Ok(v) => *self.visual.insert(v),
                 Err(e) => return self.gpu_failed(e),
             },
         };
-        let made = self.d2d.cast::<ID2D1Factory1>().and_then(|f| unsafe { GpuTarget::new(&f, visual, self.surf_w, self.surf_h) });
+        let made = self.d2d.cast::<ID2D1Factory1>().and_then(|f| unsafe { GpuTarget::new(&f, visual, self.surf_w, self.surf_h, self.shared_d3d.clone()) });
         match made {
             Ok(g) => {
                 let main = g.dc.cast::<ID2D1RenderTarget>();
@@ -1304,7 +1344,7 @@ impl Gfx {
                 }
             }
         }
-        if self.bitmaps.len() > 48 {
+        if self.bitmaps.len() > 96 {
             let used = std::mem::take(&mut self.used_bitmaps);
             self.bitmaps.retain(|k, _| used.contains(k));
         }
@@ -1321,7 +1361,7 @@ impl Gfx {
             self.place_visual(x, y);
         }
         if let Some(g) = self.gpu.as_ref() {
-            if let Err(e) = unsafe { g.swap.Present(1, DXGI_PRESENT(0)) }.ok() {
+            if let Err(e) = unsafe { g.swap.Present(self.sync_interval, DXGI_PRESENT(0)) }.ok() {
                 self.gpu_lost("present", e.clone());
                 return Err(e);
             }

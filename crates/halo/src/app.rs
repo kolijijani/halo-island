@@ -106,6 +106,8 @@ thread_local! {
 pub enum Deferred {
     DragOut(Vec<String>),
     Menu(POINT),
+    /// Right-click context menu on the bottom dock (`(screen_pt, tucked)`).
+    DockMenu(POINT, bool),
     /// The header's "…": the tabs that didn't fit, at the pointer.
     TabMenu(Vec<PageKind>),
 }
@@ -167,6 +169,9 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     window::register_classes(island_wndproc, helper_wndproc)?;
     if let Err(e) = settings_host::register(settings_wndproc) {
         pwarn!("settings window: class not registered ({e})");
+    }
+    if let Err(e) = crate::dock::register(dock_wndproc) {
+        pwarn!("dock window: class not registered ({e})");
     }
     let hwnd = window::create_island_window()?;
     let helper = window::create_helper_window()?;
@@ -343,6 +348,19 @@ unsafe extern "system" fn settings_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp:
     }
 }
 
+/// The bottom dock window's messages (`dock`).
+unsafe extern "system" fn dock_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let mut deferred = Vec::new();
+    let res = with_app(|app| app.handle_dock_window(hwnd, msg, wp, lp, &mut deferred));
+    for d in deferred {
+        run_deferred(d);
+    }
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 fn run_deferred(d: Deferred) {
     match d {
         Deferred::DragOut(paths) => {
@@ -367,6 +385,17 @@ fn run_deferred(d: Deferred) {
                     app.on_menu(cmd);
                 }
             });
+        }
+        Deferred::DockMenu(pt, tucked) => {
+            let Some(helper) = with_app(|app| app.helper) else { return };
+            let cmd = crate::dock::show_menu(helper, pt, tucked);
+            if let Some(cmd) = cmd {
+                let mut deferred = Vec::new();
+                with_app(|app| app.on_dock_menu(cmd, &mut deferred));
+                for d in deferred {
+                    run_deferred(d);
+                }
+            }
         }
         Deferred::TabMenu(tabs) => {
             let Some(helper) = with_app(|app| {
@@ -409,6 +438,8 @@ pub struct App {
     monitor: MonitorInfo,
     /// The Settings window, while it is open.
     settings_win: Option<SettingsWindow>,
+    /// Floating bottom dock shelf, alive only while `Settings::dock_enabled` is true.
+    dock: Option<crate::dock::Dock>,
     clock: FrameClock,
     sink: EventSink,
     rx: Receiver<AppEvent>,
@@ -720,6 +751,7 @@ impl App {
             prev_foreground: HWND::default(),
             monitor,
             settings_win: None,
+            dock: None,
             clock,
             sink,
             rx,
@@ -825,6 +857,7 @@ impl App {
                 s.set_pro(self.st.pro_on());
             }
             self.sync_top_watch();
+            self.sync_dock();
             self.st.paired = self.services.as_ref().map(|s| paired_phones(s.pairs())).unwrap_or_default();
             self.sync_pair_offer();
             if self.st.settings.system_history_on() {
@@ -869,6 +902,7 @@ impl App {
     fn shutdown(&mut self) -> i32 {
         self.save_now();
         self.settings_win = None;
+        self.dock = None;
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
         self.set_peek_hotkey(false);
@@ -1761,6 +1795,98 @@ impl App {
         self.settings_win.as_ref().is_some_and(|w| w.view.moving)
     }
 
+    /// Create or destroy the bottom dock window to match `Settings::dock_enabled`.
+    fn sync_dock(&mut self) {
+        if self.st.settings.dock_enabled && !self.in_selftest {
+            if self.dock.is_none() {
+                let shared = self.gfx.d3d_handles();
+                let light = services::apps_use_light_theme();
+                match crate::dock::Dock::new(&self.monitor, light, shared) {
+                    Ok(mut d) => {
+                        d.set_fullscreen_hidden(self.fullscreen_hidden);
+                        pinfo!("dock: enabled");
+                        self.dock = Some(d);
+                        self.request_frame();
+                    }
+                    Err(e) => pwarn!("dock: couldn't create window ({e})"),
+                }
+            }
+        } else if self.dock.take().is_some() {
+            pinfo!("dock: disabled");
+        }
+    }
+
+    fn dock_moving(&self) -> bool {
+        self.dock.as_ref().is_some_and(|d| d.needs_frame())
+    }
+
+    fn paint_dock_if_needed(&mut self, now: f64, dt: f32, _deferred: &mut Vec<Deferred>) {
+        if !self.dock_moving() {
+            return;
+        }
+        let instant = self.reduce_motion || self.st.power.saver;
+        let shared = self.gfx.d3d_handles();
+        if let Some(d) = self.dock.as_mut() {
+            d.paint(now, dt, instant, shared);
+        }
+    }
+
+    fn handle_dock_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, deferred: &mut Vec<Deferred>) -> Option<LRESULT> {
+        let instant = self.reduce_motion || self.st.power.saver;
+        let (res, act) = self.dock.as_mut()?.handle_message(hwnd, msg, wp, lp, instant);
+        match act {
+            crate::dock::DockAction::None => {}
+            crate::dock::DockAction::RequestFrame => self.request_frame(),
+            crate::dock::DockAction::ToggleIsland => {
+                if self.expanded {
+                    self.collapse();
+                } else {
+                    self.expand();
+                }
+                self.request_frame();
+            }
+            crate::dock::DockAction::OpenPage(pk) => {
+                self.st.page = pk;
+                self.expand();
+                self.request_frame();
+            }
+            crate::dock::DockAction::OpenSettings => {
+                self.collapse();
+                self.open_settings_window(Some(Section::Island), deferred);
+            }
+            crate::dock::DockAction::ShowMenu(pt, tucked) => deferred.push(Deferred::DockMenu(pt, tucked)),
+        }
+        res
+    }
+
+    fn on_dock_menu(&mut self, cmd: crate::dock::DockCmd, deferred: &mut Vec<Deferred>) {
+        let instant = self.reduce_motion || self.st.power.saver;
+        match cmd {
+            crate::dock::DockCmd::ToggleTuck => {
+                if let Some(d) = self.dock.as_mut() {
+                    d.toggle_tuck(instant);
+                }
+                self.request_frame();
+            }
+            crate::dock::DockCmd::OpenSettings => {
+                self.collapse();
+                self.open_settings_window(Some(Section::Island), deferred);
+            }
+            crate::dock::DockCmd::DisableDock => {
+                if self.st.settings.dock_enabled {
+                    let before = self.st.settings.clone();
+                    self.st.settings.dock_enabled = false;
+                    self.settings_changed(&before);
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                }
+            }
+        }
+    }
+
     fn handle_settings_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, deferred: &mut Vec<Deferred>) -> Option<LRESULT> {
         let w = self.settings_win.as_mut().filter(|w| w.hwnd == hwnd)?;
         let xy = |lp: LPARAM| ((lp.0 & 0xffff) as u16 as i16 as i32, ((lp.0 >> 16) & 0xffff) as u16 as i16 as i32);
@@ -2315,6 +2441,9 @@ impl App {
         if before.step_aside != self.st.settings.step_aside && self.selftest.is_none() {
             // Step aside starts or stops watching the top of the screen.
             self.sync_top_watch();
+        }
+        if before.dock_enabled != self.st.settings.dock_enabled && !self.in_selftest {
+            self.sync_dock();
         }
         let now = &self.st.settings;
         if !before.lyrics && now.lyrics {
@@ -3037,6 +3166,9 @@ impl App {
                 }
                 self.gfx.set_shown(!hide);
             }
+            if let Some(d) = self.dock.as_mut() {
+                d.set_fullscreen_hidden(hide);
+            }
             self.fs_slide = slide.then_some((now, hide));
             self.request_frame();
             if hide {
@@ -3378,6 +3510,9 @@ impl App {
         unsafe {
             let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
+        if let Some(d) = self.dock.as_ref() {
+            d.raise_topmost();
+        }
     }
 
     fn set_noactivate(&self, on: bool) {
@@ -3432,6 +3567,9 @@ impl App {
             self.monitor = m;
             self.set_dpi(m.dpi);
             self.layout_surface();
+        }
+        if let Some(d) = self.dock.as_mut() {
+            d.set_monitor(&self.monitor, services::apps_use_light_theme());
         }
         // The refresh rate may have changed too (60 <-> 144 Hz).
         self.clock.set_monitor(m.handle);
@@ -3720,6 +3858,9 @@ impl App {
                     let _ = ShowWindow(self.hwnd, SW_HIDE);
                 }
                 self.gfx.set_shown(false);
+            }
+            if let Some(d) = self.dock.as_mut() {
+                d.set_fullscreen_hidden(true);
             }
             // Nothing is drawn, but timers, chimes and commands keep working.
             // Glass stops copying the screen: nobody sees the island.
@@ -4095,12 +4236,15 @@ impl App {
         }
         self.run_commands(deferred);
         self.paint_settings_if_dirty(deferred);
+        let ambient_ok = !self.locked && !self.display_off;
+        if ambient_ok {
+            self.paint_dock_if_needed(anim_t, dt, deferred);
+        }
 
         // Decide whether to keep the frame clock running. Real motion runs
         // at the display's full refresh rate; ambient motion runs on every
         // n-th refresh (the equalizer near 60 fps, a drifting progress bar
         // near 30) and pauses while the session is locked or the display off.
-        let ambient_ok = !self.locked && !self.display_off;
         let eq_live = ambient_ok && activities::is_live(&self.mode, &self.st);
         let drift_live = ambient_ok && ui_live;
         self.glass_moving = glass_moving;
@@ -4113,7 +4257,8 @@ impl App {
             || self.outgoing.is_some()
             || self.page_anim.is_some()
             || self.fs_slide.is_some()
-            || self.settings_moving();
+            || self.settings_moving()
+            || (ambient_ok && self.dock_moving());
         // The display mode's rate, not the measured period: a divisor that
         // flips between 1 and 2 would be the uneven cadence it exists to avoid.
         let hz = self.clock.nominal_hz();

@@ -151,6 +151,8 @@ pub struct Settings {
     /// off for good in 0.2.6 (an invisible strip read as the island
     /// vanishing); Halo's handle stays visible, so it's back and on.
     pub step_aside: bool,
+    /// Floating bottom dock shelf (Windows only; off by default so idle cost is zero).
+    pub dock_enabled: bool,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -417,6 +419,7 @@ impl Default for Settings {
             expanded_width: 620.0,
             hide_in_fullscreen: true,
             step_aside: true,
+            dock_enabled: false,
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

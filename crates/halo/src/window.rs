@@ -128,7 +128,11 @@ pub fn create_island_window() -> Result<HWND> {
 /// for the largest page, far wider and taller than the closed island)
 /// swallowed taps meant for the windows under it. Owned by the island, so
 /// it stays just above it whenever the island is raised.
-pub fn create_visual_window(island: HWND) -> Result<HWND> {
+/// Create a `Halo.Visual` DirectComposition companion window owned by `owner`.
+/// When `track_island` is true, records the handle in `VISUAL` so screen-capture
+/// exclusion (`exclude_from_capture`) covers the island's GPU surface; secondary
+/// surfaces (such as the bottom dock) pass `false` so they never overwrite it.
+pub fn create_owned_visual_window(owner: HWND, track_island: bool) -> Result<HWND> {
     let visual = unsafe {
         CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -139,17 +143,18 @@ pub fn create_visual_window(island: HWND) -> Result<HWND> {
             0,
             1,
             1,
-            island,
+            owner,
             None,
             GetModuleHandleW(None)?,
             None,
         )?
     };
-    VISUAL.with(|v| v.set(visual.0 as isize));
-    // It holds the pixels: out of capture too while an owner wants the island out.
-    if CAPTURE.with(|c| c.get().1) {
-        unsafe {
-            let _ = SetWindowDisplayAffinity(visual, WDA_EXCLUDEFROMCAPTURE);
+    if track_island {
+        VISUAL.with(|v| v.set(visual.0 as isize));
+        if CAPTURE.with(|c| c.get().1) {
+            unsafe {
+                let _ = SetWindowDisplayAffinity(visual, WDA_EXCLUDEFROMCAPTURE);
+            }
         }
     }
     Ok(visual)
@@ -320,6 +325,12 @@ impl MonitorInfo {
     }
     pub fn center_x(&self) -> i32 {
         (self.rect.left + self.rect.right) / 2
+    }
+    /// Bottom edge available to a floating shelf: above a docked bottom taskbar
+    /// (`work.bottom < rect.bottom`), or the physical bottom edge when the
+    /// taskbar auto-hides or sits elsewhere.
+    pub fn bottom(&self) -> i32 {
+        self.work.bottom.min(self.rect.bottom)
     }
 }
 

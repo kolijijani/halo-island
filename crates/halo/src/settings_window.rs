@@ -342,6 +342,7 @@ pub enum Key {
     DataFolder,
     ReleaseNotes,
     LyricsCredit,
+    DockEnabled,
 }
 
 /// A row's control, at its right end.
@@ -594,7 +595,7 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 shows.push(switch(Key::GameStats, stats, Some("Keeps the island on top of full-screen apps"), s.game_stats));
                 shows.push(switch(Key::GamePeek, "Only for a few seconds", Some("Then the island hides and adds no delay to the game"), s.game_peek));
             }
-            vec![
+            let mut out = vec![
                 Block::Group(
                     Some("Opening and closing"),
                     vec![
@@ -608,7 +609,14 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                     Some("Over maximized windows"),
                     vec![switch(Key::StepAside, "Mini handle", Some("Halo shrinks to a small handle at the top edge"), s.step_aside)],
                 ),
-            ]
+            ];
+            if cfg!(windows) {
+                out.push(Block::Group(
+                    Some("Bottom dock"),
+                    vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some("Floating app shelf at the bottom edge of the screen"), s.dock_enabled)],
+                ));
+            }
+            out
         }
         Section::Music => vec![
             Block::Group(
@@ -809,6 +817,7 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Island, "Show FPS, GPU and CPU over games", Key::GameStats),
     (Section::Island, "Only for a few seconds", Key::GamePeek),
     (Section::Island, "Mini handle", Key::StepAside),
+    (Section::Island, "Enable Bottom Dock", Key::DockEnabled),
     (Section::Music, "Synced lyrics", Key::Lyrics),
     (Section::Music, "Lyrics pronunciation", Key::Pronunciation),
     (Section::Music, "Timing", Key::LyricsOffset),
@@ -999,6 +1008,7 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         }
         Key::CloudSync => s.cloud_sync = !s.cloud_sync,
         Key::StepAside => s.step_aside = !s.step_aside,
+        Key::DockEnabled => s.dock_enabled = !s.dock_enabled,
         Key::Autostart => {
             if let Some(on) = st.ui.autostart {
                 st.cmd(Command::SetAutostart(!on));
@@ -2660,7 +2670,7 @@ mod tests {
             assert!(listed.contains(d), "{d:?} is drawn but not in the inventory");
         }
         for (s, label, k) in INVENTORY {
-            let here = cfg!(windows) || !matches!(k, Key::Display | Key::Mascot | Key::GameStats | Key::GamePeek | Key::Tab(PageKind::Games));
+            let here = cfg!(windows) || !matches!(k, Key::Display | Key::Mascot | Key::GameStats | Key::GamePeek | Key::DockEnabled | Key::Tab(PageKind::Games));
             assert!(!here || drawn.contains(&(*s, *k)), "{label} is in the inventory but never drawn");
             // Its words are the row's own label (the slots are one item).
             match states.iter().find_map(|st| rows(*s, st).into_iter().find(|i| i.key == *k)) {
