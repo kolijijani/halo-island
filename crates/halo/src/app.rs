@@ -1826,10 +1826,16 @@ impl App {
     }
 
     fn dock_look(&self) -> &'static halo_core::look::Look {
-        if self.st.settings.notch_theme == NotchTheme::Glass {
-            halo_core::look::glass(self.st.app_light)
-        } else {
-            pill::look(&self.st, false)
+        match self.st.settings.dock_theme {
+            halo_core::settings::DockThemeMode::LiquidGlass => halo_core::look::glass(self.st.app_light),
+            halo_core::settings::DockThemeMode::Classic => &halo_core::look::CLASSIC,
+            halo_core::settings::DockThemeMode::FollowIsland => {
+                if self.st.settings.notch_theme == NotchTheme::Glass {
+                    halo_core::look::glass(self.st.app_light)
+                } else {
+                    pill::look(&self.st, false)
+                }
+            }
         }
     }
 
@@ -1867,9 +1873,13 @@ impl App {
 
     fn dock_tray_state(&self) -> crate::dock::DockTrayState {
         let dl_pill = self.st.downloads.pill();
+        let weather = self.st.weather.last.as_ref().map(|(w, _)| w);
         crate::dock::DockTrayState {
             hour: self.st.local.hour,
             minute: self.st.local.minute,
+            weekday: self.st.local.weekday(),
+            day: self.st.local.day,
+            month: self.st.local.month,
             use_24h: self.st.settings.use_24h,
             volume_pct: (self.st.volume.level.clamp(0.0, 1.0) * 100.0).round() as u8,
             muted: self.st.volume.muted,
@@ -1879,6 +1889,8 @@ impl App {
             charging: self.st.power.charging,
             on_ac: self.st.power.on_ac,
             wifi_connected: self.wifi_connected,
+            weather_temp_c: weather.map(|w| w.temp_c.round() as i16),
+            weather_code: weather.map(|w| w.code),
             tasks_open: self.st.store.tasks.open_count().min(u16::MAX as usize) as u16,
             shelf_count: self.st.store.shelf.items.len().min(u16::MAX as usize) as u16,
             downloads_active: dl_pill.as_ref().map_or(0, |p| p.count.min(u16::MAX as usize) as u16),

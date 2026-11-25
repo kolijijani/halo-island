@@ -30,7 +30,7 @@ use crate::ui::{wid, wid_n, CursorKind, Hit, Input, MouseButton, PillStyle, Ui, 
 use crate::version::VERSION;
 use halo_core::caffeine;
 use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::settings::{IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
+use halo_core::settings::{DockThemeMode, IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -343,6 +343,7 @@ pub enum Key {
     ReleaseNotes,
     LyricsCredit,
     DockEnabled,
+    DockTheme,
 }
 
 /// A row's control, at its right end.
@@ -616,9 +617,18 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 } else {
                     "Floating app shelf at the bottom edge of the screen (Halo Pro)"
                 };
+                let mut dock_rows = vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some(dock_sub), s.dock_enabled && s.pro)];
+                if s.dock_enabled && s.pro {
+                    dock_rows.push(switch(
+                        Key::DockTheme,
+                        "Force Liquid Glass dock",
+                        Some("Use frosted Liquid Glass even when the island uses another theme"),
+                        s.dock_theme == DockThemeMode::LiquidGlass,
+                    ));
+                }
                 out.push(Block::Group(
                     Some("Bottom dock"),
-                    vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some(dock_sub), s.dock_enabled && s.pro)],
+                    dock_rows,
                 ));
             }
             out
@@ -1019,6 +1029,13 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
                 return;
             }
             s.dock_enabled = !s.dock_enabled;
+        }
+        Key::DockTheme => {
+            s.dock_theme = match s.dock_theme {
+                DockThemeMode::FollowIsland => DockThemeMode::LiquidGlass,
+                DockThemeMode::LiquidGlass => DockThemeMode::Classic,
+                DockThemeMode::Classic => DockThemeMode::FollowIsland,
+            };
         }
         Key::Autostart => {
             if let Some(on) = st.ui.autostart {

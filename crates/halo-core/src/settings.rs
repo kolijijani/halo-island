@@ -91,6 +91,15 @@ pub enum NotchTheme {
     Diorama,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockThemeMode {
+    #[default]
+    FollowIsland,
+    LiquidGlass,
+    Classic,
+}
+
 impl NotchTheme {
     pub fn free(self) -> bool {
         matches!(self, NotchTheme::Classic | NotchTheme::Halo)
@@ -153,6 +162,7 @@ pub struct Settings {
     pub step_aside: bool,
     /// Floating bottom dock shelf (Windows only; off by default so idle cost is zero).
     pub dock_enabled: bool,
+    pub dock_theme: DockThemeMode,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -420,6 +430,7 @@ impl Default for Settings {
             hide_in_fullscreen: true,
             step_aside: true,
             dock_enabled: false,
+            dock_theme: DockThemeMode::FollowIsland,
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

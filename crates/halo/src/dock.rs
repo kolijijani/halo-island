@@ -139,6 +139,9 @@ pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
 pub struct DockTrayState {
     pub hour: u8,
     pub minute: u8,
+    pub weekday: u8,
+    pub day: u8,
+    pub month: u8,
     pub use_24h: bool,
     pub volume_pct: u8,
     pub muted: bool,
@@ -148,6 +151,8 @@ pub struct DockTrayState {
     pub charging: bool,
     pub on_ac: bool,
     pub wifi_connected: Option<bool>,
+    pub weather_temp_c: Option<i16>,
+    pub weather_code: Option<u16>,
     pub tasks_open: u16,
     pub shelf_count: u16,
     pub downloads_active: u16,
@@ -166,29 +171,64 @@ impl DockTrayState {
             format!("{h12}:{:02}", self.minute % 60)
         }
     }
+
+    pub fn date_text(&self) -> Option<String> {
+        if self.day == 0 || self.month == 0 {
+            return None;
+        }
+        const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        let wd = DAYS[(self.weekday as usize) % 7];
+        let mo = MONTHS[((self.month.saturating_sub(1)) as usize) % 12];
+        Some(format!("{wd}, {} {mo}", self.day))
+    }
+
+    pub fn weather_short(&self) -> &'static str {
+        match self.weather_code.unwrap_or(0) {
+            0..=1 => "Clear",
+            2..=3 => "Cloudy",
+            45 | 48 => "Fog",
+            51..=67 | 80..=82 => "Rain",
+            71..=77 | 85..=86 => "Snow",
+            95..=99 => "Storm",
+            _ => "Local",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DockTrayZone {
+    Weather,
     Status,
     Clock,
 }
 
 pub fn tray_capsule_width(tray: &DockTrayState) -> f32 {
-    if tray.has_battery {
-        156.0
-    } else {
-        112.0
-    }
+    let weather_w = if tray.weather_temp_c.is_some() { 70.0 } else { 0.0 };
+    let status_w = if tray.has_battery { 120.0 } else { 76.0 };
+    let clock_w = if tray.day > 0 && tray.month > 0 { 72.0 } else { 52.0 };
+    weather_w + status_w + clock_w + if weather_w > 0.0 { 8.0 } else { 4.0 }
 }
 
-fn tray_zone_rects(tray_rect: Rect, has_battery: bool) -> (Rect, Rect) {
-    let clock_w = 50.0f32.min(tray_rect.w * 0.48);
+fn tray_zone_rects(tray_rect: Rect, tray: &DockTrayState) -> (Option<Rect>, Rect, Rect) {
     let gap = 4.0;
-    let status_w = (tray_rect.w - clock_w - gap).max(if has_battery { 72.0 } else { 42.0 });
-    let status = Rect::new(tray_rect.x, tray_rect.y, status_w.min(tray_rect.w - clock_w - gap).max(20.0), tray_rect.h);
-    let clock = Rect::new(status.right() + gap, tray_rect.y, (tray_rect.right() - (status.right() + gap)).max(24.0), tray_rect.h);
-    (status, clock)
+    let has_weather = tray.weather_temp_c.is_some();
+    let weather_w = if has_weather { 66.0f32.min(tray_rect.w * 0.28) } else { 0.0 };
+    let clock_w = if tray.day > 0 && tray.month > 0 { 70.0f32 } else { 50.0f32 }.min(tray_rect.w * 0.36);
+
+    let mut x = tray_rect.x;
+    let weather_r = if has_weather {
+        let r = Rect::new(x, tray_rect.y, weather_w, tray_rect.h);
+        x = r.right() + gap;
+        Some(r)
+    } else {
+        None
+    };
+
+    let status_w = (tray_rect.right() - x - clock_w - gap).max(if tray.has_battery { 76.0 } else { 46.0 });
+    let status_r = Rect::new(x, tray_rect.y, status_w.min((tray_rect.right() - x - clock_w - gap).max(20.0)), tray_rect.h);
+    let clock_r = Rect::new(status_r.right() + gap, tray_rect.y, (tray_rect.right() - (status_r.right() + gap)).max(24.0), tray_rect.h);
+    (weather_r, status_r, clock_r)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -851,7 +891,12 @@ impl Dock {
         if !tr.inset(-2.0, -4.0).contains(p) {
             return None;
         }
-        let (status_r, clock_r) = tray_zone_rects(tr, self.tray.has_battery);
+        let (weather_r, status_r, clock_r) = tray_zone_rects(tr, &self.tray);
+        if let Some(wr) = weather_r {
+            if wr.inset(-2.0, -4.0).contains(p) {
+                return Some(DockTrayZone::Weather);
+            }
+        }
         if clock_r.inset(-2.0, -4.0).contains(p) {
             Some(DockTrayZone::Clock)
         } else if status_r.inset(-2.0, -4.0).contains(p) {
@@ -954,8 +999,8 @@ impl Dock {
                 }
                 if let Some(z) = down_tray.filter(|&z| Some(z) == self.tray_zone_at(p)) {
                     let page = match z {
+                        DockTrayZone::Weather | DockTrayZone::Clock => PageKind::Today,
                         DockTrayZone::Status => PageKind::System,
-                        DockTrayZone::Clock => PageKind::Today,
                     };
                     return (Some(LRESULT(0)), DockAction::OpenPage(page));
                 }
@@ -1740,11 +1785,16 @@ fn draw_dock(
                     c.fill_rrect(well, well_r, well_bg);
                     c.stroke_rrect(well, well_r, well_rim, 1.0);
 
-                    let (status_r, clock_r) = tray_zone_rects(tr, tray.has_battery);
+                    let (weather_r, status_r, clock_r) = tray_zone_rects(tr, tray);
                     let ink = theme_ink;
                     let dim = theme_ink.with_alpha(if light { 0.56 } else { 0.64 });
 
-                    for (zone, zr) in [(DockTrayZone::Status, status_r), (DockTrayZone::Clock, clock_r)] {
+                    let zones = [
+                        weather_r.map(|r| (DockTrayZone::Weather, r)),
+                        Some((DockTrayZone::Status, status_r)),
+                        Some((DockTrayZone::Clock, clock_r)),
+                    ];
+                    for (zone, zr) in zones.into_iter().flatten() {
                         let is_h = hovered_tray == Some(zone);
                         let is_p = pressed_tray == Some(zone);
                         let bg = if is_p {
@@ -1768,15 +1818,31 @@ fn draw_dock(
                         c.stroke_rrect(zr, pill_r, rim, 1.0);
                     }
 
-                    // Status zone: Wi-Fi, Volume, and optional Battery %.
+                    // Weather pill (temperature + short condition).
+                    if let (Some(wr), Some(temp_c)) = (weather_r, tray.weather_temp_c) {
+                        let sun_r = 4.2;
+                        let sun_c = Point::new(wr.x + 11.0, wr.y + wr.h * 0.5 - 1.0);
+                        c.fill_circle(sun_c, sun_r, Color::hex(0xFBBF24));
+                        let temp_st = TextStyle { size: 10.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                        let cond_st = TextStyle { size: 8.5, ..TextStyle::caption().color(dim) };
+                        let tx = wr.x + 20.0;
+                        let tw = (wr.right() - tx - 4.0).max(16.0);
+                        c.text(&format!("{temp_c}°C"), Rect::new(tx, wr.y + 3.0, tw, 13.0), &temp_st);
+                        c.text(tray.weather_short(), Rect::new(tx, wr.y + 15.0, tw, 11.0), &cond_st);
+                    }
+
+                    // Status cluster: Wi-Fi (+ green dot), Volume + %, and Battery capsule + %.
                     let mut ix = status_r.x + 8.0;
-                    let icon_sz = 13.0;
+                    let icon_sz = 12.5;
                     let iy = status_r.y + (status_r.h - icon_sz) * 0.5;
                     let (wifi_ic, wifi_c) = match tray.wifi_connected {
                         Some(false) => (Icon::WifiOff, dim),
                         _ => (Icon::Wifi, ink),
                     };
                     c.icon(wifi_ic, Rect::new(ix, iy, icon_sz, icon_sz), wifi_c);
+                    if tray.wifi_connected == Some(true) {
+                        c.fill_circle(Point::new(ix + icon_sz - 1.5, iy + icon_sz - 1.5), 2.3, Color::hex(0x4ADE80));
+                    }
                     ix += icon_sz + 7.0;
 
                     let (vol_ic, vol_c) = if tray.muted || (tray.volume_known && tray.volume_pct == 0) {
@@ -1787,29 +1853,49 @@ fn draw_dock(
                         (Icon::Volume, ink)
                     };
                     c.icon(vol_ic, Rect::new(ix, iy, icon_sz, icon_sz), vol_c);
-                    ix += icon_sz + 7.0;
+                    ix += icon_sz + 3.0;
+                    if tray.volume_known && ix + 24.0 < status_r.right() {
+                        let vol_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Medium).color(dim) };
+                        c.text(&format!("{}%", tray.volume_pct), Rect::new(ix, status_r.y, 24.0, status_r.h), &vol_st);
+                        ix += 24.0;
+                    } else {
+                        ix += 3.0;
+                    }
 
-                    if tray.has_battery && ix + 18.0 < status_r.right() {
+                    if tray.has_battery && ix + 24.0 < status_r.right() {
                         let bat_c = if tray.charging || tray.on_ac {
                             Color::hex(0x30D158)
                         } else if tray.battery_pct <= 20 {
                             Color::hex(0xFF453A)
                         } else {
-                            ink
+                            Color::hex(0x4ADE80)
                         };
-                        let bat_ic = if tray.charging { Icon::Bolt } else { Icon::Battery };
-                        c.icon(bat_ic, Rect::new(ix, iy, icon_sz, icon_sz), bat_c);
-                        ix += icon_sz + 3.0;
-                        let pct_w = (status_r.right() - ix - 4.0).max(0.0);
-                        if pct_w >= 20.0 {
-                            let pct_st = TextStyle::caption().weight(Weight::Medium).color(bat_c);
+                        let bat_w = 15.0;
+                        let bat_h = 8.5;
+                        let by = status_r.y + (status_r.h - bat_h) * 0.5;
+                        let bat_body = Rect::new(ix, by, bat_w, bat_h);
+                        c.stroke_rrect(bat_body, 2.2, dim, 1.0);
+                        let fill_w = ((bat_w - 3.0) * (tray.battery_pct.min(100) as f32 / 100.0)).max(1.5);
+                        c.fill_rrect(Rect::new(ix + 1.5, by + 1.5, fill_w, bat_h - 3.0), 1.2, bat_c);
+                        c.fill_rrect(Rect::new(ix + bat_w + 0.5, by + 2.5, 1.5, 3.5), 0.7, dim);
+                        ix += bat_w + 5.0;
+                        let pct_w = (status_r.right() - ix - 3.0).max(0.0);
+                        if pct_w >= 18.0 {
+                            let pct_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Medium).color(ink) };
                             c.text(&format!("{}%", tray.battery_pct), Rect::new(ix, status_r.y, pct_w, status_r.h), &pct_st);
                         }
                     }
 
-                    // Clock zone.
-                    let clock_st = TextStyle::caption().weight(Weight::Semibold).center().color(ink);
-                    c.text(&tray.clock_text(), clock_r, &clock_st);
+                    // Clock & Date stack zone.
+                    if let Some(date_s) = tray.date_text() {
+                        let time_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).center().color(ink) };
+                        let date_st = TextStyle { size: 8.5, ..TextStyle::caption().center().color(dim) };
+                        c.text(&tray.clock_text(), Rect::new(clock_r.x, clock_r.y + 2.5, clock_r.w, 14.0), &time_st);
+                        c.text(&date_s, Rect::new(clock_r.x, clock_r.y + 15.0, clock_r.w, 12.0), &date_st);
+                    } else {
+                        let clock_st = TextStyle::caption().weight(Weight::Semibold).center().color(ink);
+                        c.text(&tray.clock_text(), clock_r, &clock_st);
+                    }
                 }
 
                 let tip: Option<(&str, Rect)> = if let Some(i) = hovered {
@@ -1822,8 +1908,9 @@ fn draw_dock(
                     };
                     label.zip(slot_rects.get(i).copied())
                 } else if let (Some(z), Some(tr)) = (hovered_tray, tray_rect) {
-                    let (status_r, clock_r) = tray_zone_rects(tr, tray.has_battery);
+                    let (weather_r, status_r, clock_r) = tray_zone_rects(tr, tray);
                     match z {
+                        DockTrayZone::Weather => weather_r.map(|r| ("Weather", r)),
                         DockTrayZone::Status => Some(("System Status", status_r)),
                         DockTrayZone::Clock => Some(("Today", clock_r)),
                     }
@@ -2543,9 +2630,13 @@ mod tests {
         assert!(tr.x > sep3.unwrap());
         assert!(tr.right() <= shelf.right() - SHELF_PAD_X + 0.5);
         assert!(rects.last().unwrap().right() < sep3.unwrap());
-        let (status_r, clock_r) = tray_zone_rects(tr, true);
+        let (_, status_r, clock_r) = tray_zone_rects(tr, &t24);
         assert!(status_r.right() < clock_r.x);
         assert!(clock_r.right() <= tr.right() + 0.5);
+        let dated = DockTrayState { weekday: 3, day: 25, month: 11, weather_temp_c: Some(31), weather_code: Some(0), ..t24 };
+        assert_eq!(dated.date_text().as_deref(), Some("Wed, 25 Nov"));
+        assert_eq!(dated.weather_short(), "Clear");
+        assert!(tray_capsule_width(&dated) > tray_capsule_width(&t24));
     }
 
     #[test]
