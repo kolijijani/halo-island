@@ -471,7 +471,7 @@ unsafe fn create_d3d_device() -> Result<(ID3D11Device, ID3D11DeviceContext, bool
 
 /// `DCompositionCreateDevice`, looked up at run time from System32 (it is
 /// missing or a stub on some systems, and must never load from the app folder).
-unsafe fn dcomp_create_device(dxgi: &IDXGIDevice) -> Result<IDCompositionDevice> {
+pub(crate) unsafe fn dcomp_create_device(dxgi: &IDXGIDevice) -> Result<IDCompositionDevice> {
     type Create = unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> HRESULT;
     let lib = LoadLibraryExW(w!("dcomp.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32)?;
     let Some(f) = GetProcAddress(lib, windows::core::s!("DCompositionCreateDevice")) else {

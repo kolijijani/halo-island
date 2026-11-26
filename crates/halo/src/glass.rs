@@ -128,6 +128,11 @@ type D3DCompileFn = unsafe extern "system" fn(
 
 /// Compile `entry` of the glass shader for `target` with System32's compiler.
 unsafe fn compile(entry: PCSTR, target: PCSTR) -> Result<Vec<u8>> {
+    compile_hlsl(SHADER, entry, target)
+}
+
+/// Compile `entry` of `src` for `target` with System32's compiler (the dock genie's shader too).
+pub(crate) unsafe fn compile_hlsl(src: &str, entry: PCSTR, target: PCSTR) -> Result<Vec<u8>> {
     let lib = LoadLibraryExW(w!("d3dcompiler_47.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32)?;
     let Some(f) = GetProcAddress(lib, s!("D3DCompile")) else {
         return Err(E_NOTIMPL.into());
@@ -136,7 +141,7 @@ unsafe fn compile(entry: PCSTR, target: PCSTR) -> Result<Vec<u8>> {
     // D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3
     let flags = (1 << 11) | (1 << 15);
     let (mut code, mut errors) = (std::ptr::null_mut(), std::ptr::null_mut());
-    let hr = f(SHADER.as_ptr() as *const c_void, SHADER.len(), s!("glass.hlsl"), std::ptr::null(), std::ptr::null(), entry, target, flags, 0, &mut code, &mut errors);
+    let hr = f(src.as_ptr() as *const c_void, src.len(), PCSTR::null(), std::ptr::null(), std::ptr::null(), entry, target, flags, 0, &mut code, &mut errors);
     if !errors.is_null() {
         let e = ID3DBlob::from_raw(errors);
         let msg = std::slice::from_raw_parts(e.GetBufferPointer() as *const u8, e.GetBufferSize());

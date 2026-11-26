@@ -118,3 +118,5 @@
 {"id": "dock-phase-9-icon-squircle-separation", "ev": "open", "title": "dock-phase-9-icon-squircle-separation", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795662554}
 {"id": "dock-phase-9-icon-squircle-separation", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-9-icon-squircle-separation", "who": "ag", "ts": 1795662580}
 {"id": "dock-phase-9-icon-squircle-separation", "ev": "done", "owner": "ag", "who": "ag", "commit": "12d2feb", "note": "slots always show icon; no minimized thumbnail card", "ts": 1795662580}
+{"id": "dock-phase-10-gpu-genie-d3d11-port-of-ma", "ev": "open", "title": "dock phase 10: GPU genie (D3D11 port of MacDock)", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795662641}
+{"id": "dock-phase-10-gpu-genie-d3d11-port-of-ma", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-10-gpu-genie-d3d11-port-of-ma", "who": "ag", "ts": 1795662645}

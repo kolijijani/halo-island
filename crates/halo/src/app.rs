@@ -952,6 +952,7 @@ impl App {
         self.save_now();
         self.settings_win = None;
         crate::dock::set_system_taskbar_hidden(false);
+        crate::dock_genie::set_system_min_animate(true);
         self.dock = None;
         self.dock_apps = None;
         self.dock_stack = None;
@@ -1896,6 +1897,7 @@ impl App {
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
                         d.set_apps(watcher.refresh());
                         d.set_tray(self.dock_tray_state());
+                        crate::dock_genie::set_system_min_animate(false);
                         pinfo!("dock: enabled");
                         self.dock = Some(d);
                         self.dock_apps = Some(watcher);
@@ -1919,6 +1921,7 @@ impl App {
             }
         } else {
             crate::dock::set_system_taskbar_hidden(false);
+            crate::dock_genie::set_system_min_animate(true);
             self.dock_apps = None;
             self.dock_stack = None;
             self.dock_flyout = None;

@@ -28,8 +28,45 @@ unsafe extern "system" {
 pub const CLASS: PCWSTR = w!("Halo.DockGenie");
 pub const GENIE_SLICES: usize = 72;
 pub const GENIE_DURATION: f32 = 0.34;
-const MAX_CAPTURE_PX: i32 = 640;
+const MAX_CAPTURE_PX: i32 = 1280;
 const PW_RENDERFULLCONTENT: u32 = 0x0000_0002;
+
+/// Toggle Windows' built-in minimize/restore animation (`SPI_SETANIMATION`) without writing to the user profile,
+/// so DWM never plays a second animation alongside our Genie. Pass `true` on dock disable / exit to restore.
+pub fn set_system_min_animate(restore_default: bool) {
+    use std::sync::OnceLock;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+    static SAVED: OnceLock<bool> = OnceLock::new();
+    let orig = *SAVED.get_or_init(|| {
+        let mut buf = [0u16; 8];
+        let mut len = (buf.len() * 2) as u32;
+        let r = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                w!("Control Panel\\Desktop\\WindowMetrics"),
+                w!("MinAnimate"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buf.as_mut_ptr() as *mut _),
+                Some(&mut len),
+            )
+        };
+        r.is_err() || buf[0] != '0' as u16
+    });
+    let on = if restore_default { orig } else { false };
+    let mut ai = ANIMATIONINFO {
+        cbSize: std::mem::size_of::<ANIMATIONINFO>() as u32,
+        iMinAnimate: on as i32,
+    };
+    unsafe {
+        let _ = SystemParametersInfoW(
+            SPI_SETANIMATION,
+            ai.cbSize,
+            Some(&mut ai as *mut _ as *mut _),
+            SPIF_SENDCHANGE,
+        );
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GenieDir {
@@ -302,6 +339,7 @@ pub fn restore_window_no_dwm(hwnd: HWND) {
 }
 
 pub struct DockGenie {
+    gpu: Option<crate::dock_genie_gpu::GenieGpu>,
     gfx: Option<Gfx>,
     hwnd: HWND,
     at: (i32, i32, i32, i32),
@@ -319,19 +357,24 @@ impl Drop for DockGenie {
         if let Some(target) = self.restore_target.take() {
             restore_window_no_dwm(target);
         }
+        self.gpu = None;
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
         self.gfx = None;
         unsafe {
             if let Some(v) = visual {
                 let _ = DestroyWindow(v);
             }
-            let _ = DestroyWindow(self.hwnd);
+            if !self.hwnd.is_invalid() {
+                let _ = DestroyWindow(self.hwnd);
+            }
         }
     }
 }
 
 impl DockGenie {
     /// Start a transient Genie animation covering `mon` from `win_screen` to `icon_screen`.
+    /// Uses the D3D11 128-row strip-mesh GPU genie (`GenieGpu`) when a hardware device is shared,
+    /// falling back to the 72-slice software overlay otherwise.
     pub fn start(
         mon: &MonitorInfo,
         img: Image,
@@ -358,6 +401,25 @@ impl DockGenie {
             (icon_screen.w / scale).max(12.0),
             (icon_screen.h / scale).max(12.0),
         );
+
+        if let Some(s) = shared.clone() {
+            if let Ok(mut gpu) = crate::dock_genie_gpu::GenieGpu::new(mon, &img, win_screen, icon_screen, dir, s) {
+                let _ = gpu.frame();
+                return Ok(Self {
+                    gpu: Some(gpu),
+                    gfx: None,
+                    hwnd: HWND::default(),
+                    at: (x, y, w, h),
+                    img,
+                    src_win,
+                    dst_icon,
+                    dir,
+                    elapsed: 0.0,
+                    shown: true,
+                    restore_target: None,
+                });
+            }
+        }
 
         let hwnd = unsafe {
             CreateWindowExW(
@@ -387,6 +449,7 @@ impl DockGenie {
         gfx.set_shared_d3d(shared);
         let _ = gfx.set_surface(w, h);
         Ok(Self {
+            gpu: None,
             gfx: Some(gfx),
             hwnd,
             at: (x, y, w, h),
@@ -410,6 +473,23 @@ impl DockGenie {
     /// Advance and paint one frame. Returns `false` when the animation finishes
     /// so the caller drops `DockGenie` immediately (zero idle cost).
     pub fn tick_and_paint(&mut self, dt: f32, shared: Option<SharedD3d>) -> bool {
+        if let Some(gpu) = self.gpu.as_mut() {
+            return match gpu.frame() {
+                crate::dock_genie_gpu::Step::Moving => true,
+                crate::dock_genie_gpu::Step::Landed => {
+                    if let Some(target) = self.restore_target.take() {
+                        restore_window_no_dwm(target);
+                    }
+                    true
+                }
+                crate::dock_genie_gpu::Step::Done => {
+                    if let Some(target) = self.restore_target.take() {
+                        restore_window_no_dwm(target);
+                    }
+                    false
+                }
+            };
+        }
         self.elapsed += dt.clamp(0.0, 0.05);
         let t = (self.elapsed / GENIE_DURATION).clamp(0.0, 1.0);
         if t >= 1.0 {

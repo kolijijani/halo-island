@@ -34,6 +34,7 @@ mod commands;
 mod dock;
 #[cfg(windows)]
 mod dock_genie;
+mod dock_genie_gpu;
 #[cfg(windows)]
 mod dragdrop;
 #[cfg(windows)]
