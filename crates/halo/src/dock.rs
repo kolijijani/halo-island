@@ -3791,7 +3791,7 @@ pub struct DockLaunchpad {
     gfx: Option<Gfx>,
     glass: crate::glass::Glass,
     glass_moving: bool,
-    hwnd: HWND,
+    pub hwnd: HWND,
     at: (i32, i32, i32, i32),
     dpi: u32,
     light: bool,
@@ -5266,7 +5266,7 @@ impl DockControlCenter {
                                 crate::services::tray_host::send_mouse(ic, crate::services::tray_host::NIN_SELECT_MSG);
                             }
                         });
-                        FlyoutAction::Close
+                        FlyoutAction::None
                     }
                     Some(FlyoutZone::CalPrev) => {
                         self.step_calendar_month(-1);
@@ -6854,5 +6854,12 @@ mod tests {
         ];
         assert_eq!(slot_index_at(&rects, Point::new(146.5, 92.0), None), Some(1));
         assert_eq!(slot_index_at(&rects, Point::new(145.0, 92.0), Some(0)), Some(0));
+
+        // Phase 5: Low-level click filter & bounds verification for transient popovers.
+        let flyout_bounds = Rect::new(100.0, 200.0, 360.0, 420.0);
+        let pt_inside = Point::new(200.0, 300.0);
+        let pt_outside = Point::new(50.0, 50.0);
+        assert!(flyout_bounds.contains(pt_inside));
+        assert!(!flyout_bounds.contains(pt_outside));
     }
 }

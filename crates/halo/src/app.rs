@@ -4,7 +4,7 @@
 use crate::activities::{self, Mode};
 use crate::clock;
 use crate::commands::{Command, MediaCmd, NotifyCmd, HaloCmd, PairCmd, PhoneCmd, UsageCmd};
-use crate::events::{AppEvent, AppleMusicStatus, EventSink, HaloEvent, SendHwnd, WM_APP_APPBAR, WM_APP_EVENT, WM_APP_FRAME, WM_APP_TRAY};
+use crate::events::{AppEvent, AppleMusicStatus, EventSink, HaloEvent, SendHwnd, WM_APP_APPBAR, WM_APP_DOCK_CLICK, WM_APP_EVENT, WM_APP_FRAME, WM_APP_TRAY};
 use crate::gfx::{px_rect, px_union, scale_about, union_rect, Canvas, Gfx, HitMask};
 use crate::icons::Icon;
 use crate::island::{Geom, Island, SHOULDER};
@@ -310,7 +310,7 @@ fn note_missed(msg: u32, wp: WPARAM, lp: LPARAM) -> bool {
             FRAME_MISSED.with(|f| f.set(true));
             true
         }
-        WM_APP_EVENT | WM_MOUSELEAVE | WM_TIMER | WM_LBUTTONUP | WM_APP_TRAY | WM_APP_APPBAR => {
+        WM_APP_EVENT | WM_MOUSELEAVE | WM_TIMER | WM_LBUTTONUP | WM_APP_TRAY | WM_APP_APPBAR | WM_APP_DOCK_CLICK => {
             MISSED.with(|m| {
                 let mut v = m.borrow_mut();
                 if v.len() < 64 && !(msg != WM_TIMER && v.iter().any(|x| x.0 == msg && x.1 == wp)) {
@@ -383,6 +383,29 @@ unsafe extern "system" fn dock_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPA
         Some(Some(r)) => r,
         _ => DefWindowProcW(hwnd, msg, wp, lp),
     }
+}
+
+/// Low-level global mouse hook procedure to detect clicks outside dock popovers.
+/// Active only while a dock popover (Control Center flyout, stack, or launchpad) is open.
+unsafe extern "system" fn dock_ll_mouse_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 {
+        let msg = wp.0 as u32;
+        if matches!(msg, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_NCLBUTTONDOWN | WM_NCRBUTTONDOWN) {
+            let info = *(lp.0 as *const MSLLHOOKSTRUCT);
+            let pt = info.pt;
+            let outside = with_app(|app| {
+                if app.has_dock_popover_open() && !app.is_screen_point_in_dock_or_popovers(pt) {
+                    Some(app.hwnd)
+                } else {
+                    None
+                }
+            });
+            if let Some(Some(main_hwnd)) = outside {
+                let _ = PostMessageW(main_hwnd, WM_APP_DOCK_CLICK, WPARAM(0), LPARAM(((pt.y as isize) << 16) | (pt.x as u16 as isize)));
+            }
+        }
+    }
+    CallNextHookEx(None, code, wp, lp)
 }
 
 /// The bottom dock's transient Downloads stack popover messages (`dock`).
@@ -533,6 +556,8 @@ pub struct App {
     dock_preview: Option<crate::dock_preview::DockPreview>,
     /// App key waiting on `TIMER_DOCK_PREVIEW_OPEN`.
     dock_preview_pending: Option<String>,
+    /// Global low-level mouse hook, active ONLY while transient dock popovers (Flyout/Stack/Launchpad) are open.
+    dock_click_hook: Option<HHOOK>,
     wifi_connected: Option<bool>,
     wifi_ssid: String,
     wifi_internet: Option<bool>,
@@ -860,6 +885,7 @@ impl App {
             dock_genie: None,
             dock_preview: None,
             dock_preview_pending: None,
+            dock_click_hook: None,
             wifi_connected: None,
             wifi_ssid: String::new(),
             wifi_internet: None,
@@ -1026,6 +1052,7 @@ impl App {
         self.dock_genie = None;
         self.dock_preview = None;
         self.dock_preview_pending = None;
+        self.sync_dock_click_hook();
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
         self.set_peek_hotkey(false);
@@ -1753,6 +1780,12 @@ impl App {
                 }
                 Some(LRESULT(0))
             }
+            WM_APP_DOCK_CLICK => {
+                let x = (lp.0 & 0xffff) as i16 as i32;
+                let y = ((lp.0 >> 16) & 0xffff) as i16 as i32;
+                self.on_dock_outside_click(POINT { x, y });
+                Some(LRESULT(0))
+            }
             WM_POWERBROADCAST => {
                 if let Some(on) = services::power::display_state_change(wp, lp) {
                     self.display_off = !on;
@@ -2284,6 +2317,7 @@ impl App {
             if let Some(d) = self.dock.as_mut() {
                 d.set_stack_open(false);
             }
+            self.sync_dock_click_hook();
             self.request_frame();
         }
     }
@@ -2293,12 +2327,14 @@ impl App {
             if let Some(d) = self.dock.as_mut() {
                 d.set_ctrl_open(false);
             }
+            self.sync_dock_click_hook();
             self.request_frame();
         }
     }
 
     fn close_dock_launchpad(&mut self) {
         if self.dock_launchpad.take().is_some() {
+            self.sync_dock_click_hook();
             self.request_frame();
         }
     }
@@ -2308,6 +2344,82 @@ impl App {
         self.close_dock_flyout();
         self.close_dock_launchpad();
         self.close_dock_preview();
+        self.sync_dock_click_hook();
+    }
+
+    pub(crate) fn has_dock_popover_open(&self) -> bool {
+        self.dock_flyout.is_some() || self.dock_stack.is_some() || self.dock_launchpad.is_some()
+    }
+
+    pub(crate) fn is_screen_point_in_dock_or_popovers(&self, pt: POINT) -> bool {
+        let in_hwnd = |hwnd: HWND| -> bool {
+            if hwnd.is_invalid() {
+                return false;
+            }
+            let mut rc = RECT::default();
+            unsafe {
+                if GetWindowRect(hwnd, &mut rc).is_ok() {
+                    pt.x >= rc.left && pt.x < rc.right && pt.y >= rc.top && pt.y < rc.bottom
+                } else {
+                    false
+                }
+            }
+        };
+
+        if let Some(d) = self.dock.as_ref() {
+            if in_hwnd(d.hwnd) {
+                return true;
+            }
+        }
+        if let Some(f) = self.dock_flyout.as_ref() {
+            if in_hwnd(f.hwnd) {
+                return true;
+            }
+        }
+        if let Some(s) = self.dock_stack.as_ref() {
+            if in_hwnd(s.hwnd) {
+                return true;
+            }
+        }
+        if let Some(lp) = self.dock_launchpad.as_ref() {
+            if in_hwnd(lp.hwnd) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn on_dock_outside_click(&mut self, pt: POINT) {
+        if !self.has_dock_popover_open() {
+            return;
+        }
+        if !self.is_screen_point_in_dock_or_popovers(pt) {
+            self.close_dock_popovers();
+        }
+    }
+
+    fn sync_dock_click_hook(&mut self) {
+        let needed = self.has_dock_popover_open();
+        if needed && self.dock_click_hook.is_none() {
+            let hook = unsafe {
+                SetWindowsHookExW(
+                    WH_MOUSE_LL,
+                    Some(dock_ll_mouse_proc),
+                    None,
+                    0,
+                )
+            };
+            match hook {
+                Ok(h) => self.dock_click_hook = Some(h),
+                Err(e) => crate::pwarn!("dock outside click hook failed: {e}"),
+            }
+        } else if !needed {
+            if let Some(h) = self.dock_click_hook.take() {
+                unsafe {
+                    let _ = UnhookWindowsHookEx(h);
+                }
+            }
+        }
     }
 
     fn paint_dock_genie_if_needed(&mut self, dt: f32) {
@@ -2417,6 +2529,7 @@ impl App {
                     match crate::dock::DockLaunchpad::open(&self.monitor, pinned, look, shared) {
                         Ok(lp) => {
                             self.dock_launchpad = Some(lp);
+                            self.sync_dock_click_hook();
                             self.request_frame();
                         }
                         Err(e) => pwarn!("dock launchpad: couldn't open ({e})"),
@@ -2530,6 +2643,7 @@ impl App {
                             if let Some(d) = self.dock.as_mut() {
                                 d.set_stack_open(true);
                             }
+                            self.sync_dock_click_hook();
                             self.request_frame();
                         }
                         Err(e) => pwarn!("dock stack: couldn't open ({e})"),
@@ -2572,6 +2686,7 @@ impl App {
                             if let Some(d) = self.dock.as_mut() {
                                 d.set_ctrl_open(true);
                             }
+                            self.sync_dock_click_hook();
                             self.request_frame();
                         }
                         Err(e) => pwarn!("dock control center: couldn't open ({e})"),
@@ -2611,6 +2726,7 @@ impl App {
                             if let Some(d) = self.dock.as_mut() {
                                 d.set_ctrl_open(true);
                             }
+                            self.sync_dock_click_hook();
                             self.request_frame();
                         }
                         Err(e) => pwarn!("dock tray host flyout: couldn't open ({e})"),
@@ -3958,6 +4074,8 @@ impl App {
                 self.sync_game();
             }
             AppEvent::Foreground => {
+                // Switching apps or foreground focus closes transient dock popovers.
+                self.close_dock_popovers();
                 // All monitors: the island goes where the active window is.
                 if self.st.settings.monitor == MonitorChoice::All {
                     self.refresh_monitor();

@@ -17,6 +17,7 @@ pub const WM_APP_EVENT: u32 = WM_APP + 1;
 pub const WM_APP_FRAME: u32 = WM_APP + 2;
 pub const WM_APP_TRAY: u32 = WM_APP + 3;
 pub const WM_APP_APPBAR: u32 = WM_APP + 4;
+pub const WM_APP_DOCK_CLICK: u32 = WM_APP + 5;
 
 /// An HWND that can cross threads (only used for PostMessage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
