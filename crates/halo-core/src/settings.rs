@@ -132,6 +132,10 @@ fn version_zero() -> u32 {
     0
 }
 
+fn bool_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -163,6 +167,9 @@ pub struct Settings {
     /// Floating bottom dock shelf (Windows only; off by default so idle cost is zero).
     pub dock_enabled: bool,
     pub dock_theme: DockThemeMode,
+    /// Hide the Windows system taskbar while the bottom dock is active, restoring it on disable/exit.
+    #[serde(default = "bool_true")]
+    pub dock_hide_taskbar: bool,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -431,6 +438,7 @@ impl Default for Settings {
             step_aside: true,
             dock_enabled: false,
             dock_theme: DockThemeMode::FollowIsland,
+            dock_hide_taskbar: true,
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

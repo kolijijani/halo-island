@@ -23,18 +23,23 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const CLASS: PCWSTR = w!("Halo.Dock");
 pub const STACK_CLASS: PCWSTR = w!("Halo.DockStack");
+pub const FLYOUT_CLASS: PCWSTR = w!("Halo.DockFlyout");
+
+/// Tracks whether Halo Island currently hid the Windows system taskbar so we
+/// always restore it cleanly when the dock turns off or the process exits.
+static TASKBAR_HIDDEN_BY_HALO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Not exported by windows-rs 0.58's WindowsAndMessaging module.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
-/// Fixed surface height in DIPs: room for the 58 DIP shelf, 8 DIP bottom gap,
+/// Fixed surface height in DIPs: room for the 58 DIP shelf, 4 DIP bottom gap,
 /// magnification headroom (Phase 3), and floating item label without resizing HWND.
 pub const SURF_H: f32 = 136.0;
 pub const MAX_SURF_W: f32 = 1360.0;
 pub const SIDE_MARGIN: f32 = 24.0;
 pub const SHELF_H: f32 = 58.0;
 pub const SHELF_R: f32 = 20.0;
-pub const FLOAT_GAP: f32 = 8.0;
+pub const FLOAT_GAP: f32 = 4.0;
 pub const PEEK_W: f32 = 120.0;
 pub const PEEK_H: f32 = 4.0;
 pub const PEEK_HIT_H: f32 = 10.0;
@@ -157,6 +162,7 @@ pub struct DockTrayState {
     pub shelf_count: u16,
     pub downloads_active: u16,
     pub download_progress: Option<u8>,
+    pub focus_active: bool,
 }
 
 impl DockTrayState {
@@ -248,6 +254,7 @@ pub enum DockAction {
     OpenSettings,
     ToggleAppWindow { hwnd: HWND, minimized: bool, focused: bool, icon_rect: Rect },
     ToggleDownloadsStack(Rect),
+    ToggleControlCenter(Rect),
     ShowMenu(POINT, bool),
 }
 
@@ -287,6 +294,47 @@ pub fn register_stack(wndproc: crate::window::WndProc) -> Result<()> {
     register_class(STACK_CLASS, wndproc)
 }
 
+/// Register `Halo.DockFlyout` (the transient Control Center popover) once at startup.
+pub fn register_flyout(wndproc: crate::window::WndProc) -> Result<()> {
+    register_class(FLYOUT_CLASS, wndproc)
+}
+
+/// Hide or restore the Windows system taskbar (`Shell_TrayWnd` + `Shell_SecondaryTrayWnd`).
+/// When `hide` is `false`, restores the taskbar only if Halo previously hid it.
+pub fn set_system_taskbar_hidden(hide: bool) {
+    use std::sync::atomic::Ordering;
+    if cfg!(test) {
+        TASKBAR_HIDDEN_BY_HALO.store(hide, Ordering::SeqCst);
+        return;
+    }
+    if hide {
+        TASKBAR_HIDDEN_BY_HALO.store(true, Ordering::Release);
+    } else if !TASKBAR_HIDDEN_BY_HALO.swap(false, Ordering::AcqRel) {
+        return;
+    }
+    let cmd = if hide { SW_HIDE } else { SW_SHOWNA };
+    for class in [w!("Shell_TrayWnd"), w!("Shell_SecondaryTrayWnd")] {
+        let mut after = HWND::default();
+        for _ in 0..16 {
+            let Ok(bar) = (unsafe { FindWindowExW(HWND::default(), after, class, PCWSTR::null()) }) else {
+                break;
+            };
+            if bar.is_invalid() {
+                break;
+            }
+            after = bar;
+            unsafe {
+                let _ = ShowWindow(bar, cmd);
+            }
+        }
+    }
+}
+
+/// Whether Halo currently has the Windows system taskbar hidden.
+pub fn is_system_taskbar_hidden() -> bool {
+    TASKBAR_HIDDEN_BY_HALO.load(std::sync::atomic::Ordering::Acquire)
+}
+
 fn register_class(class: PCWSTR, wndproc: crate::window::WndProc) -> Result<()> {
     unsafe {
         let hinst = GetModuleHandleW(None)?;
@@ -310,13 +358,22 @@ fn register_class(class: PCWSTR, wndproc: crate::window::WndProc) -> Result<()> 
 
 /// Physical pixel bounds `(x, y, w, h)` for the dock surface on `mon`.
 pub fn surface_rect(mon: &MonitorInfo) -> (i32, i32, i32, i32) {
+    surface_rect_for(mon, false)
+}
+
+/// Physical pixel bounds `(x, y, w, h)` for the dock surface on `mon`.
+/// When `bottom_most` is `true` (e.g. Windows taskbar hidden by dock), anchors flush
+/// to `mon.rect.bottom` so the dock sits at the very bottom edge of the screen and
+/// never floats high up over open application windows.
+pub fn surface_rect_for(mon: &MonitorInfo, bottom_most: bool) -> (i32, i32, i32, i32) {
     let scale = mon.scale().max(1.0);
     let mon_w = (mon.rect.right - mon.rect.left).max(1);
     let max_dip = ((mon_w as f32 / scale) - 2.0 * SIDE_MARGIN).clamp(200.0, MAX_SURF_W);
     let w = ((max_dip * scale).ceil() as i32).clamp(1, mon_w);
     let h = ((SURF_H * scale).ceil() as i32).max(1);
     let x = mon.center_x() - w / 2;
-    let y = mon.bottom() - h;
+    let bottom = if bottom_most { mon.rect.bottom } else { mon.bottom() };
+    let y = bottom - h;
     (x, y, w, h)
 }
 
@@ -550,12 +607,15 @@ pub struct Dock {
     hovered_tray: Option<DockTrayZone>,
     pressed_tray: Option<DockTrayZone>,
     stack_open: bool,
+    ctrl_open: bool,
+    bottom_most: bool,
     dirty: bool,
     mask: Option<(HitMask, f64)>,
 }
 
 impl Drop for Dock {
     fn drop(&mut self) {
+        set_system_taskbar_hidden(false);
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
         self.gfx = None;
         unsafe {
@@ -573,7 +633,7 @@ impl Dock {
     }
 
     pub fn with_look(mon: &MonitorInfo, look: &'static Look, shared: Option<SharedD3d>) -> Result<Self> {
-        let (x, y, w, h) = surface_rect(mon);
+        let (x, y, w, h) = surface_rect_for(mon, true);
         let hwnd = unsafe {
             CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -622,6 +682,8 @@ impl Dock {
             hovered_tray: None,
             pressed_tray: None,
             stack_open: false,
+            ctrl_open: false,
+            bottom_most: true,
             dirty: true,
             mask: None,
         })
@@ -642,6 +704,26 @@ impl Dock {
         if self.stack_open != open {
             self.stack_open = open;
             self.dirty = true;
+        }
+    }
+
+    pub fn set_ctrl_open(&mut self, open: bool) {
+        if self.ctrl_open != open {
+            self.ctrl_open = open;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_bottom_most(&mut self, mon: &MonitorInfo, bottom_most: bool) {
+        self.bottom_most = bottom_most;
+        let next = surface_rect_for(mon, bottom_most);
+        if next != self.at {
+            self.at = next;
+            self.mask = None;
+            self.dirty = true;
+            if let Some(g) = self.gfx.as_mut() {
+                let _ = g.set_surface(next.2, next.3);
+            }
         }
     }
 
@@ -787,8 +869,25 @@ impl Dock {
         }
     }
 
+    fn tray_status_screen_rect(&self) -> Rect {
+        let sw = self.surf_w_dip();
+        let scales = self.current_scales();
+        let tray_w = tray_capsule_width(&self.tray);
+        let (_, _, _, _, _, tray_rect) =
+            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tr = tray_rect.unwrap_or(Rect::new(sw - 220.0, SURF_H - 52.0, 180.0, 38.0));
+        let (_, status_r, _) = tray_zone_rects(tr, &self.tray);
+        let sc = self.scale().max(1.0);
+        Rect::new(
+            self.at.0 as f32 + status_r.x * sc,
+            self.at.1 as f32 + status_r.y * sc,
+            status_r.w * sc,
+            status_r.h * sc,
+        )
+    }
+
     pub fn set_monitor(&mut self, mon: &MonitorInfo, light: bool) {
-        let next = surface_rect(mon);
+        let next = surface_rect_for(mon, self.bottom_most);
         if next != self.at || mon.dpi != self.dpi || light != self.light {
             self.at = next;
             self.dpi = mon.dpi;
@@ -1003,11 +1102,11 @@ impl Dock {
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
                 }
                 if let Some(z) = down_tray.filter(|&z| Some(z) == self.tray_zone_at(p)) {
-                    let page = match z {
-                        DockTrayZone::Weather | DockTrayZone::Clock => PageKind::Today,
-                        DockTrayZone::Status => PageKind::System,
+                    let act = match z {
+                        DockTrayZone::Weather | DockTrayZone::Clock => DockAction::OpenPage(PageKind::Today),
+                        DockTrayZone::Status => DockAction::ToggleControlCenter(self.tray_status_screen_rect()),
                     };
-                    return (Some(LRESULT(0)), DockAction::OpenPage(page));
+                    return (Some(LRESULT(0)), act);
                 }
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
                     if i < ANCHOR_SLOTS.len() {
@@ -1103,6 +1202,7 @@ impl Dock {
             layout_slots_full(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, tuck_t);
         let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
         let stack_open = self.stack_open;
+        let ctrl_open = self.ctrl_open;
 
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -1138,6 +1238,7 @@ impl Dock {
                     &slot_rects,
                     &self.apps,
                     stack_open,
+                    ctrl_open,
                     hovered,
                     pressed,
                     tray_rect,
@@ -1582,6 +1683,7 @@ fn draw_dock(
     slot_rects: &[Rect],
     apps: &[RunningApp],
     stack_open: bool,
+    ctrl_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
     tray_rect: Option<Rect>,
@@ -1801,7 +1903,8 @@ fn draw_dock(
                     for (zone, zr) in zones.into_iter().flatten() {
                         let is_h = hovered_tray == Some(zone);
                         let is_p = pressed_tray == Some(zone);
-                        let bg = if is_p {
+                        let is_act = zone == DockTrayZone::Status && ctrl_open;
+                        let bg = if is_p || is_act {
                             if light { Color::black(0.13) } else { Color::white(0.19) }
                         } else if is_h {
                             if light { Color::black(0.08) } else { Color::white(0.13) }
@@ -1810,7 +1913,9 @@ fn draw_dock(
                         } else {
                             Color::white(0.06)
                         };
-                        let rim = if is_h {
+                        let rim = if is_act {
+                            theme_accent.with_alpha(0.62)
+                        } else if is_h {
                             theme_accent.with_alpha(0.42)
                         } else if light {
                             Color::black(0.07)
@@ -1890,11 +1995,18 @@ fn draw_dock(
                         }
                     }
 
-                    // Clock & Date stack zone.
+                    // Clock & Date stack zone (+ amber Focus Mode indicator dot .tcl-focus-dot.on).
+                    if tray.focus_active {
+                        let dot_c = Point::new(clock_r.x + 8.5, clock_r.y + 9.5);
+                        c.fill_circle(dot_c, 4.8, Color::hex(0xF5A524).with_alpha(0.26));
+                        c.fill_circle(dot_c, 2.7, Color::hex(0xF5A524));
+                    }
                     if let Some(date_s) = tray.date_text() {
                         let time_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).center().color(ink) };
                         let date_st = TextStyle { size: 8.5, ..TextStyle::caption().center().color(dim) };
-                        c.text(&tray.clock_text(), Rect::new(clock_r.x, clock_r.y + 2.5, clock_r.w, 14.0), &time_st);
+                        let time_x = if tray.focus_active { clock_r.x + 6.0 } else { clock_r.x };
+                        let time_w = (clock_r.right() - time_x).max(16.0);
+                        c.text(&tray.clock_text(), Rect::new(time_x, clock_r.y + 2.5, time_w, 14.0), &time_st);
                         c.text(&date_s, Rect::new(clock_r.x, clock_r.y + 15.0, clock_r.w, 12.0), &date_st);
                     } else {
                         let clock_st = TextStyle::caption().weight(Weight::Semibold).center().color(ink);
@@ -2475,6 +2587,622 @@ impl DockStack {
     }
 }
 
+// ============================================================================
+// POPOVER 2: SYSTEM TRAY CONTROL CENTER (`#trayFlyout` in full_ecosystem.html)
+// ============================================================================
+
+pub const FLYOUT_W: f32 = 348.0;
+pub const FLYOUT_H: f32 = 324.0;
+pub const FLYOUT_PAD: f32 = 15.0;
+pub const FLYOUT_R: f32 = 20.0;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FlyoutAction {
+    None,
+    RequestFrame,
+    SetVolume(f32),
+    ToggleMute,
+    ToggleFocus,
+    OpenUri(&'static str),
+    OpenSystemPage,
+    Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlyoutZone {
+    TileWifi,
+    TileBluetooth,
+    TileFocus,
+    TileSnip,
+    NetworkBox,
+    VolumeIcon,
+    VolumeSlider,
+    FooterSystem,
+}
+
+/// Physical pixel bounds `(x, y, w, h)` for the Control Center flyout anchored above `anchor_screen`.
+pub fn flyout_surface_rect(mon: &MonitorInfo, anchor_screen: Rect) -> (i32, i32, i32, i32) {
+    let scale = mon.scale().max(1.0);
+    let w = ((FLYOUT_W * scale).ceil() as i32).max(180);
+    let h = ((FLYOUT_H * scale).ceil() as i32).max(160);
+    let gap = (10.0 * scale).round() as i32;
+    let cx = (anchor_screen.x + anchor_screen.w * 0.5).round() as i32;
+    let min_x = mon.rect.left + (8.0 * scale) as i32;
+    let max_x = (mon.rect.right - w - (8.0 * scale) as i32).max(min_x);
+    let x = (cx - (w * 78) / 100).clamp(min_x, max_x);
+    let y = (anchor_screen.y.round() as i32 - h - gap).max(mon.rect.top + (8.0 * scale) as i32);
+    (x, y, w, h)
+}
+
+/// 2×2 Quick Tile rectangle inside `card` (`idx` in `0..4`).
+pub fn flyout_tile_rect(card: Rect, idx: usize) -> Rect {
+    let gap = 9.0;
+    let inner_w = (card.w - 2.0 * FLYOUT_PAD).max(80.0);
+    let tile_w = (inner_w - gap) * 0.5;
+    let tile_h = 50.0;
+    let col = (idx % 2) as f32;
+    let row = (idx / 2) as f32;
+    Rect::new(
+        FLYOUT_PAD + col * (tile_w + gap),
+        FLYOUT_PAD + row * (tile_h + gap),
+        tile_w,
+        tile_h,
+    )
+}
+
+/// Recessed Available Networks card rectangle (`.cc-net-box`).
+pub fn flyout_net_box_rect(card: Rect) -> Rect {
+    Rect::new(FLYOUT_PAD, 134.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 82.0)
+}
+
+/// Sound Master Volume slider card rectangle (`.cc-slider-card`).
+pub fn flyout_slider_card_rect(card: Rect) -> Rect {
+    Rect::new(FLYOUT_PAD, 226.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 62.0)
+}
+
+/// Interactive pill track inside the Sound slider card (`.cc-sl-track`).
+pub fn flyout_slider_track_rect(card: Rect) -> Rect {
+    let sc = flyout_slider_card_rect(card);
+    Rect::new(sc.x + 12.0, sc.y + 32.0, (sc.w - 24.0).max(40.0), 20.0)
+}
+
+/// Speaker mute-toggle hit box inside `.cc-sl-top`.
+pub fn flyout_volume_icon_rect(card: Rect) -> Rect {
+    let sc = flyout_slider_card_rect(card);
+    Rect::new(sc.x + 8.0, sc.y + 6.0, 28.0, 22.0)
+}
+
+/// Footer status row rectangle (`.cc-foot`).
+pub fn flyout_footer_rect(card: Rect) -> Rect {
+    Rect::new(FLYOUT_PAD, 294.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 20.0)
+}
+
+/// Transient System Tray Control Center popover (`Halo.DockFlyout`).
+pub struct DockControlCenter {
+    gfx: Option<Gfx>,
+    pub hwnd: HWND,
+    at: (i32, i32, i32, i32),
+    dpi: u32,
+    light: bool,
+    look: &'static Look,
+    tray: DockTrayState,
+    hovered: Option<FlyoutZone>,
+    dragging_vol: bool,
+    tracking: bool,
+    shown: bool,
+    dirty: bool,
+}
+
+impl Drop for DockControlCenter {
+    fn drop(&mut self) {
+        let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
+        self.gfx = None;
+        unsafe {
+            if let Some(v) = visual {
+                let _ = DestroyWindow(v);
+            }
+            let _ = DestroyWindow(self.hwnd);
+        }
+    }
+}
+
+impl DockControlCenter {
+    pub fn open(
+        mon: &MonitorInfo,
+        anchor_screen: Rect,
+        tray: DockTrayState,
+        look: &'static Look,
+        shared: Option<SharedD3d>,
+    ) -> Result<Self> {
+        let (x, y, w, h) = flyout_surface_rect(mon, anchor_screen);
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                FLYOUT_CLASS,
+                w!("Halo Control Center"),
+                WS_POPUP,
+                x,
+                y,
+                w,
+                h,
+                None,
+                None,
+                GetModuleHandleW(None)?,
+                None,
+            )?
+        };
+        let mut gfx = match Gfx::new(mon.dpi as f32, hwnd) {
+            Ok(g) => g.secondary(),
+            Err(e) => {
+                unsafe {
+                    let _ = DestroyWindow(hwnd);
+                }
+                return Err(e);
+            }
+        };
+        gfx.set_shared_d3d(shared);
+        let _ = gfx.set_surface(w, h);
+        Ok(Self {
+            gfx: Some(gfx),
+            hwnd,
+            at: (x, y, w, h),
+            dpi: mon.dpi,
+            light: look.light,
+            look,
+            tray,
+            hovered: None,
+            dragging_vol: false,
+            tracking: false,
+            shown: false,
+            dirty: true,
+        })
+    }
+
+    pub fn set_look(&mut self, look: &'static Look) -> bool {
+        if self.look == look && self.light == look.light {
+            return false;
+        }
+        self.look = look;
+        self.light = look.light;
+        self.dirty = true;
+        true
+    }
+
+    pub fn set_tray(&mut self, tray: DockTrayState) -> bool {
+        if self.tray == tray {
+            return false;
+        }
+        self.tray = tray;
+        self.dirty = true;
+        true
+    }
+
+    pub fn needs_frame(&self) -> bool {
+        self.dirty
+    }
+
+    fn scale(&self) -> f32 {
+        (self.dpi as f32 / 96.0).max(1.0)
+    }
+
+    fn card_dip(&self) -> Rect {
+        let s = self.scale();
+        Rect::new(0.0, 0.0, self.at.2 as f32 / s, self.at.3 as f32 / s)
+    }
+
+    fn hit_test(&self, p: Point) -> Option<FlyoutZone> {
+        let card = self.card_dip();
+        if flyout_slider_track_rect(card).inset(-4.0, -4.0).contains(p) {
+            return Some(FlyoutZone::VolumeSlider);
+        }
+        if flyout_volume_icon_rect(card).contains(p) {
+            return Some(FlyoutZone::VolumeIcon);
+        }
+        for (i, z) in [
+            FlyoutZone::TileWifi,
+            FlyoutZone::TileBluetooth,
+            FlyoutZone::TileFocus,
+            FlyoutZone::TileSnip,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if flyout_tile_rect(card, i).contains(p) {
+                return Some(z);
+            }
+        }
+        if flyout_net_box_rect(card).contains(p) {
+            return Some(FlyoutZone::NetworkBox);
+        }
+        if flyout_footer_rect(card).contains(p) {
+            return Some(FlyoutZone::FooterSystem);
+        }
+        None
+    }
+
+    fn volume_at_x(&self, x: f32) -> f32 {
+        let tr = flyout_slider_track_rect(self.card_dip());
+        ((x - tr.x) / tr.w.max(1.0)).clamp(0.0, 1.0)
+    }
+
+    pub fn handle_message(&mut self, hwnd: HWND, msg: u32, _wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, FlyoutAction) {
+        if hwnd != self.hwnd {
+            return (None, FlyoutAction::None);
+        }
+        let to_dip = |lp: LPARAM, scale: f32| {
+            let x = (lp.0 & 0xffff) as u16 as i16 as f32;
+            let y = ((lp.0 >> 16) & 0xffff) as u16 as i16 as f32;
+            Point::new(x / scale, y / scale)
+        };
+        match msg {
+            WM_MOUSEACTIVATE => (Some(LRESULT(MA_NOACTIVATE as isize)), FlyoutAction::None),
+            WM_MOUSEMOVE => {
+                if !self.tracking {
+                    self.tracking = true;
+                    unsafe {
+                        let mut tme = TRACKMOUSEEVENT {
+                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: self.hwnd,
+                            dwHoverTime: 0,
+                        };
+                        let _ = TrackMouseEvent(&mut tme);
+                    }
+                }
+                let p = to_dip(lp, self.scale());
+                if self.dragging_vol {
+                    let v = self.volume_at_x(p.x);
+                    let pct = (v * 100.0).round() as u8;
+                    if self.tray.volume_pct != pct || self.tray.muted {
+                        self.tray.volume_pct = pct;
+                        self.tray.muted = pct == 0;
+                        self.tray.volume_known = true;
+                        self.dirty = true;
+                    }
+                    return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
+                }
+                let next = self.hit_test(p);
+                if next != self.hovered {
+                    self.hovered = next;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
+            WM_MOUSELEAVE => {
+                self.tracking = false;
+                if !self.dragging_vol && self.hovered.take().is_some() {
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
+            WM_LBUTTONDOWN => {
+                let p = to_dip(lp, self.scale());
+                if self.hit_test(p) == Some(FlyoutZone::VolumeSlider) {
+                    self.dragging_vol = true;
+                    unsafe {
+                        SetCapture(self.hwnd);
+                    }
+                    let v = self.volume_at_x(p.x);
+                    let pct = (v * 100.0).round() as u8;
+                    self.tray.volume_pct = pct;
+                    self.tray.muted = pct == 0;
+                    self.tray.volume_known = true;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
+            WM_LBUTTONUP => {
+                let p = to_dip(lp, self.scale());
+                if self.dragging_vol {
+                    self.dragging_vol = false;
+                    unsafe {
+                        let _ = ReleaseCapture();
+                    }
+                    let v = self.volume_at_x(p.x);
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
+                }
+                let act = match self.hit_test(p) {
+                    Some(FlyoutZone::TileWifi) | Some(FlyoutZone::NetworkBox) => {
+                        FlyoutAction::OpenUri("ms-availablenetworks:")
+                    }
+                    Some(FlyoutZone::TileBluetooth) => FlyoutAction::OpenUri("ms-settings:bluetooth"),
+                    Some(FlyoutZone::TileFocus) => FlyoutAction::ToggleFocus,
+                    Some(FlyoutZone::TileSnip) => FlyoutAction::OpenUri("ms-screenclip:"),
+                    Some(FlyoutZone::VolumeIcon) => FlyoutAction::ToggleMute,
+                    Some(FlyoutZone::VolumeSlider) => FlyoutAction::SetVolume(self.volume_at_x(p.x)),
+                    Some(FlyoutZone::FooterSystem) => FlyoutAction::OpenSystemPage,
+                    None => FlyoutAction::None,
+                };
+                (Some(LRESULT(0)), act)
+            }
+            WM_CAPTURECHANGED => {
+                self.dragging_vol = false;
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
+            WM_RBUTTONUP => (Some(LRESULT(0)), FlyoutAction::Close),
+            WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
+                unsafe {
+                    let id = if self.hovered.is_some() || self.dragging_vol { IDC_HAND } else { IDC_ARROW };
+                    if let Ok(c) = LoadCursorW(None, id) {
+                        SetCursor(c);
+                    }
+                }
+                (Some(LRESULT(1)), FlyoutAction::None)
+            }
+            _ => (None, FlyoutAction::None),
+        }
+    }
+
+    pub fn paint(&mut self, shared: Option<SharedD3d>) {
+        if !self.dirty {
+            return;
+        }
+        let (x, y, w, h) = self.at;
+        let scale = self.scale();
+        let card = self.card_dip();
+        let look = self.look;
+        let light = look.light;
+        let tray = self.tray;
+        let hovered = self.hovered;
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        if !gfx.has_gpu() && shared.is_some() {
+            gfx.set_shared_d3d(shared);
+        }
+        if gfx.set_surface(w, h).is_err() {
+            return;
+        }
+        gfx.set_look(look);
+        let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        let body = card.inset(1.0, 1.0);
+        let glass_params = if look.frame.is_none() {
+            let gp = dock_glass_params(body, FLYOUT_R, look, scale);
+            gfx.prepare_glass(&gp, full);
+            Some(gp)
+        } else {
+            None
+        };
+        if let Ok(mut c) = gfx.begin(full) {
+            c.unthemed(|c| {
+                let ink = look.ink;
+                let sub = ink.with_alpha(if light { 0.58 } else { 0.68 });
+                let rim = if light { Color::black(0.14) } else { Color::white(0.20) };
+                if look.frame.is_some() {
+                    crate::pill::shape::draw_body(c, body, FLYOUT_R, look.ground.with_alpha(0.95), Some(look.border));
+                } else {
+                    if let Some(gp) = glass_params.as_ref() {
+                        c.glass(gp, card);
+                    }
+                    let bg = if look.ground == look::HALO.ground {
+                        look.ground.with_alpha(0.72)
+                    } else if light {
+                        Color::rgba(0.95, 0.96, 0.99, 0.72)
+                    } else {
+                        Color::rgba(0.06, 0.08, 0.13, 0.76)
+                    };
+                    c.fill_rrect(body, FLYOUT_R, bg);
+                    let segs = crate::pill::shape::segments(body, FLYOUT_R);
+                    c.fill_path_fade(&segs, Color::white(1.0), body.y, body.y + body.h * 0.36, if light { 0.34 } else { 0.16 }, 0.0);
+                    c.stroke_rrect(body, FLYOUT_R, rim, 1.0);
+                }
+
+                // 1. 2x2 Quick Tiles Grid (.cc-grid: Wi-Fi, Bluetooth, Focus Mode, Screen Snip)
+                let wifi_on = tray.wifi_connected != Some(false);
+                let tiles: [(FlyoutZone, Icon, &str, &str, Option<Color>); 4] = [
+                    (
+                        FlyoutZone::TileWifi,
+                        if wifi_on { Icon::Wifi } else { Icon::WifiOff },
+                        "Wi-Fi",
+                        if wifi_on { "Unifi_5GHz" } else { "Offline" },
+                        if wifi_on { Some(Color::hex(0x2563EB)) } else { None },
+                    ),
+                    (
+                        FlyoutZone::TileBluetooth,
+                        Icon::Bluetooth,
+                        "Bluetooth",
+                        "Pods Pro · 94%",
+                        Some(Color::hex(0x2563EB)),
+                    ),
+                    (
+                        FlyoutZone::TileFocus,
+                        Icon::Moon,
+                        "Focus Mode",
+                        if tray.focus_active { "Active" } else { "Off" },
+                        if tray.focus_active { Some(Color::hex(0xF5A524)) } else { None },
+                    ),
+                    (
+                        FlyoutZone::TileSnip,
+                        Icon::Area,
+                        "Screen Snip",
+                        "Win + Shift + S",
+                        None,
+                    ),
+                ];
+
+                for (i, (zone, icon, lbl, sub_txt, active_col)) in tiles.into_iter().enumerate() {
+                    let tr = flyout_tile_rect(card, i);
+                    let is_h = hovered == Some(zone);
+                    let tile_r = 14.0;
+                    if let Some(ac) = active_col {
+                        c.fill_rrect(tr.offset(0.0, 2.0), tile_r, ac.with_alpha(0.32));
+                        c.fill_rrect(tr, tile_r, ac.with_alpha(if is_h { 0.96 } else { 0.90 }));
+                        let t_segs = crate::pill::shape::segments(tr, tile_r);
+                        c.fill_path_fade(&t_segs, Color::white(1.0), tr.y, tr.y + tr.h * 0.55, 0.24, 0.0);
+                        c.stroke_rrect(tr, tile_r, Color::white(0.28), 1.0);
+                    } else {
+                        let bg = if is_h {
+                            if light { Color::black(0.10) } else { Color::white(0.13) }
+                        } else if light {
+                            Color::black(0.05)
+                        } else {
+                            Color::white(0.07)
+                        };
+                        let b_rim = if light { Color::black(0.08) } else { Color::white(0.09) };
+                        c.fill_rrect(tr, tile_r, bg);
+                        c.stroke_rrect(tr, tile_r, b_rim, 1.0);
+                    }
+
+                    // Circle icon badge (.cc-cir)
+                    let cir_c = Point::new(tr.x + 24.0, tr.y + tr.h * 0.5);
+                    let cir_bg = if active_col.is_some() {
+                        Color::white(0.20)
+                    } else if light {
+                        Color::black(0.08)
+                    } else {
+                        Color::white(0.14)
+                    };
+                    c.fill_circle(cir_c, 15.0, cir_bg);
+                    let ic_col = if active_col.is_some() { Color::white(1.0) } else { ink };
+                    c.icon(icon, Rect::new(cir_c.x - 7.5, cir_c.y - 7.5, 15.0, 15.0), ic_col);
+
+                    let lbl_col = if active_col.is_some() { Color::white(1.0) } else { ink };
+                    let sub_col = if active_col.is_some() { Color::white(0.82) } else { sub };
+                    let lbl_st = TextStyle { size: 12.0, ..TextStyle::caption().weight(Weight::Semibold).color(lbl_col) };
+                    let sub_st = TextStyle { size: 10.5, ..TextStyle::caption().color(sub_col) };
+                    let tx = tr.x + 48.0;
+                    let tw = (tr.right() - tx - 8.0).max(24.0);
+                    c.text(lbl, Rect::new(tx, tr.y + 9.0, tw, 15.0), &lbl_st);
+                    c.text(sub_txt, Rect::new(tx, tr.y + 25.0, tw, 14.0), &sub_st);
+                }
+
+                // 2. Available Networks Box (.cc-net-box)
+                let nb = flyout_net_box_rect(card);
+                let nb_hov = hovered == Some(FlyoutZone::NetworkBox);
+                let nb_bg = if light {
+                    Color::black(if nb_hov { 0.08 } else { 0.05 })
+                } else {
+                    Color::rgba(0.0, 0.0, 0.0, if nb_hov { 0.34 } else { 0.26 })
+                };
+                c.fill_rrect(nb, 14.0, nb_bg);
+                c.stroke_rrect(nb, 14.0, if light { Color::black(0.08) } else { Color::white(0.09) }, 1.0);
+
+                let hdr_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).color(sub.with_alpha(0.54)) };
+                let hdr_r_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(sub.with_alpha(0.54)) };
+                c.text("AVAILABLE NETWORKS", Rect::new(nb.x + 11.0, nb.y + 7.0, 150.0, 13.0), &hdr_st);
+                c.text(
+                    if wifi_on { "Wi-Fi 6 · 866 Mbps" } else { "Offline" },
+                    Rect::new(nb.right() - 135.0, nb.y + 7.0, 124.0, 13.0),
+                    &hdr_r_st,
+                );
+
+                // Row 1: Connected primary network + green pill badge
+                let row1_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                c.text(
+                    if wifi_on { "✓ Unifi_5GHz" } else { "No active Wi-Fi" },
+                    Rect::new(nb.x + 11.0, nb.y + 26.0, 170.0, 16.0),
+                    &row1_st,
+                );
+                let badge = Rect::new(nb.right() - 78.0, nb.y + 25.0, 67.0, 17.0);
+                let green = Color::hex(0x4ADE80);
+                c.fill_rrect(badge, 8.5, green.with_alpha(0.16));
+                let b_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).center().color(green) };
+                c.text(if wifi_on { "Connected" } else { "Settings" }, badge, &b_st);
+
+                // Row 2: Secondary mesh network + 4 signal bars
+                let row2_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
+                c.text("Studio_Mesh_5G", Rect::new(nb.x + 11.0, nb.y + 46.0, 150.0, 15.0), &row2_st);
+                let sec_st = TextStyle { size: 10.0, ..TextStyle::caption().right().color(sub.with_alpha(0.58)) };
+                c.text("Secured", Rect::new(nb.right() - 88.0, nb.y + 46.0, 56.0, 15.0), &sec_st);
+                for b in 0..4 {
+                    let bh = 4.0 + b as f32 * 2.2;
+                    let bx = nb.right() - 25.0 + b as f32 * 3.6;
+                    let by = nb.y + 58.0 - bh;
+                    c.fill_rrect(Rect::new(bx, by, 2.2, bh), 0.8, ink.with_alpha(0.82));
+                }
+
+                // Row 3: Personal Hotspot
+                c.text("koliji-iPhone", Rect::new(nb.x + 11.0, nb.y + 63.0, 150.0, 14.0), &row2_st);
+                c.text("Hotspot", Rect::new(nb.right() - 88.0, nb.y + 63.0, 56.0, 14.0), &sec_st);
+                for b in 0..4 {
+                    let bh = 4.0 + b as f32 * 2.2;
+                    let bx = nb.right() - 25.0 + b as f32 * 3.6;
+                    let by = nb.y + 74.0 - bh;
+                    let a = if b < 3 { 0.82 } else { 0.26 };
+                    c.fill_rrect(Rect::new(bx, by, 2.2, bh), 0.8, ink.with_alpha(a));
+                }
+
+                // 3. Interactive Sound Master Volume Slider Card (.cc-slider-card)
+                let sc = flyout_slider_card_rect(card);
+                let sc_bg = if light { Color::black(0.05) } else { Color::white(0.06) };
+                c.fill_rrect(sc, 14.0, sc_bg);
+                c.stroke_rrect(sc, 14.0, if light { Color::black(0.08) } else { Color::white(0.09) }, 1.0);
+
+                let vol_pct = if tray.muted { 0 } else if tray.volume_known { tray.volume_pct.min(100) } else { 64 };
+                let vol_ic = if tray.muted || vol_pct == 0 {
+                    Icon::VolumeMute
+                } else if vol_pct < 45 {
+                    Icon::VolumeLow
+                } else {
+                    Icon::Volume
+                };
+                c.icon(vol_ic, Rect::new(sc.x + 12.0, sc.y + 9.0, 14.0, 14.0), ink);
+                let sl_lbl_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                c.text("Sound · Master Audio", Rect::new(sc.x + 32.0, sc.y + 8.0, 175.0, 16.0), &sl_lbl_st);
+                let sl_val_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
+                let val_txt = if tray.muted { "Muted".to_string() } else { format!("{vol_pct}%") };
+                c.text(&val_txt, Rect::new(sc.right() - 72.0, sc.y + 8.0, 60.0, 16.0), &sl_val_st);
+
+                let track = flyout_slider_track_rect(card);
+                let tr_r = track.h * 0.5;
+                c.fill_rrect(track, tr_r, if light { Color::black(0.14) } else { Color::rgba(0.0, 0.0, 0.0, 0.38) });
+                c.stroke_rrect(track, tr_r, if light { Color::black(0.10) } else { Color::white(0.11) }, 1.0);
+
+                let frac = (vol_pct as f32 / 100.0).clamp(0.0, 1.0);
+                let fill_w = (track.w * frac).max(track.h);
+                let fill_r = Rect::new(track.x, track.y, fill_w.min(track.w), track.h);
+                let fill_col = if light { look.accent.unwrap_or(Color::hex(0x0A84FF)) } else { Color::white(0.95) };
+                c.fill_rrect(fill_r, tr_r, fill_col);
+                let knob_cx = (fill_r.right() - tr_r).max(track.x + tr_r);
+                let knob_cy = track.y + tr_r;
+                c.fill_circle(
+                    Point::new(knob_cx, knob_cy),
+                    6.5,
+                    if light { Color::white(0.92) } else { Color::hex(0x0F172A).with_alpha(0.28) },
+                );
+
+                // 4. Footer Status Bar (.cc-foot: battery charging status + System page link)
+                let ft = flyout_footer_rect(card);
+                let bat_txt = if tray.has_battery {
+                    let mode = if tray.charging || tray.on_ac { "AC Charging" } else { "Battery" };
+                    format!("⚡ {}% {mode}", tray.battery_pct)
+                } else {
+                    "⚡ AC Power Connected".to_string()
+                };
+                let ft_l_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).color(Color::hex(0x4ADE80)) };
+                c.text(&bat_txt, Rect::new(ft.x, ft.y + 2.0, ft.w * 0.68, ft.h), &ft_l_st);
+
+                let sys_hov = hovered == Some(FlyoutZone::FooterSystem);
+                let ft_r_st = TextStyle {
+                    size: 11.0,
+                    ..TextStyle::caption()
+                        .weight(if sys_hov { Weight::Semibold } else { Weight::Medium })
+                        .right()
+                        .color(if sys_hov { ink } else { sub })
+                };
+                c.text("System →", Rect::new(ft.right() - 96.0, ft.y + 2.0, 96.0, ft.h), &ft_r_st);
+            });
+            let _ = gfx.end();
+        }
+        let _ = gfx.present(x, y);
+        if gfx.needs_hit_mask() {
+            let mask = HitMask { rect: None, notch: None, pill: Some((card, FLYOUT_R)) };
+            let _ = gfx.push_hit_mask(x, y, &mask, None);
+        }
+        if !self.shown {
+            self.shown = true;
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            gfx.set_shown(true);
+        }
+        self.dirty = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2705,5 +3433,43 @@ mod tests {
         assert!(min_card.w < tile.w && min_card.h < tile.h);
         assert_eq!(min_bar.y, min_card.y);
         assert!(min_badge.right() >= tile.right() && min_badge.bottom() >= tile.bottom());
+    }
+
+    #[test]
+    fn control_center_flyout_layout_and_bottom_most_taskbar_auto_hide() {
+        let m = mon(1920, 1080, 1032, 96);
+        // When bottom_most is enabled (taskbar hidden), dock anchors flush to mon.rect.bottom (1080), not work.bottom (1032).
+        let (_, y_docked, _, h_docked) = surface_rect_for(&m, false);
+        assert_eq!(y_docked + h_docked, 1032);
+        let (_, y_bottom, _, h_bottom) = surface_rect_for(&m, true);
+        assert_eq!(y_bottom + h_bottom, 1080);
+
+        set_system_taskbar_hidden(true);
+        assert!(is_system_taskbar_hidden());
+        set_system_taskbar_hidden(false);
+        assert!(!is_system_taskbar_hidden());
+
+        let anchor = Rect::new(1310.0, 1018.0, 120.0, 38.0);
+        let (fx, fy, fw, fh) = flyout_surface_rect(&m, anchor);
+        assert_eq!(fw, FLYOUT_W as i32);
+        assert_eq!(fh, FLYOUT_H as i32);
+        assert!(fx >= m.rect.left && fx + fw <= m.rect.right);
+        assert!(fy + fh < anchor.y as i32);
+
+        let card = Rect::new(0.0, 0.0, FLYOUT_W, FLYOUT_H);
+        let t0 = flyout_tile_rect(card, 0);
+        let t1 = flyout_tile_rect(card, 1);
+        let t2 = flyout_tile_rect(card, 2);
+        let t3 = flyout_tile_rect(card, 3);
+        assert!(t1.x > t0.right() && t2.y > t0.bottom() && t3.x == t1.x && t3.y == t2.y);
+
+        let nb = flyout_net_box_rect(card);
+        let sc = flyout_slider_card_rect(card);
+        let tr = flyout_slider_track_rect(card);
+        let ft = flyout_footer_rect(card);
+        assert!(nb.y > t2.bottom());
+        assert!(sc.y > nb.bottom());
+        assert!(tr.x > sc.x && tr.right() < sc.right());
+        assert!(ft.y > sc.bottom() && ft.bottom() <= card.h);
     }
 }

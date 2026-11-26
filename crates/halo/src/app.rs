@@ -176,6 +176,9 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     if let Err(e) = crate::dock::register_stack(dock_stack_wndproc) {
         pwarn!("dock stack window: class not registered ({e})");
     }
+    if let Err(e) = crate::dock::register_flyout(dock_flyout_wndproc) {
+        pwarn!("dock flyout window: class not registered ({e})");
+    }
     if let Err(e) = crate::dock_genie::register() {
         pwarn!("dock genie window: class not registered ({e})");
     }
@@ -376,6 +379,15 @@ unsafe extern "system" fn dock_stack_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, l
     }
 }
 
+/// The bottom dock's transient System Tray Control Center popover messages (`dock`).
+unsafe extern "system" fn dock_flyout_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let res = with_app(|app| app.handle_dock_flyout_window(hwnd, msg, wp, lp));
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 fn run_deferred(d: Deferred) {
     match d {
         Deferred::DragOut(paths) => {
@@ -459,6 +471,8 @@ pub struct App {
     dock_apps: Option<services::dock_apps::DockAppsWatcher>,
     /// Transient Downloads stack popover, alive only while open.
     dock_stack: Option<crate::dock::DockStack>,
+    /// Transient System Tray Control Center flyout, alive only while open.
+    dock_flyout: Option<crate::dock::DockControlCenter>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
     wifi_connected: Option<bool>,
@@ -776,6 +790,7 @@ impl App {
             dock: None,
             dock_apps: None,
             dock_stack: None,
+            dock_flyout: None,
             dock_genie: None,
             wifi_connected: None,
             clock,
@@ -928,9 +943,11 @@ impl App {
     fn shutdown(&mut self) -> i32 {
         self.save_now();
         self.settings_win = None;
+        crate::dock::set_system_taskbar_hidden(false);
         self.dock = None;
         self.dock_apps = None;
         self.dock_stack = None;
+        self.dock_flyout = None;
         self.dock_genie = None;
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
@@ -1620,6 +1637,9 @@ impl App {
             if let Some(s) = self.services.as_ref() {
                 s.on_taskbar_created();
             }
+            if self.dock.is_some() && self.st.settings.dock_hide_taskbar && !self.in_selftest {
+                crate::dock::set_system_taskbar_hidden(true);
+            }
             // A restarted Explorer puts its taskbar at the top of the topmost band.
             self.start_raises();
             return Some(LRESULT(0));
@@ -1703,6 +1723,7 @@ impl App {
             }
             WM_QUERYENDSESSION => Some(LRESULT(1)),
             WM_ENDSESSION => {
+                crate::dock::set_system_taskbar_hidden(false);
                 self.save_now();
                 // Windows ends Halo without shutdown(): stop the frame count's
                 // trace session now, or it would outlive the sign-in.
@@ -1843,10 +1864,13 @@ impl App {
     fn sync_dock(&mut self) {
         if crate::dock::dock_allowed(self.st.settings.dock_enabled, self.st.settings.pro, self.in_selftest) {
             let look = self.dock_look();
+            let hide_tb = self.st.settings.dock_hide_taskbar;
+            crate::dock::set_system_taskbar_hidden(hide_tb);
             if self.dock.is_none() {
                 let shared = self.gfx.d3d_handles();
                 match crate::dock::Dock::with_look(&self.monitor, look, shared) {
                     Ok(mut d) => {
+                        d.set_bottom_most(&self.monitor, true);
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
                         d.set_apps(watcher.refresh());
@@ -1859,11 +1883,16 @@ impl App {
                     Err(e) => pwarn!("dock: couldn't create window ({e})"),
                 }
             } else {
+                if let Some(d) = self.dock.as_mut() {
+                    d.set_bottom_most(&self.monitor, true);
+                }
                 self.sync_dock_tray();
             }
         } else {
+            crate::dock::set_system_taskbar_hidden(false);
             self.dock_apps = None;
             self.dock_stack = None;
+            self.dock_flyout = None;
             self.dock_genie = None;
             if self.dock.take().is_some() {
                 pinfo!("dock: disabled");
@@ -1897,6 +1926,7 @@ impl App {
             download_progress: dl_pill
                 .and_then(|p| p.fraction)
                 .map(|f| (f.clamp(0.0, 1.0) * 100.0).round() as u8),
+            focus_active: self.st.pomodoro.is_active(),
         }
     }
 
@@ -1916,6 +1946,10 @@ impl App {
         if let Some(s) = self.dock_stack.as_mut() {
             changed |= s.set_look(look);
         }
+        if let Some(f) = self.dock_flyout.as_mut() {
+            changed |= f.set_tray(tray);
+            changed |= f.set_look(look);
+        }
         if changed {
             self.request_frame();
         }
@@ -1930,9 +1964,24 @@ impl App {
         }
     }
 
+    fn close_dock_flyout(&mut self) {
+        if self.dock_flyout.take().is_some() {
+            if let Some(d) = self.dock.as_mut() {
+                d.set_ctrl_open(false);
+            }
+            self.request_frame();
+        }
+    }
+
+    fn close_dock_popovers(&mut self) {
+        self.close_dock_stack();
+        self.close_dock_flyout();
+    }
+
     fn dock_moving(&self) -> bool {
         self.dock.as_ref().is_some_and(|d| d.needs_frame())
             || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
+            || self.dock_flyout.as_ref().is_some_and(|f| f.needs_frame())
             || self.dock_genie.is_some()
     }
 
@@ -1952,6 +2001,11 @@ impl App {
                 s.paint(shared.clone());
             }
         }
+        if let Some(f) = self.dock_flyout.as_mut() {
+            if f.needs_frame() {
+                f.paint(shared.clone());
+            }
+        }
         if let Some(g) = self.dock_genie.as_mut() {
             if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
                 self.dock_genie = None;
@@ -1966,7 +2020,7 @@ impl App {
             crate::dock::DockAction::None => {}
             crate::dock::DockAction::RequestFrame => self.request_frame(),
             crate::dock::DockAction::OpenLaunchpad => {
-                self.close_dock_stack();
+                self.close_dock_popovers();
                 unsafe {
                     use windows::Win32::UI::Input::KeyboardAndMouse::{
                         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN,
@@ -1987,7 +2041,7 @@ impl App {
                 }
             }
             crate::dock::DockAction::ToggleIsland => {
-                self.close_dock_stack();
+                self.close_dock_popovers();
                 if self.expanded {
                     self.collapse();
                 } else {
@@ -1996,18 +2050,18 @@ impl App {
                 self.request_frame();
             }
             crate::dock::DockAction::OpenPage(pk) => {
-                self.close_dock_stack();
+                self.close_dock_popovers();
                 self.st.page = pk;
                 self.expand();
                 self.request_frame();
             }
             crate::dock::DockAction::OpenSettings => {
-                self.close_dock_stack();
+                self.close_dock_popovers();
                 self.collapse();
                 self.open_settings_window(Some(Section::Island), deferred);
             }
             crate::dock::DockAction::ToggleAppWindow { hwnd: target, minimized, focused, icon_rect } => {
-                self.close_dock_stack();
+                self.close_dock_popovers();
                 // Finish any in-flight Genie transition before starting a new one so two Genies never overlap.
                 self.dock_genie = None;
                 if focused && !minimized {
@@ -2060,6 +2114,7 @@ impl App {
                 }
             }
             crate::dock::DockAction::ToggleDownloadsStack(icon_rect) => {
+                self.close_dock_flyout();
                 if self.dock_stack.is_some() {
                     self.close_dock_stack();
                 } else {
@@ -2077,8 +2132,28 @@ impl App {
                     }
                 }
             }
-            crate::dock::DockAction::ShowMenu(pt, tucked) => {
+            crate::dock::DockAction::ToggleControlCenter(anchor_rect) => {
                 self.close_dock_stack();
+                if self.dock_flyout.is_some() {
+                    self.close_dock_flyout();
+                } else {
+                    let look = self.dock_look();
+                    let tray = self.dock_tray_state();
+                    let shared = self.gfx.d3d_handles();
+                    match crate::dock::DockControlCenter::open(&self.monitor, anchor_rect, tray, look, shared) {
+                        Ok(f) => {
+                            self.dock_flyout = Some(f);
+                            if let Some(d) = self.dock.as_mut() {
+                                d.set_ctrl_open(true);
+                            }
+                            self.request_frame();
+                        }
+                        Err(e) => pwarn!("dock control center: couldn't open ({e})"),
+                    }
+                }
+            }
+            crate::dock::DockAction::ShowMenu(pt, tucked) => {
+                self.close_dock_popovers();
                 deferred.push(Deferred::DockMenu(pt, tucked));
             }
         }
@@ -2095,6 +2170,64 @@ impl App {
                 crate::shell::open(&path);
             }
             crate::dock::StackAction::Close => self.close_dock_stack(),
+        }
+        res
+    }
+
+    fn handle_dock_flyout_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        let (res, act) = self.dock_flyout.as_mut()?.handle_message(hwnd, msg, wp, lp);
+        match act {
+            crate::dock::FlyoutAction::None => {}
+            crate::dock::FlyoutAction::RequestFrame => self.request_frame(),
+            crate::dock::FlyoutAction::SetVolume(target) => {
+                let target = target.clamp(0.0, 1.0);
+                let cur = if self.st.volume.known { self.st.volume.level } else { 0.64 };
+                let delta = target - cur;
+                self.st.volume.level = target;
+                self.st.volume.muted = target <= 0.005;
+                self.st.volume.known = true;
+                if let Some(svc) = self.services.as_ref() {
+                    if delta.abs() > 0.003 {
+                        svc.adjust_volume(delta);
+                    }
+                }
+                self.sync_dock_tray();
+                self.request_frame();
+            }
+            crate::dock::FlyoutAction::ToggleMute => {
+                let target = if self.st.volume.muted || self.st.volume.level <= 0.01 { 0.64 } else { 0.0 };
+                let cur = if self.st.volume.known { self.st.volume.level } else { 0.64 };
+                self.st.volume.level = target;
+                self.st.volume.muted = target <= 0.005;
+                self.st.volume.known = true;
+                if let Some(svc) = self.services.as_ref() {
+                    svc.adjust_volume(target - cur);
+                }
+                self.sync_dock_tray();
+                self.request_frame();
+            }
+            crate::dock::FlyoutAction::ToggleFocus => {
+                let now = clock::mono();
+                self.st.now = now;
+                if self.st.pomodoro.is_active() {
+                    self.st.pomodoro.reset();
+                } else {
+                    self.st.pomodoro.start(now);
+                }
+                self.sync_dock_tray();
+                self.request_frame();
+            }
+            crate::dock::FlyoutAction::OpenUri(uri) => {
+                self.close_dock_flyout();
+                crate::shell::open(uri);
+            }
+            crate::dock::FlyoutAction::OpenSystemPage => {
+                self.close_dock_flyout();
+                self.st.page = PageKind::System;
+                self.expand();
+                self.request_frame();
+            }
+            crate::dock::FlyoutAction::Close => self.close_dock_flyout(),
         }
         res
     }
@@ -2683,6 +2816,8 @@ impl App {
             self.sync_top_watch();
         }
         if (before.dock_enabled != self.st.settings.dock_enabled
+            || before.dock_theme != self.st.settings.dock_theme
+            || before.dock_hide_taskbar != self.st.settings.dock_hide_taskbar
             || before.notch_theme != self.st.settings.notch_theme
             || before.notch_type != self.st.settings.notch_type
             || before.custom_look != self.st.settings.custom_look)
