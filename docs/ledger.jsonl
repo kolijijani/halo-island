@@ -195,3 +195,6 @@
 {"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "open", "title": "Dock: smooth Genie restore curve, remove 4x MSAA choke and defer WinEvents", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795695907}
 {"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-7-dedicated-dock-settings-men", "who": "ag", "ts": 1795695907}
 {"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "done", "owner": "ag", "who": "ag", "commit": "3e27051", "note": "Unified continuous Genie restore curve, removed full-screen 4x MSAA resolve choke, clamped initial/landed dt, and deferred DockAppsChanged during Genie", "ts": 1795696155}
+{"id": "dock-remove-boxy-backdrop-shadow-behind-", "ev": "open", "title": "Dock: remove boxy backdrop shadow behind dock icons", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795698857}
+{"id": "dock-remove-boxy-backdrop-shadow-behind-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-7-dedicated-dock-settings-men", "who": "ag", "ts": 1795698886}
+{"id": "dock-remove-boxy-backdrop-shadow-behind-", "ev": "done", "owner": "ag", "who": "ag", "commit": "8f1afa5", "note": "Removed draw_squircle_shadow behind dock icons in dock.rs", "ts": 1795698943}
