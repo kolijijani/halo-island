@@ -69,21 +69,6 @@ pub fn bounce_offset_y(progress: f32) -> f32 {
     -BOUNCE_PEAK_Y * hops * decay
 }
 
-/// Downward drop (DIPs) and multi-stop Gaussian contact + ambient shadow ramp
-/// around the floating shelf capsule, matching the macOS Sequoia liquid glass mockup.
-const SHELF_SHADOW_DROP: f32 = 4.0;
-const SHELF_SHADOW: &[(f32, f32)] = &[
-    (-5.0, 0.48),
-    (-3.5, 0.42),
-    (-2.0, 0.36),
-    (-0.5, 0.29),
-    (1.0, 0.22),
-    (3.5, 0.15),
-    (7.0, 0.085),
-    (11.5, 0.040),
-    (16.5, 0.015),
-    (22.0, 0.0),
-];
 const TIP_SHADOW: &[(f32, f32)] = &[(-2.0, 0.32), (0.0, 0.24), (3.0, 0.11), (7.0, 0.03), (11.0, 0.0)];
 
 /// Resolve the active [`Look`] for the dock from the island's theme settings.
@@ -675,10 +660,13 @@ fn mag_spring(value: f32) -> Spring {
 pub struct Dock {
     /// Dropped before `hwnd` so DirectComposition detaches cleanly first.
     gfx: Option<Gfx>,
+    glass: crate::glass::Glass,
+    glass_moving: bool,
     pub hwnd: HWND,
     at: (i32, i32, i32, i32),
     dpi: u32,
     light: bool,
+    theme_look: &'static Look,
     look: &'static Look,
     shown: bool,
     fs_hidden: bool,
@@ -705,6 +693,9 @@ pub struct Dock {
 impl Drop for Dock {
     fn drop(&mut self) {
         set_system_taskbar_hidden(false);
+        if let Some(gfx) = self.gfx.as_mut() {
+            self.glass.stop(self.hwnd, gfx);
+        }
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
         self.gfx = None;
         unsafe {
@@ -755,10 +746,13 @@ impl Dock {
         }
         Ok(Self {
             gfx: Some(gfx),
+            glass: crate::glass::Glass::new_secondary(look.light),
+            glass_moving: false,
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
             light: look.light,
+            theme_look: look,
             look,
             shown: false,
             fs_hidden: false,
@@ -785,13 +779,55 @@ impl Dock {
 
     /// Synchronize the dock's active [`Look`] with the island's theme; returns `true` only if it changed.
     pub fn set_look(&mut self, look: &'static Look) -> bool {
-        if self.look == look && self.light == look.light {
+        if self.theme_look == look {
             return false;
         }
+        self.theme_look = look;
         self.look = look;
         self.light = look.light;
+        self.glass.app_light = look.light;
         self.dirty = true;
         true
+    }
+
+    pub fn active_look(&self) -> &'static Look {
+        self.look
+    }
+
+    /// Start or stop the live DXGI screen copy behind the dock when Liquid Glass is active.
+    pub fn sync_glass(
+        &mut self,
+        allow_copy: bool,
+        sink: &crate::events::EventSink,
+        monitor: isize,
+        shared: Option<SharedD3d>,
+    ) {
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        if !gfx.has_gpu() && shared.is_some() {
+            gfx.set_shared_d3d(shared);
+        }
+        let want = allow_copy
+            && !self.fs_hidden
+            && !self.tucked
+            && self.theme_look.material == look::Material::Glass;
+        if want && !gfx.has_gpu() {
+            let _ = gfx.set_surface(self.at.2, self.at.3);
+            gfx.ensure_gpu_ready();
+        }
+        let on = want && matches!(gfx.renderer(), crate::gfx::Renderer::Gpu { .. });
+        let (x, y, w, h) = self.at;
+        let rect = RECT { left: x, top: y, right: x + w, bottom: y + h };
+        self.glass.sync(on, self.hwnd, sink, monitor, rect, gfx);
+    }
+
+    /// Receive a new desktop frame behind the dock; returns `true` if the dock must redraw.
+    pub fn on_backdrop(&mut self) -> bool {
+        let Some(gfx) = self.gfx.as_mut() else { return false };
+        if self.glass.on_backdrop(self.hwnd, gfx) {
+            self.dirty = true;
+            return true;
+        }
+        false
     }
 
     pub fn set_stack_open(&mut self, open: bool) {
@@ -869,6 +905,7 @@ impl Dock {
     pub fn needs_frame(&self) -> bool {
         !self.fs_hidden
             && (self.dirty
+                || self.glass_moving
                 || !self.tuck.is_settled_eps(TUCK_EPS)
                 || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS))
                 || self.bounces.iter().any(|&b| b > 0.0))
@@ -1441,7 +1478,6 @@ impl Dock {
         let scale = self.scale().max(1.0);
         let surf_w = self.surf_w_dip();
         let tuck_t = self.tuck.value.clamp(0.0, 1.0);
-        let look = self.look;
         let spec_x = self.mouse.map(|p| p.x);
         let hovered = self.hovered;
         let pressed = self.pressed;
@@ -1482,15 +1518,25 @@ impl Dock {
             crate::pwarn!("dock: set_surface failed ({e})");
             return;
         }
-        gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
-        let glass_params = if tuck_t < 0.995 && look.frame.is_none() {
+        let theme_look = self.theme_look;
+        let (look, glass_params) = if tuck_t < 0.995 && theme_look.material == look::Material::Glass {
             let r = SHELF_R.min(shelf.h * 0.5);
-            let gp = dock_glass_params(shelf, r, look, scale);
+            self.glass.app_light = theme_look.light;
+            let (light, gp, moving) = self.glass.frame(shelf, r, -1.0, true, now, dt, scale, gfx);
+            self.glass_moving = moving;
+            let gl = look::glass(light);
+            self.look = gl;
+            self.light = light;
+            gfx.set_look(gl);
             gfx.prepare_glass(&gp, full);
-            Some(gp)
+            (gl, Some(gp))
         } else {
-            None
+            self.glass_moving = false;
+            self.look = theme_look;
+            self.light = theme_look.light;
+            gfx.set_look(theme_look);
+            (theme_look, None)
         };
         let apps_slice: &[RunningApp] = if show_apps { &self.apps } else { &[] };
         match gfx.begin(full) {
@@ -1583,85 +1629,29 @@ fn draw_glass_divider(c: &mut Canvas<'_>, sx: f32, shelf: Rect, light: bool) {
 }
 
 fn draw_liquid_glass_shelf(c: &mut Canvas<'_>, surf_w: f32, shelf: Rect, r: f32, look: &Look, glass: Option<&GlassParams>, spec_x: Option<f32>) {
-    let light = look.light;
-    if look.frame.is_some() {
-        // Diorama theme: raised 3D picture frame around the themed pane, with liquid glass sheen.
-        crate::pill::shape::draw_body(c, shelf, r, look.ground.with_alpha(0.94), Some(look.border));
+    if let Some(gp) = glass {
+        // True Halo Island Glass theme shader pass: live frosted + lens-refracted backdrop,
+        // directional rim highlight, inner edge glow, and adaptive drop shadow from res/glass.hlsl.
+        c.glass(gp, Rect::new(0.0, 0.0, surf_w, SURF_H));
     } else {
-        // Multi-stop ambient + contact drop shadow (0 24px 56px rgba(0,0,0,0.68)).
-        c.rrect_shadow(shelf.offset(0.0, SHELF_SHADOW_DROP), r, Color::black(0.96), SHELF_SHADOW);
+        // Non-Glass theme body (Classic, Halo, Pill, Diorama, Custom): 100% identical to Halo Island's pill::shape::draw_body.
+        crate::pill::shape::draw_body(c, shelf, r, look.ground, Some(look.border));
+    }
 
-        // Island GPU Glass shader pass (or smoked glass fallback).
-        if let Some(gp) = glass {
-            c.glass(gp, Rect::new(0.0, 0.0, surf_w, SURF_H));
+    // Subtle pointer-reactive #dockSpecular highlight along the top edge while hovering.
+    if let Some(sx) = spec_x {
+        let light = look.light;
+        let segs = crate::pill::shape::segments(shelf, r);
+        c.push_outline_mask(&segs);
+        let sx = sx.clamp(shelf.x + r, (shelf.right() - r).max(shelf.x + r));
+        let spec_col = look.accent.unwrap_or(Color::white(1.0));
+        let glow_tint = Color::lerp(Color::white(1.0), spec_col, if look.accent.is_some() { 0.22 } else { 0.0 });
+        let mul = if light { 0.65 } else { 0.55 };
+        for (gw, gh, ga) in [(250.0f32, 62.0f32, 0.044f32), (170.0, 40.0, 0.058), (108.0, 24.0, 0.072), (58.0, 13.0, 0.082)] {
+            let gr = Rect::new(sx - gw * 0.5, shelf.y - gh * 0.44, gw, gh);
+            c.fill_rrect(gr, gh * 0.5, glow_tint.with_alpha(ga * mul));
         }
-
-        // Theme-tinted translucent frosted glass body (#dockShelf base).
-        // When the GPU Liquid Glass shader draws (or in Glass theme), use a light
-        // 3-stop macOS Sequoia sheen so the island's glass shader matches the island body.
-        let is_halo_cream = look.ground == look::HALO.ground;
-        let is_glass = look.material == look::Material::Glass;
-        let base = if is_halo_cream {
-            look.ground.with_alpha(0.52)
-        } else if is_glass {
-            if light {
-                Color::rgba(0.96, 0.97, 0.99, 0.22)
-            } else {
-                Color::rgba(0.08, 0.11, 0.17, 0.28)
-            }
-        } else if light {
-            Color::lerp(Color::rgba(0.95, 0.96, 0.99, 1.0), look.ground, 0.45).with_alpha(0.46)
-        } else {
-            Color::lerp(Color::rgba(0.07, 0.09, 0.14, 1.0), look.ground, 0.35).with_alpha(0.50)
-        };
-        c.fill_rrect(shelf, r, base);
-    }
-
-    // Clipped Liquid Glass shading layers: top specular sheen, bottom depth, and pointer-reactive #dockSpecular.
-    let segs = crate::pill::shape::segments(shelf, r);
-    c.push_outline_mask(&segs);
-
-    // 1. Top-to-mid liquid glass reflection (linear-gradient 180deg, rgba(255,255,255,0.17) 0% -> 38%).
-    let top_sheen_a = if light { 0.36 } else { 0.18 };
-    c.fill_path_fade(&segs, Color::white(1.0), shelf.y, shelf.y + shelf.h * 0.42, top_sheen_a, 0.0);
-
-    // 2. Mid-to-bottom deep glass grounding (rgba(32,40,58,0.44) 38% -> rgba(12,16,26,0.64) 100%).
-    let depth_col = if light { look.ink } else { Color::hex(0x0C101A) };
-    let depth_a = if light { 0.06 } else { 0.32 };
-    c.fill_path_fade(&segs, depth_col, shelf.y + shelf.h * 0.38, shelf.bottom(), 0.0, depth_a);
-
-    // 3. #dockSpecular: radial-gradient(250px 62px at var(--spec-x, 50%) 0%, rgba(255,255,255,0.26), transparent 72%).
-    // Brightens to 0.88 opacity while hovering the dock, resting at 0.52 when idle.
-    let spec_boost = if spec_x.is_some() { 1.32 } else { 0.78 };
-    let sx = spec_x.unwrap_or(shelf.center().x).clamp(shelf.x + r, (shelf.right() - r).max(shelf.x + r));
-    let spec_col = look.accent.unwrap_or(Color::white(1.0));
-    let glow_tint = Color::lerp(Color::white(1.0), spec_col, if look.accent.is_some() { 0.22 } else { 0.0 });
-    for (gw, gh, ga) in [(250.0f32, 62.0f32, 0.044f32), (170.0, 40.0, 0.058), (108.0, 24.0, 0.072), (58.0, 13.0, 0.082)] {
-        let gr = Rect::new(sx - gw * 0.5, shelf.y - gh * 0.44, gw, gh);
-        let a = ga * spec_boost * if light { 1.15 } else { 1.0 };
-        c.fill_rrect(gr, gh * 0.5, glow_tint.with_alpha(a));
-    }
-
-    // 4. Crisp top specular highlight rim (inset 0 1px 0 rgba(255,255,255,0.46)).
-    let inner = shelf.inset(1.0, 1.0);
-    let inner_r = (r - 1.0).max(1.0);
-    let top_band = Rect::new(inner.x + inner_r * 0.35, inner.y, (inner.w - inner_r * 0.70).max(1.0), 1.5);
-    c.fill_rrect(top_band, 0.75, Color::white(if light { 0.68 } else { 0.44 }));
-
-    // 5. Subtle bottom inner reflection (inset 0 -1px 0 rgba(255,255,255,0.10)).
-    let bot_band = Rect::new(inner.x + inner_r * 0.45, inner.bottom() - 1.0, (inner.w - inner_r * 0.90).max(1.0), 1.0);
-    c.fill_rrect(bot_band, 0.5, Color::white(if light { 0.28 } else { 0.11 }));
-
-    c.pop_shape_mask();
-
-    // 6. Outer glass border rim (1px solid rgba(255, 255, 255, 0.22) or theme border).
-    if look.frame.is_none() {
-        let outer_rim = if light {
-            look.border.with_alpha(look.border.a.max(0.14))
-        } else {
-            Color::white(0.22)
-        };
-        c.stroke_rrect(shelf, r, outer_rim, 1.0);
+        c.pop_shape_mask();
     }
 }
 
@@ -2649,7 +2639,7 @@ impl DockStack {
         gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         let body = card.inset(1.0, 1.0);
-        let glass_params = if look.frame.is_none() {
+        let glass_params = if look.material == look::Material::Glass {
             let gp = dock_glass_params(body, STACK_R, look, scale);
             gfx.prepare_glass(&gp, full);
             Some(gp)
@@ -2662,29 +2652,10 @@ impl DockStack {
                 let accent = look.accent.unwrap_or(Color::hex(0x0A84FF));
                 let sub = ink.with_alpha(0.56);
                 let rim = if light { Color::black(0.14) } else { Color::white(0.20) };
-                if look.frame.is_some() {
-                    crate::pill::shape::draw_body(c, body, STACK_R, look.ground.with_alpha(0.95), Some(look.border));
+                if let Some(gp) = glass_params.as_ref() {
+                    c.glass(gp, card);
                 } else {
-                    if let Some(gp) = glass_params.as_ref() {
-                        c.glass(gp, card);
-                    }
-                    let bg = if look.ground == look::HALO.ground {
-                        look.ground.with_alpha(0.64)
-                    } else if look.material == look::Material::Glass {
-                        if light {
-                            Color::rgba(0.96, 0.97, 0.99, 0.34)
-                        } else {
-                            Color::rgba(0.08, 0.11, 0.17, 0.42)
-                        }
-                    } else if light {
-                        Color::rgba(0.96, 0.97, 0.99, 0.56)
-                    } else {
-                        Color::rgba(0.08, 0.10, 0.15, 0.60)
-                    };
-                    c.fill_rrect(body, STACK_R, bg);
-                    let segs = crate::pill::shape::segments(body, STACK_R);
-                    c.fill_path_fade(&segs, Color::white(1.0), body.y, body.y + body.h * 0.38, if light { 0.34 } else { 0.16 }, 0.0);
-                    c.stroke_rrect(body, STACK_R, rim, 1.0);
+                    crate::pill::shape::draw_body(c, body, STACK_R, look.ground, Some(look.border));
                 }
 
                 // Header (.stk-head: icon + "Downloads Stack" + count subtitle + "Open" button)
@@ -3178,7 +3149,7 @@ impl DockControlCenter {
         gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         let body = card.inset(1.0, 1.0);
-        let glass_params = if look.frame.is_none() {
+        let glass_params = if look.material == look::Material::Glass {
             let gp = dock_glass_params(body, FLYOUT_R, look, scale);
             gfx.prepare_glass(&gp, full);
             Some(gp)
@@ -3189,30 +3160,10 @@ impl DockControlCenter {
             c.unthemed(|c| {
                 let ink = look.ink;
                 let sub = ink.with_alpha(if light { 0.58 } else { 0.68 });
-                let rim = if light { Color::black(0.14) } else { Color::white(0.20) };
-                if look.frame.is_some() {
-                    crate::pill::shape::draw_body(c, body, FLYOUT_R, look.ground.with_alpha(0.95), Some(look.border));
+                if let Some(gp) = glass_params.as_ref() {
+                    c.glass(gp, card);
                 } else {
-                    if let Some(gp) = glass_params.as_ref() {
-                        c.glass(gp, card);
-                    }
-                    let bg = if look.ground == look::HALO.ground {
-                        look.ground.with_alpha(0.68)
-                    } else if look.material == look::Material::Glass {
-                        if light {
-                            Color::rgba(0.95, 0.96, 0.99, 0.38)
-                        } else {
-                            Color::rgba(0.06, 0.09, 0.15, 0.46)
-                        }
-                    } else if light {
-                        Color::rgba(0.95, 0.96, 0.99, 0.64)
-                    } else {
-                        Color::rgba(0.06, 0.08, 0.13, 0.68)
-                    };
-                    c.fill_rrect(body, FLYOUT_R, bg);
-                    let segs = crate::pill::shape::segments(body, FLYOUT_R);
-                    c.fill_path_fade(&segs, Color::white(1.0), body.y, body.y + body.h * 0.36, if light { 0.34 } else { 0.16 }, 0.0);
-                    c.stroke_rrect(body, FLYOUT_R, rim, 1.0);
+                    crate::pill::shape::draw_body(c, body, FLYOUT_R, look.ground, Some(look.border));
                 }
 
                 // 1. 2x2 Quick Tiles Grid (.cc-grid: Wi-Fi, Bluetooth, Focus Mode, Screen Snip)

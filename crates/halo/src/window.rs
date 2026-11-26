@@ -156,6 +156,13 @@ pub fn create_owned_visual_window(owner: HWND, track_island: bool) -> Result<HWN
                 let _ = SetWindowDisplayAffinity(visual, WDA_EXCLUDEFROMCAPTURE);
             }
         }
+    } else {
+        let mut got = 0u32;
+        unsafe {
+            if GetWindowDisplayAffinity(owner, &mut got).is_ok() && got == WDA_EXCLUDEFROMCAPTURE.0 {
+                let _ = SetWindowDisplayAffinity(visual, WDA_EXCLUDEFROMCAPTURE);
+            }
+        }
     }
     Ok(visual)
 }
@@ -228,6 +235,21 @@ fn set_capture_excluded(hwnd: HWND, on: bool) -> bool {
     // Both, even when the first refuses.
     let island = set(hwnd);
     visual().map_or(true, set) && island
+}
+
+/// Leave a secondary window and its DirectComposition visual window out of
+/// screen capture (`on`), without touching the island's [`CaptureOwner`] mask.
+pub fn exclude_pair_from_capture(hwnd: HWND, visual: Option<HWND>, on: bool) -> bool {
+    let want = if on { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+    let set = |h: HWND| unsafe {
+        if SetWindowDisplayAffinity(h, want).is_err() {
+            return false;
+        }
+        let mut got = 0u32;
+        GetWindowDisplayAffinity(h, &mut got).is_ok() && got == want.0
+    };
+    let ok = set(hwnd);
+    visual.map_or(true, set) && ok
 }
 
 /// Windows' build number (19041 = Windows 10 version 2004, the first that can

@@ -1166,9 +1166,18 @@ impl Gfx {
         }
     }
 
+    /// Ensure the GPU target is initialized on first use (before `prepare_glass`
+    /// or `glass.sync` on a secondary surface).
+    pub fn ensure_gpu_ready(&mut self) {
+        if self.gpu.is_none() && self.gpu_failures == 0 {
+            self.ensure_gpu();
+        }
+    }
+
     /// The glass shader, made on first use. False on the software renderer
     /// or where it can't run (the island then draws smoked glass).
     fn ensure_glass(&mut self) -> bool {
+        self.ensure_gpu_ready();
         if self.glass.is_some() {
             return true;
         }

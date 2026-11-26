@@ -2029,11 +2029,19 @@ impl App {
     }
 
     fn paint_dock_if_needed(&mut self, now: f64, dt: f32, _deferred: &mut Vec<Deferred>) {
+        let shared = self.gfx.d3d_handles();
+        let copy_on = self.selftest.is_none()
+            && !self.locked
+            && !self.display_off
+            && !self.fullscreen_on
+            && !self.fullscreen_hidden;
+        if let Some(d) = self.dock.as_mut() {
+            d.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
+        }
         if !self.dock_moving() {
             return;
         }
         let instant = self.reduce_motion || self.st.power.saver;
-        let shared = self.gfx.d3d_handles();
         if let Some(d) = self.dock.as_mut() {
             if d.needs_frame() {
                 d.paint(now, dt, instant, shared.clone());
@@ -3068,7 +3076,11 @@ impl App {
         let unseen = matches!(ev, AppEvent::Download { line: halo_core::ytdlp::Line::Progress { .. }, .. }) && (self.locked || self.display_off);
         match ev {
             AppEvent::Backdrop => {
-                if self.glass.on_backdrop(self.hwnd, &mut self.gfx) {
+                let mut redraw = self.glass.on_backdrop(self.hwnd, &mut self.gfx);
+                if let Some(d) = self.dock.as_mut() {
+                    redraw |= d.on_backdrop();
+                }
+                if redraw {
                     self.request_frame();
                 }
             }
@@ -4340,6 +4352,7 @@ impl App {
             }
             if let Some(d) = self.dock.as_mut() {
                 d.set_fullscreen_hidden(true);
+                d.sync_glass(false, &self.sink, self.monitor.handle, None);
             }
             // Nothing is drawn, but timers, chimes and commands keep working.
             // Glass stops copying the screen: nobody sees the island.

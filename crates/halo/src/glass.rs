@@ -472,6 +472,9 @@ pub struct Glass {
     snap: bool,
     /// The self-test drew the backdrop itself: no screen copy, no exclusion.
     injected: bool,
+    /// True for a secondary surface (e.g. the bottom dock) whose capture
+    /// affinity is managed separately from the island's [`window::CaptureOwner`].
+    secondary: bool,
     /// Self-test switches: lens strength (1) and whether to use the copy.
     pub lens: f32,
     pub use_copy: bool,
@@ -496,8 +499,21 @@ impl Glass {
             probe_px: 0,
             snap: false,
             injected: false,
+            secondary: false,
             lens: 1.0,
             use_copy: true,
+        }
+    }
+
+    pub fn new_secondary(app_light: bool) -> Self {
+        Self { secondary: true, ..Self::new(app_light) }
+    }
+
+    fn set_excluded(&self, hwnd: HWND, gfx: &Gfx, on: bool) -> bool {
+        if self.secondary {
+            window::exclude_pair_from_capture(hwnd, gfx.visual_hwnd(), on)
+        } else {
+            window::exclude_from_capture(hwnd, window::CaptureOwner::Glass, on)
         }
     }
 
@@ -517,7 +533,7 @@ impl Glass {
             self.stopped = None;
             self.probe_hits = 0;
             if self.excluded {
-                window::exclude_from_capture(hwnd, window::CaptureOwner::Glass, false);
+                self.set_excluded(hwnd, gfx, false);
                 self.excluded = false;
             }
             if !self.injected && self.frame.take().is_some() {
@@ -552,7 +568,7 @@ impl Glass {
             }
         }
         if !self.excluded {
-            if !window::exclude_from_capture(hwnd, window::CaptureOwner::Glass, true) {
+            if !self.set_excluded(hwnd, gfx, true) {
                 self.stop_for(hwnd, gfx, "Windows didn't leave the island out of capture".into());
                 return;
             }
@@ -568,7 +584,7 @@ impl Glass {
         self.stopped = Some(why);
         self.copy = None;
         if self.excluded {
-            window::exclude_from_capture(hwnd, window::CaptureOwner::Glass, false);
+            self.set_excluded(hwnd, gfx, false);
             self.excluded = false;
         }
         self.frame = None;
@@ -719,7 +735,7 @@ impl Glass {
         self.injected = false;
         self.copy = None;
         if self.excluded {
-            window::exclude_from_capture(hwnd, window::CaptureOwner::Glass, false);
+            self.set_excluded(hwnd, gfx, false);
             self.excluded = false;
         }
         self.frame = None;

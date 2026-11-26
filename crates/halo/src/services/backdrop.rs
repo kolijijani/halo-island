@@ -54,75 +54,118 @@ pub enum Status {
     Failed(String),
 }
 
-struct Shared {
-    /// The island window's rectangle in screen pixels.
+struct Slot {
+    /// The window's rectangle in screen pixels.
     rect: Mutex<RECT>,
-    /// Bumped when the rectangle moves: the thread starts a fresh duplication,
-    /// which hands over the whole screen at once.
-    rect_gen: AtomicU64,
     latest: Mutex<Option<Arc<Frame>>>,
     generation: AtomicU64,
     status: Mutex<Status>,
     stop: AtomicBool,
+    announced: AtomicBool,
 }
 
+struct Worker {
+    monitor: isize,
+    sink: EventSink,
+    slots: Mutex<Vec<Arc<Slot>>>,
+    /// Bumped when a slot is added or moved: the thread starts a fresh
+    /// duplication, which hands over the whole screen at once.
+    layout_gen: AtomicU64,
+    stop: AtomicBool,
+    thread: Mutex<Option<JoinHandle<()>>>,
+}
+
+static WORKERS: Mutex<Vec<Arc<Worker>>> = Mutex::new(Vec::new());
+
 pub struct Backdrop {
-    shared: Arc<Shared>,
-    thread: Option<JoinHandle<()>>,
+    slot: Arc<Slot>,
+    worker: Arc<Worker>,
     taken: u64,
 }
 
 impl Backdrop {
-    /// Start copying `rect` (screen pixels) on `monitor`.
+    /// Start copying `rect` (screen pixels) on `monitor`. Shares the monitor's
+    /// single DXGI output duplication thread when both the island and dock use
+    /// Liquid Glass on the same display.
     pub fn start(sink: EventSink, monitor: isize, rect: RECT) -> Self {
-        let shared = Arc::new(Shared {
+        let slot = Arc::new(Slot {
             rect: Mutex::new(rect),
-            rect_gen: AtomicU64::new(0),
             latest: Mutex::new(None),
             generation: AtomicU64::new(0),
             status: Mutex::new(Status::Starting),
             stop: AtomicBool::new(false),
+            announced: AtomicBool::new(false),
         });
-        let s = shared.clone();
-        let tell = sink.clone();
-        let thread = std::thread::Builder::new()
-            .name("halo-backdrop".into())
-            .spawn(move || {
-                let status = match run(&s, &sink, monitor) {
-                    Ok(()) => return,
-                    Err(why) => why,
-                };
-                crate::pinfo!("glass: screen copy stopped ({status}); smoked glass instead");
-                *s.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Failed(status);
-                sink.send(AppEvent::Backdrop);
-            })
-            .ok();
-        if thread.is_none() {
-            *shared.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Failed("couldn't start the copy thread".into());
-            tell.send(AppEvent::Backdrop);
-        }
-        Self { shared, thread, taken: 0 }
+        let worker = {
+            let mut pool = WORKERS.lock().unwrap_or_else(|p| p.into_inner());
+            pool.retain(|w| !w.stop.load(Ordering::Relaxed));
+            if let Some(existing) = pool.iter().find(|w| w.monitor == monitor).cloned() {
+                existing.slots.lock().unwrap_or_else(|p| p.into_inner()).push(slot.clone());
+                existing.layout_gen.fetch_add(1, Ordering::Relaxed);
+                existing
+            } else {
+                let w = Arc::new(Worker {
+                    monitor,
+                    sink: sink.clone(),
+                    slots: Mutex::new(vec![slot.clone()]),
+                    layout_gen: AtomicU64::new(1),
+                    stop: AtomicBool::new(false),
+                    thread: Mutex::new(None),
+                });
+                let w_run = w.clone();
+                let tell = sink.clone();
+                let thread = std::thread::Builder::new()
+                    .name("halo-backdrop".into())
+                    .spawn(move || {
+                        let status = match run(&w_run) {
+                            Ok(()) => {
+                                w_run.stop.store(true, Ordering::Relaxed);
+                                return;
+                            }
+                            Err(why) => why,
+                        };
+                        crate::pinfo!("glass: screen copy stopped ({status}); smoked glass instead");
+                        w_run.stop.store(true, Ordering::Relaxed);
+                        let slots = w_run.slots.lock().unwrap_or_else(|p| p.into_inner());
+                        for s in slots.iter() {
+                            *s.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Failed(status.clone());
+                        }
+                        w_run.sink.send(AppEvent::Backdrop);
+                    })
+                    .ok();
+                if thread.is_none() {
+                    w.stop.store(true, Ordering::Relaxed);
+                    *slot.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Failed("couldn't start the copy thread".into());
+                    tell.send(AppEvent::Backdrop);
+                } else {
+                    *w.thread.lock().unwrap_or_else(|p| p.into_inner()) = thread;
+                    pool.push(w.clone());
+                }
+                w
+            }
+        };
+        Self { slot, worker, taken: 0 }
     }
 
-    /// The island window moved or changed size.
+    /// The window moved or changed size.
     pub fn set_rect(&self, rect: RECT) {
-        let mut r = self.shared.rect.lock().unwrap_or_else(|p| p.into_inner());
+        let mut r = self.slot.rect.lock().unwrap_or_else(|p| p.into_inner());
         if *r != rect {
             *r = rect;
-            self.shared.rect_gen.fetch_add(1, Ordering::Relaxed);
+            self.worker.layout_gen.fetch_add(1, Ordering::Relaxed);
         }
     }
 
     pub fn status(&self) -> Status {
-        self.shared.status.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.slot.status.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     /// The newest copy, once each.
     pub fn take_new(&mut self) -> Option<Arc<Frame>> {
-        if self.shared.generation.load(Ordering::Acquire) == self.taken {
+        if self.slot.generation.load(Ordering::Acquire) == self.taken {
             return None;
         }
-        let f = self.shared.latest.lock().unwrap_or_else(|p| p.into_inner()).clone()?;
+        let f = self.slot.latest.lock().unwrap_or_else(|p| p.into_inner()).clone()?;
         self.taken = f.generation;
         Some(f)
     }
@@ -130,10 +173,22 @@ impl Backdrop {
 
 impl Drop for Backdrop {
     fn drop(&mut self) {
-        self.shared.stop.store(true, Ordering::Relaxed);
-        if let Some(t) = self.thread.take() {
-            // The thread wakes at least every 250 ms (frame wait timeout).
-            let _ = t.join();
+        self.slot.stop.store(true, Ordering::Relaxed);
+        let empty = {
+            let mut slots = self.worker.slots.lock().unwrap_or_else(|p| p.into_inner());
+            slots.retain(|s| !s.stop.load(Ordering::Relaxed));
+            slots.is_empty()
+        };
+        if empty {
+            self.worker.stop.store(true, Ordering::Relaxed);
+            if let Ok(mut pool) = WORKERS.lock() {
+                pool.retain(|w| !Arc::ptr_eq(w, &self.worker) && !w.stop.load(Ordering::Relaxed));
+            }
+            let thread = self.worker.thread.lock().unwrap_or_else(|p| p.into_inner()).take();
+            if let Some(t) = thread {
+                // The thread wakes at least every 250 ms (frame wait timeout).
+                let _ = t.join();
+            }
         }
     }
 }
@@ -290,7 +345,7 @@ unsafe fn frame_touches(dup: &IDXGIOutputDuplication, meta: u32, area: &RECT, mo
 const NEVER_WORKED: Duration = Duration::from_secs(10);
 
 /// Pause before trying again after an interruption (`tries` so far).
-fn backoff(s: &Shared, tries: u32) -> bool {
+fn backoff(s: &Worker, tries: u32) -> bool {
     let wait = Duration::from_millis((100u64 << tries.min(4)).min(1000));
     let until = Instant::now() + wait;
     while Instant::now() < until {
@@ -302,18 +357,25 @@ fn backoff(s: &Shared, tries: u32) -> bool {
     true
 }
 
+struct SlotCache {
+    key: usize,
+    staging: Option<(ID3D11Texture2D, i32, i32, DXGI_FORMAT)>,
+    last: Option<Arc<Frame>>,
+    fresh: bool,
+}
+
 /// Copy loop. Ok(()) when asked to stop; Err(why) when it can't go on.
-fn run(s: &Shared, sink: &EventSink, monitor: isize) -> std::result::Result<(), String> {
+fn run(s: &Worker) -> std::result::Result<(), String> {
+    let monitor = s.monitor;
     unsafe {
         let started = Instant::now();
         let mut device: Option<(ID3D11Device, ID3D11DeviceContext)> = None;
         // The adapter `device` lives on.
         let mut device_on_luid = None;
-        let mut staging: Option<(ID3D11Texture2D, i32, i32, DXGI_FORMAT)> = None;
         // Half floats to 8-bit sRGB, for the SDR white it was made for.
         let mut to_srgb: Option<HalfToSrgb> = None;
         let (mut moves, mut dirty) = (Vec::new(), Vec::new());
-        let mut last: Option<Arc<Frame>> = None;
+        let mut caches: Vec<SlotCache> = Vec::new();
         let mut announced = false;
         let mut tries = 0u32;
         // Retry after an interruption, unless stopping or this display never
@@ -339,7 +401,7 @@ fn run(s: &Shared, sink: &EventSink, monitor: isize) -> std::result::Result<(), 
                     continue;
                 }
             };
-            let rect_gen = s.rect_gen.load(Ordering::Relaxed);
+            let layout_gen = s.layout_gen.load(Ordering::Relaxed);
             // The adapter that worked last time first, then the others.
             let mut order: Vec<usize> = (0..found.len()).collect();
             order.sort_by_key(|&i| luid(&found[i].0) != device_on_luid);
@@ -355,7 +417,9 @@ fn run(s: &Shared, sink: &EventSink, monitor: isize) -> std::result::Result<(), 
                         Ok(d) => {
                             device = Some(d);
                             device_on_luid = luid(adapter);
-                            staging = None;
+                            for c in &mut caches {
+                                c.staging = None;
+                            }
                         }
                         Err(e) => {
                             why = format!("no Direct3D device on the display's adapter: {e}");
@@ -397,12 +461,14 @@ fn run(s: &Shared, sink: &EventSink, monitor: isize) -> std::result::Result<(), 
             }
             let ddesc = dup.GetDesc();
             let (ow, oh) = (ddesc.ModeDesc.Width as i32, ddesc.ModeDesc.Height as i32);
-            let mut fresh = true; // a new duplication starts with the whole screen
+            for c in &mut caches {
+                c.fresh = true; // a new duplication starts with the whole screen
+            }
             loop {
                 if s.stop.load(Ordering::Relaxed) {
                     return Ok(());
                 }
-                if s.rect_gen.load(Ordering::Relaxed) != rect_gen {
+                if s.layout_gen.load(Ordering::Relaxed) != layout_gen {
                     continue 'dup;
                 }
                 let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
@@ -422,49 +488,84 @@ fn run(s: &Shared, sink: &EventSink, monitor: isize) -> std::result::Result<(), 
                         continue 'dup;
                     }
                 }
-                let rect = *s.rect.lock().unwrap_or_else(|p| p.into_inner());
-                let area = local(rect, origin, ow, oh);
-                let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
-                let wanted = w > 0 && h > 0 && area.right > area.left && area.bottom > area.top
-                    && info.LastPresentTime != 0
-                    && (fresh || frame_touches(&dup, info.TotalMetadataBufferSize, &area, &mut moves, &mut dirty));
-                let mut copied = None;
-                if wanted {
-                    if let Some(tex) = res.as_ref().and_then(|r| r.cast::<ID3D11Texture2D>().ok()) {
-                        let mut tdesc = D3D11_TEXTURE2D_DESC::default();
-                        tex.GetDesc(&mut tdesc);
-                        let half = tdesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
-                        if tdesc.Format != DXGI_FORMAT_B8G8R8A8_UNORM && !half {
-                            let _ = dup.ReleaseFrame();
-                            return Err(format!("the display sends {:?} pixels", tdesc.Format));
+                let active: Vec<Arc<Slot>> = {
+                    let mut g = s.slots.lock().unwrap_or_else(|p| p.into_inner());
+                    g.retain(|sl| !sl.stop.load(Ordering::Relaxed));
+                    g.clone()
+                };
+                if active.is_empty() {
+                    let _ = dup.ReleaseFrame();
+                    return Ok(());
+                }
+                caches.retain(|c| active.iter().any(|sl| Arc::as_ptr(sl) as usize == c.key));
+                let tex = res.as_ref().and_then(|r| r.cast::<ID3D11Texture2D>().ok());
+                let mut tdesc = D3D11_TEXTURE2D_DESC::default();
+                if let Some(t) = tex.as_ref() {
+                    t.GetDesc(&mut tdesc);
+                    let half = tdesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+                    if tdesc.Format != DXGI_FORMAT_B8G8R8A8_UNORM && !half {
+                        let _ = dup.ReleaseFrame();
+                        return Err(format!("the display sends {:?} pixels", tdesc.Format));
+                    }
+                }
+                let half = tdesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+                let convert = if half { to_srgb.as_ref() } else { None };
+                let mut woke = false;
+                for slot in &active {
+                    let key = Arc::as_ptr(slot) as usize;
+                    let idx = match caches.iter().position(|c| c.key == key) {
+                        Some(i) => i,
+                        None => {
+                            caches.push(SlotCache { key, staging: None, last: None, fresh: true });
+                            caches.len() - 1
                         }
-                        let convert = if half { to_srgb.as_ref() } else { None };
-                        match copy_area(&dev, &ctx, &tex, tdesc.Format, convert, &mut staging, area, rect, origin, w, h) {
-                            Ok(px) => copied = Some(px),
-                            Err(e) => crate::pwarn!("glass: copying the screen failed ({e})"),
+                    };
+                    let cache = &mut caches[idx];
+                    let rect = *slot.rect.lock().unwrap_or_else(|p| p.into_inner());
+                    let area = local(rect, origin, ow, oh);
+                    let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+                    let wanted = w > 0
+                        && h > 0
+                        && area.right > area.left
+                        && area.bottom > area.top
+                        && info.LastPresentTime != 0
+                        && (cache.fresh || frame_touches(&dup, info.TotalMetadataBufferSize, &area, &mut moves, &mut dirty));
+                    let mut copied = None;
+                    if wanted {
+                        if let Some(t) = tex.as_ref() {
+                            match copy_area(&dev, &ctx, t, tdesc.Format, convert, &mut cache.staging, area, rect, origin, w, h) {
+                                Ok(px) => copied = Some(px),
+                                Err(e) => crate::pwarn!("glass: copying the screen failed ({e})"),
+                            }
+                        }
+                    }
+                    if let Some(px) = copied {
+                        cache.fresh = false;
+                        // Dirty rectangles also cover redraws that changed nothing.
+                        let same = cache
+                            .last
+                            .as_ref()
+                            .is_some_and(|l| l.w == w && l.h == h && l.left == rect.left && l.top == rect.top && l.px == px);
+                        if !same {
+                            let generation = slot.generation.load(Ordering::Relaxed) + 1;
+                            let f = Arc::new(Frame { w, h, px, left: rect.left, top: rect.top, generation });
+                            *slot.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(f.clone());
+                            slot.generation.store(generation, Ordering::Release);
+                            cache.last = Some(f);
+                            announced = true;
+                            if !slot.announced.swap(true, Ordering::Relaxed) {
+                                *slot.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Running;
+                                let mode = if hdr { format!(", HDR, SDR white {:.0} nits", white * 80.0) } else { String::new() };
+                                crate::pinfo!("glass: screen copy on ({name}, {ow}x{oh}{mode}, window {w}x{h} px)");
+                            }
+                            woke = true;
                         }
                     }
                 }
                 let _ = dup.ReleaseFrame();
                 tries = 0;
-                if let Some(px) = copied {
-                    fresh = false;
-                    // Dirty rectangles also cover redraws that changed nothing.
-                    let same = last.as_ref().is_some_and(|l| l.w == w && l.h == h && l.left == rect.left && l.top == rect.top && l.px == px);
-                    if !same {
-                        let generation = s.generation.load(Ordering::Relaxed) + 1;
-                        let f = Arc::new(Frame { w, h, px, left: rect.left, top: rect.top, generation });
-                        *s.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(f.clone());
-                        s.generation.store(generation, Ordering::Release);
-                        last = Some(f);
-                        if !announced {
-                            announced = true;
-                            *s.status.lock().unwrap_or_else(|p| p.into_inner()) = Status::Running;
-                            let mode = if hdr { format!(", HDR, SDR white {:.0} nits", white * 80.0) } else { String::new() };
-                            crate::pinfo!("glass: screen copy on ({name}, {ow}x{oh}{mode}, window {w}x{h} px)");
-                        }
-                        sink.send(AppEvent::Backdrop);
-                    }
+                if woke {
+                    s.sink.send(AppEvent::Backdrop);
                 }
             }
         }
