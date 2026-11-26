@@ -1781,6 +1781,7 @@ impl App {
                     self.st.show_hud(HudKind::Bluetooth { name, connected, battery, audio }, 2.6);
                 }
             }
+            AppEvent::BluetoothSeed { .. } => {}
             AppEvent::Fullscreen(on) => {
                 self.front_full_screen = on;
                 self.apply_fullscreen();

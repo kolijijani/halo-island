@@ -1314,7 +1314,7 @@ unsafe fn hbitmap_to_image(hbm: HBITMAP, target: u32) -> Option<Image> {
     Some(ImageData::new(target, target, out))
 }
 
-fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>, spec: Option<&str>) -> Option<Image> {
+pub(crate) fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>, spec: Option<&str>) -> Option<Image> {
     if let Some(s) = spec {
         if s.len() > 6 && s[..6].eq_ignore_ascii_case("shell:") || s.to_ascii_lowercase().ends_with(".lnk") {
             if let Some(img) = shell_parsing_icon(s, ICON_PX) {

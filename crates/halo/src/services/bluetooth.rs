@@ -517,6 +517,7 @@ impl Worker {
                 if self.live(kind, gen).is_some() {
                     self.slots[kind.index()].enumerated = true;
                     crate::pinfo!("bluetooth: {} watcher ready", kind.label());
+                    self.seed_connected();
                 }
             }
             Msg::Stopped { gen, kind, aborted } => {
@@ -645,6 +646,33 @@ impl Worker {
                 }
             }
         }
+    }
+
+    /// Silently seed an already-connected audio device after initial enumeration (no pop-up HUD).
+    fn seed_connected(&mut self) {
+        if self.devices.values().any(|d| d.shown && d.audio == Some(true)) {
+            return;
+        }
+        let candidate = self
+            .devices
+            .iter()
+            .find(|(_, d)| d.connected() && d.audio != Some(false) && !d.name.is_empty())
+            .map(|(k, d)| (
+                k.clone(),
+                Snapshot { container: d.container, endpoints: d.endpoints.clone(), audio: d.audio },
+            ));
+        let Some((key, snap)) = candidate else { return };
+        let (audio, battery) = describe(&snap, true);
+        let Some(dev) = self.devices.get_mut(&key) else { return };
+        if audio.is_some() {
+            dev.audio = audio;
+        }
+        if audio == Some(false) {
+            return;
+        }
+        dev.shown = true;
+        let name = if dev.name.is_empty() { FALLBACK_NAME.to_string() } else { dev.name.clone() };
+        self.sink.send(AppEvent::BluetoothSeed { name, battery });
     }
 
     /// Look up details (bounded) and send the pop-up event.

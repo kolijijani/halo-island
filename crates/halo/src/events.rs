@@ -124,6 +124,8 @@ pub enum AppEvent {
     Brightness { level: f32 },
     Power(PowerState),
     Bluetooth { name: String, connected: bool, battery: Option<u8>, audio: bool },
+    /// Initial already-connected Bluetooth audio device discovered silently at startup.
+    BluetoothSeed { name: String, battery: Option<u8> },
     /// Wi-Fi joined, left or another network (`services::network`).
     Wifi(halo_core::popups::Wifi),
     /// A full-screen app took over (or left) the island's monitor. `true` is

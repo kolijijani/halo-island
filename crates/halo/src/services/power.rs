@@ -62,6 +62,17 @@ pub fn query() -> PowerState {
     }
 }
 
+/// Estimated remaining battery runtime in seconds while discharging, if Windows knows.
+pub fn battery_life_seconds() -> Option<u32> {
+    let mut s = SYSTEM_POWER_STATUS::default();
+    if unsafe { GetSystemPowerStatus(&mut s) }.is_err() {
+        return None;
+    }
+    let has_battery = s.BatteryFlag != 128 && s.BatteryFlag != 255;
+    (has_battery && s.ACLineStatus != 1 && s.BatteryLifeTime != u32::MAX && s.BatteryLifeTime > 0)
+        .then_some(s.BatteryLifeTime)
+}
+
 /// Ask Windows to send `WM_POWERBROADCAST` to `hwnd` when the power source,
 /// the battery percentage or battery saver changes (battery saver can be
 /// switched by hand at any charge).

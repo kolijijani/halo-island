@@ -156,6 +156,8 @@ pub fn start(notify: HWND) -> bool {
         ) else {
             return false;
         };
+        let _ = ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, None);
+        let _ = ChangeWindowMessageFilterEx(hwnd, taskbar_created_msg(), MSGFLT_ALLOW, None);
         HOST.with(|h| {
             *h.borrow_mut() = Some(Host {
                 hwnd,
@@ -285,16 +287,18 @@ pub fn icon_image(hicon: u32, px: u32) -> Option<Image> {
     Some(ImageData::new(px, px, out))
 }
 
-fn app_name(hwnd: u32) -> String {
+pub(crate) fn is_live_window(hwnd: u32) -> bool {
+    hwnd != 0 && unsafe { IsWindow(HWND(hwnd as usize as *mut _)).as_bool() }
+}
+
+fn process_image_path(hwnd: u32) -> Option<String> {
     unsafe {
         let h = HWND(hwnd as usize as *mut _);
         let mut pid = 0u32;
         if GetWindowThreadProcessId(h, Some(&mut pid)) == 0 || pid == 0 {
-            return String::new();
+            return None;
         }
-        let Ok(proc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
-            return String::new();
-        };
+        let proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 512];
         let mut len = buf.len() as u32;
         let ok = QueryFullProcessImageNameW(
@@ -306,19 +310,33 @@ fn app_name(hwnd: u32) -> String {
         .is_ok();
         let _ = CloseHandle(proc);
         if !ok || len == 0 {
-            return String::new();
+            return None;
         }
-        let path = String::from_utf16_lossy(&buf[..len as usize]);
-        let stem = std::path::Path::new(&path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let mut chars = stem.chars();
-        match chars.next() {
-            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-            None => String::new(),
-        }
+        Some(String::from_utf16_lossy(&buf[..len as usize]))
     }
+}
+
+fn app_name(hwnd: u32) -> String {
+    let Some(path) = process_image_path(hwnd) else {
+        return String::new();
+    };
+    let stem = std::path::Path::new(&path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let mut chars = stem.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn fallback_icon_image(hwnd: u32) -> Option<Image> {
+    if !is_live_window(hwnd) {
+        return None;
+    }
+    let path = process_image_path(hwnd);
+    crate::services::dock_apps::extract_app_icon(HWND(hwnd as usize as *mut _), path.as_deref(), None)
 }
 
 /// Parse `Shell_NotifyIcon` `WM_COPYDATA` payload (`dwData == 1`).
@@ -376,6 +394,9 @@ pub(crate) fn on_notify_slice(icons: &mut Vec<TrayIcon>, b: &[u8], decode_icon: 
                         ic.image = icon_image(hicon, 32);
                     }
                 }
+            }
+            if decode_icon && ic.image.is_none() {
+                ic.image = fallback_icon_image(ic.hwnd);
             }
             if flags & 4 != 0 {
                 ic.tip = wstr(n, 24, 128);

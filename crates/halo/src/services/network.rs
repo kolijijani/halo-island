@@ -18,7 +18,10 @@ use halo_core::popups::{wifi_change, Wifi};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::Duration;
 use windows::Foundation::EventRegistrationToken;
-use windows::Networking::Connectivity::{NetworkConnectivityLevel, NetworkInformation, NetworkStatusChangedEventHandler};
+use windows::Networking::Connectivity::{
+    NetworkAuthenticationType, NetworkConnectivityLevel, NetworkEncryptionType,
+    NetworkInformation, NetworkStatusChangedEventHandler,
+};
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
 /// Events this close together are one change: read once after the last.
@@ -41,8 +44,9 @@ impl NetworkWatcher {
             .name("halo-network".into())
             .spawn(move || {
                 let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
-                // Where it stands at start is not news: only changes are.
+                // Seed initial state silently (app suppresses HUD on first event), then wait on changes.
                 let mut was = read();
+                let _ = sink.send(AppEvent::Wifi(was.clone()));
                 loop {
                     match rx.recv() {
                         Ok(Msg::Changed) => {}
@@ -98,12 +102,50 @@ impl Drop for NetworkWatcher {
     }
 }
 
-/// Where Wi-Fi stands now. Any failure reads as "not on Wi-Fi", which only
-/// a later real change can contradict.
-fn read() -> Wifi {
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WifiDetails {
+    pub connected: bool,
+    pub ssid: Option<String>,
+    pub internet: bool,
+    pub signal_pct: Option<u8>,
+    pub security: String,
+}
+
+fn auth_label(auth: NetworkAuthenticationType, enc: NetworkEncryptionType) -> String {
+    let a = match auth {
+        NetworkAuthenticationType::None | NetworkAuthenticationType::Open80211 => "Open",
+        NetworkAuthenticationType::SharedKey80211 => "WEP",
+        NetworkAuthenticationType::Wpa => "WPA-Enterprise",
+        NetworkAuthenticationType::WpaPsk => "WPA-Personal",
+        NetworkAuthenticationType::Rsna => "WPA2-Enterprise",
+        NetworkAuthenticationType::RsnaPsk => "WPA2-Personal",
+        NetworkAuthenticationType::Ihv => "Custom / Vendor",
+        _ => {
+            if auth.0 == 10 {
+                "WPA3-Enterprise"
+            } else if auth.0 == 11 || auth.0 == 12 {
+                "WPA3-SAE"
+            } else {
+                "Secured"
+            }
+        }
+    };
+    if matches!(auth, NetworkAuthenticationType::None | NetworkAuthenticationType::Open80211)
+        || enc == NetworkEncryptionType::None
+    {
+        a.to_string()
+    } else if enc == NetworkEncryptionType::Gcmp || enc == NetworkEncryptionType::Gcmp256 {
+        format!("{a} (GCMP)")
+    } else {
+        a.to_string()
+    }
+}
+
+/// Live snapshot of the active Wi-Fi connection profile (signal bars, SSID, security).
+pub fn query_details() -> WifiDetails {
     let profiles = match NetworkInformation::GetConnectionProfiles() {
         Ok(p) => p,
-        Err(_) => return Wifi::default(),
+        Err(_) => return WifiDetails::default(),
     };
     let size = profiles.Size().unwrap_or(0);
     for i in 0..size {
@@ -115,9 +157,50 @@ fn read() -> Wifi {
         if level == NetworkConnectivityLevel::None {
             continue;
         }
-        let ssid = p.WlanConnectionProfileDetails().ok().and_then(|d| d.GetConnectedSsid().ok()).map(|s| s.to_string_lossy()).filter(|s| !s.trim().is_empty());
-        let internet = level == NetworkConnectivityLevel::InternetAccess;
-        return Wifi { connected: true, ssid, internet };
+        let ssid = p
+            .WlanConnectionProfileDetails()
+            .ok()
+            .and_then(|d| d.GetConnectedSsid().ok())
+            .map(|s| s.to_string_lossy())
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                p.ProfileName()
+                    .ok()
+                    .map(|s| s.to_string_lossy())
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let signal_pct = p
+            .GetSignalBars()
+            .ok()
+            .and_then(|b| b.Value().ok())
+            .map(|bars| bars.min(5) * 20);
+        let security = p
+            .NetworkSecuritySettings()
+            .ok()
+            .map(|sec| {
+                let auth = sec.NetworkAuthenticationType().unwrap_or(NetworkAuthenticationType::Unknown);
+                let enc = sec.NetworkEncryptionType().unwrap_or(NetworkEncryptionType::Unknown);
+                auth_label(auth, enc)
+            })
+            .unwrap_or_default();
+        return WifiDetails {
+            connected: true,
+            ssid,
+            internet: level == NetworkConnectivityLevel::InternetAccess,
+            signal_pct,
+            security,
+        };
     }
-    Wifi::default()
+    WifiDetails::default()
+}
+
+/// Where Wi-Fi stands now. Any failure reads as "not on Wi-Fi", which only
+/// a later real change can contradict.
+fn read() -> Wifi {
+    let d = query_details();
+    Wifi {
+        connected: d.connected,
+        ssid: d.ssid,
+        internet: d.internet,
+    }
 }

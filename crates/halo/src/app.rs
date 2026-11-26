@@ -536,6 +536,8 @@ pub struct App {
     wifi_connected: Option<bool>,
     wifi_ssid: String,
     wifi_internet: Option<bool>,
+    wifi_signal: Option<u8>,
+    wifi_security: String,
     bt_name: String,
     bt_battery: Option<u8>,
     clock: FrameClock,
@@ -861,6 +863,8 @@ impl App {
             wifi_connected: None,
             wifi_ssid: String::new(),
             wifi_internet: None,
+            wifi_signal: None,
+            wifi_security: String::new(),
             bt_name: String::new(),
             bt_battery: None,
             clock,
@@ -2051,6 +2055,8 @@ impl App {
         crate::dock::DockLive {
             ssid: self.wifi_ssid.clone(),
             internet: self.wifi_internet,
+            wifi_signal: self.wifi_signal,
+            wifi_security: self.wifi_security.clone(),
             bt_name: self.bt_name.clone(),
             bt_battery: self.bt_battery,
         }
@@ -2079,17 +2085,20 @@ impl App {
             }
         }
         let sys = self.st.system.latest.as_ref();
+        let cpu_pct = sys
+            .and_then(|r| r.cpu.as_ref())
+            .map(|c| (c.load.clamp(0.0, 1.0) * 100.0).round() as u8);
         crate::dock::DockCcExtra {
             saver: self.st.power.saver,
-            cpu_pct: sys
-                .and_then(|r| r.cpu.as_ref())
-                .map_or(0, |c| (c.load.clamp(0.0, 1.0) * 100.0).round() as u8),
+            cpu_pct: cpu_pct.unwrap_or(0),
+            cpu_known: cpu_pct.is_some(),
             power_w: sys.and_then(|r| {
                 r.power
                     .as_ref()
                     .map(|p| p.total_w)
                     .or_else(|| r.cpu.as_ref().and_then(|c| c.power_w))
             }),
+            battery_secs: services::power::battery_life_seconds(),
             ai_rows,
         }
     }
@@ -2542,6 +2551,16 @@ impl App {
                         self.request_frame();
                     }
                 } else {
+                    let d = services::network::query_details();
+                    self.wifi_connected = Some(d.connected);
+                    if let Some(s) = d.ssid {
+                        self.wifi_ssid = s;
+                    } else if !d.connected {
+                        self.wifi_ssid.clear();
+                    }
+                    self.wifi_internet = Some(d.internet);
+                    self.wifi_signal = d.signal_pct;
+                    self.wifi_security = d.security;
                     let look = self.dock_look();
                     let tray = self.dock_tray_state();
                     let live = self.dock_live_state();
@@ -2570,6 +2589,16 @@ impl App {
                         self.request_frame();
                     }
                 } else {
+                    let d = services::network::query_details();
+                    self.wifi_connected = Some(d.connected);
+                    if let Some(s) = d.ssid {
+                        self.wifi_ssid = s;
+                    } else if !d.connected {
+                        self.wifi_ssid.clear();
+                    }
+                    self.wifi_internet = Some(d.internet);
+                    self.wifi_signal = d.signal_pct;
+                    self.wifi_security = d.security;
                     let look = self.dock_look();
                     let tray = self.dock_tray_state();
                     let live = self.dock_live_state();
@@ -3867,6 +3896,12 @@ impl App {
             }
             AppEvent::Brightness { level } => {
                 let prev = self.last_brightness.replace(level);
+                let pct = (level.clamp(0.0, 1.0) * 100.0).round() as u8;
+                if let Some(f) = self.dock_flyout.as_mut() {
+                    if f.set_brightness_pct(pct) {
+                        self.request_frame();
+                    }
+                }
                 if prev.is_some_and(|p| (p - level).abs() > 0.004) && self.st.settings.hud_brightness && !self.locked && !self.display_off {
                     self.st.show_hud(HudKind::Brightness { level }, 1.6);
                 }
@@ -3896,13 +3931,24 @@ impl App {
                     self.st.offer_popup(HudKind::Bluetooth { name, connected, battery, audio });
                 }
             }
+            AppEvent::BluetoothSeed { name, battery } => {
+                if self.bt_name.is_empty() {
+                    self.bt_name = name;
+                    self.bt_battery = battery;
+                    self.sync_dock_tray();
+                }
+            }
             AppEvent::Wifi(w) => {
+                let first = self.wifi_connected.is_none();
                 self.wifi_connected = Some(w.connected);
-                self.wifi_ssid = w.ssid.clone().unwrap_or_default();
+                let d = services::network::query_details();
+                self.wifi_ssid = d.ssid.or_else(|| w.ssid.clone()).unwrap_or_default();
                 self.wifi_internet = Some(w.internet);
+                self.wifi_signal = d.signal_pct;
+                self.wifi_security = d.security;
                 self.sync_dock_tray();
-                // Nobody can see it: old news by the time they're back.
-                if self.st.settings.hud_wifi && !self.locked && !self.display_off {
+                // Nobody can see it: old news by the time they're back; initial seed stays silent.
+                if !first && self.st.settings.hud_wifi && !self.locked && !self.display_off {
                     self.st.offer_popup(HudKind::Wifi { connected: w.connected, ssid: w.ssid, internet: w.internet });
                 }
             }

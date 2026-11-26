@@ -373,11 +373,13 @@ pub struct DockTrayState {
     pub focus_active: bool,
 }
 
-/// Live strings for the Control Center (kept out of the `Copy` tray state).
+/// Live strings and telemetry for the Control Center (kept out of the `Copy` tray state).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DockLive {
     pub ssid: String,
     pub internet: Option<bool>,
+    pub wifi_signal: Option<u8>,
+    pub wifi_security: String,
     pub bt_name: String,
     pub bt_battery: Option<u8>,
 }
@@ -4495,7 +4497,9 @@ pub struct DockAiRow {
 pub struct DockCcExtra {
     pub saver: bool,
     pub cpu_pct: u8,
+    pub cpu_known: bool,
     pub power_w: Option<f32>,
+    pub battery_secs: Option<u32>,
     pub ai_rows: Vec<DockAiRow>,
 }
 
@@ -4520,6 +4524,7 @@ pub enum FlyoutZone {
     TileFocus,
     TileSnip,
     NetworkBox,
+    BrightnessIcon,
     BrightnessSlider,
     VolumeIcon,
     VolumeSlider,
@@ -4528,10 +4533,14 @@ pub enum FlyoutZone {
     SubCalendar,
     SubAi,
     SubTray,
+    FooterBattery,
     FooterSystem,
     SubBack,
     SubAction1,
     SubAction2,
+    BatteryEnergyTile,
+    BatterySysTile,
+    AiRow(usize),
     CalPrev,
     CalNext,
     CalToday,
@@ -4584,6 +4593,12 @@ pub fn flyout_brightness_track_rect(card: Rect) -> Rect {
     Rect::new(bc.x + 12.0, bc.y + 30.0, (bc.w - 24.0).max(40.0), 20.0)
 }
 
+/// Display settings icon/header hit box inside the Brightness card.
+pub fn flyout_brightness_icon_rect(card: Rect) -> Rect {
+    let bc = flyout_brightness_card_rect(card);
+    Rect::new(bc.x + 6.0, bc.y + 4.0, 165.0, 22.0)
+}
+
 /// Sound Master Volume slider card rectangle (`.cc-slider-card`).
 pub fn flyout_slider_card_rect(card: Rect) -> Rect {
     Rect::new(FLYOUT_PAD, 284.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 58.0)
@@ -4598,7 +4613,7 @@ pub fn flyout_slider_track_rect(card: Rect) -> Rect {
 /// Speaker mute-toggle hit box inside `.cc-sl-top`.
 pub fn flyout_volume_icon_rect(card: Rect) -> Rect {
     let sc = flyout_slider_card_rect(card);
-    Rect::new(sc.x + 8.0, sc.y + 5.0, 28.0, 22.0)
+    Rect::new(sc.x + 6.0, sc.y + 4.0, 165.0, 22.0)
 }
 
 /// Quick sub-flyout pill button (`idx` in `0..5`: Wi-Fi, Battery, Calendar, AI, Tray ^).
@@ -4667,6 +4682,31 @@ fn cc_weekday(y: i32, m: u8, d: i32) -> i32 {
     let mi = (m.clamp(1, 12) - 1) as usize;
     let y = if m < 3 { y - 1 } else { y };
     (y + y / 4 - y / 100 + y / 400 + T[mi] + d).rem_euclid(7)
+}
+
+/// Partition and filter tray icons for `CcView::Tray`: keep both visible and hidden (`NIS_HIDDEN`)
+/// icons whose image decoded and whose owner window is live (visible first, then hidden).
+pub fn select_tray_icon_indices(
+    icons: &[crate::services::tray_host::TrayIcon],
+    check_live: bool,
+) -> Vec<usize> {
+    let mut visible = Vec::new();
+    let mut hidden = Vec::new();
+    for (idx, ic) in icons.iter().enumerate() {
+        if ic.image.is_none() {
+            continue;
+        }
+        if check_live && !crate::services::tray_host::is_live_window(ic.hwnd) {
+            continue;
+        }
+        if ic.hidden {
+            hidden.push(idx);
+        } else {
+            visible.push(idx);
+        }
+    }
+    visible.extend(hidden);
+    visible
 }
 
 /// Transient System Tray Control Center popover (`Halo.DockFlyout`).
@@ -4949,6 +4989,28 @@ impl DockControlCenter {
                     }
                 }
             }
+            if self.view == CcView::Battery {
+                let hero = Rect::new(FLYOUT_PAD, 58.0, card.w - 2.0 * FLYOUT_PAD, 90.0);
+                if hero.contains(p) {
+                    return Some(FlyoutZone::SubAction1);
+                }
+                let tile_w = (card.w - 2.0 * FLYOUT_PAD - 12.0) / 3.0;
+                if Rect::new(FLYOUT_PAD + (tile_w + 6.0), 158.0, tile_w, 64.0).contains(p) {
+                    return Some(FlyoutZone::BatterySysTile);
+                }
+                if Rect::new(FLYOUT_PAD + 2.0 * (tile_w + 6.0), 158.0, tile_w, 64.0).contains(p) {
+                    return Some(FlyoutZone::BatteryEnergyTile);
+                }
+            }
+            if self.view == CcView::Ai {
+                let count = self.extra.ai_rows.len().min(4);
+                for idx in 0..count {
+                    let cr = Rect::new(FLYOUT_PAD, 58.0 + idx as f32 * 66.0, card.w - 2.0 * FLYOUT_PAD, 60.0);
+                    if cr.contains(p) {
+                        return Some(FlyoutZone::AiRow(idx));
+                    }
+                }
+            }
             if cc_sub_action_rect(card, 0).contains(p) {
                 return Some(FlyoutZone::SubAction1);
             }
@@ -4959,6 +5021,9 @@ impl DockControlCenter {
         }
         if flyout_brightness_track_rect(card).inset(-4.0, -4.0).contains(p) {
             return Some(FlyoutZone::BrightnessSlider);
+        }
+        if flyout_brightness_icon_rect(card).contains(p) {
+            return Some(FlyoutZone::BrightnessIcon);
         }
         if flyout_slider_track_rect(card).inset(-4.0, -4.0).contains(p) {
             return Some(FlyoutZone::VolumeSlider);
@@ -5001,7 +5066,7 @@ impl DockControlCenter {
             if p.x >= ft.right() - 96.0 {
                 return Some(FlyoutZone::FooterSystem);
             }
-            return Some(FlyoutZone::SubBattery);
+            return Some(FlyoutZone::FooterBattery);
         }
         None
     }
@@ -5171,7 +5236,7 @@ impl DockControlCenter {
                         self.set_view(CcView::Wifi);
                         FlyoutAction::RequestFrame
                     }
-                    Some(FlyoutZone::SubBattery) => {
+                    Some(FlyoutZone::SubBattery) | Some(FlyoutZone::FooterBattery) => {
                         self.set_view(CcView::Battery);
                         FlyoutAction::RequestFrame
                     }
@@ -5243,6 +5308,7 @@ impl DockControlCenter {
                     Some(FlyoutZone::TileBluetooth) => FlyoutAction::OpenUri("ms-settings:bluetooth"),
                     Some(FlyoutZone::TileFocus) => FlyoutAction::ToggleFocus,
                     Some(FlyoutZone::TileSnip) => FlyoutAction::OpenUri("ms-screenclip:"),
+                    Some(FlyoutZone::BrightnessIcon) => FlyoutAction::OpenUri("ms-settings:display"),
                     Some(FlyoutZone::BrightnessSlider) => {
                         let pct = self.brightness_at_x(p.x);
                         self.brightness_pct = pct;
@@ -5251,7 +5317,9 @@ impl DockControlCenter {
                     }
                     Some(FlyoutZone::VolumeIcon) => FlyoutAction::ToggleMute,
                     Some(FlyoutZone::VolumeSlider) => FlyoutAction::SetVolume(self.volume_at_x(p.x)),
-                    Some(FlyoutZone::FooterSystem) => FlyoutAction::OpenSystemPage,
+                    Some(FlyoutZone::BatteryEnergyTile) => FlyoutAction::OpenUri("ms-settings:batterysaver"),
+                    Some(FlyoutZone::BatterySysTile) | Some(FlyoutZone::FooterSystem) => FlyoutAction::OpenSystemPage,
+                    Some(FlyoutZone::AiRow(_)) => FlyoutAction::OpenAiPage,
                     None => FlyoutAction::None,
                 };
                 (Some(LRESULT(0)), act)
@@ -5322,14 +5390,12 @@ impl DockControlCenter {
             let mut shown = Vec::new();
             let list = crate::services::tray_host::with_icons(|icons| {
                 let Some(icons) = icons else { return Vec::new() };
-                let mut out = Vec::new();
-                for ic in icons.iter_mut() {
-                    if ic.image.is_none() || ic.hidden {
-                        continue;
-                    }
-                    let idx = out.len();
-                    if idx < CC_TRAY_MAX {
-                        let cr = cc_tray_cell_rect(card, idx);
+                let picked = select_tray_icon_indices(icons, true);
+                let mut out = Vec::with_capacity(picked.len());
+                for (cell, orig_idx) in picked.into_iter().enumerate() {
+                    let ic = &mut icons[orig_idx];
+                    if cell < CC_TRAY_MAX {
+                        let cr = cc_tray_cell_rect(card, cell);
                         let l = x + (cr.x * scale).round() as i32;
                         let t = y + (cr.y * scale).round() as i32;
                         ic.place = RECT {
@@ -5382,8 +5448,11 @@ impl DockControlCenter {
                     crate::pill::shape::draw_body(c, body, FLYOUT_R, look.ground, Some(look.border));
                 }
 
-                let wifi_on = tray.wifi_connected != Some(false);
-                let wifi_sub: &str = if !wifi_on {
+                let wifi_known = tray.wifi_connected.is_some();
+                let wifi_on = tray.wifi_connected == Some(true);
+                let wifi_sub: &str = if !wifi_known {
+                    "Checking…"
+                } else if !wifi_on {
                     "Offline"
                 } else if live.ssid.is_empty() {
                     "Connected"
@@ -5442,26 +5511,42 @@ impl DockControlCenter {
                             );
                             let t_st = TextStyle { size: 13.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
                             c.text(wifi_sub, Rect::new(hero.x + 54.0, hero.y + 13.0, hero.w - 66.0, 18.0), &t_st);
-                            let net_txt = match (wifi_on, live.internet) {
-                                (false, _) => "Wi-Fi adapter offline",
-                                (true, Some(true)) => "Connected · Internet reachable",
-                                (true, Some(false)) => "Connected · No internet access",
-                                (true, None) => "Connected · Checking reachability…",
+                            let net_txt = match (wifi_known, wifi_on, live.internet) {
+                                (false, _, _) => "Checking connection…",
+                                (true, false, _) => "Wi-Fi adapter offline",
+                                (true, true, Some(true)) => "Connected · Internet reachable",
+                                (true, true, Some(false)) => "Connected · No internet access",
+                                (true, true, None) => "Connected · Checking reachability…",
                             };
                             let s_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
                             c.text(net_txt, Rect::new(hero.x + 54.0, hero.y + 33.0, hero.w - 66.0, 15.0), &s_st);
-                            let sig_txt = if wifi_on { "Signal: Strong (802.11ax / Wi-Fi)" } else { "Radio switched off" };
-                            c.text(sig_txt, Rect::new(hero.x + 14.0, hero.y + 62.0, hero.w - 28.0, 15.0), &s_st);
+                            let sig_txt = if !wifi_known {
+                                "Reading adapter status…".to_string()
+                            } else if !wifi_on {
+                                "Radio switched off".to_string()
+                            } else if let Some(sig) = live.wifi_signal {
+                                format!("Signal: {sig}% · Live WLAN")
+                            } else {
+                                "Active WLAN link".to_string()
+                            };
+                            c.text(&sig_txt, Rect::new(hero.x + 14.0, hero.y + 62.0, hero.w - 28.0, 15.0), &s_st);
 
                             let info_r = Rect::new(FLYOUT_PAD, 160.0, card.w - 2.0 * FLYOUT_PAD, 156.0);
                             c.fill_rrect(info_r, 14.0, if light { Color::black(0.04) } else { Color::rgba(0.0, 0.0, 0.0, 0.24) });
                             let h_st = TextStyle { size: 10.0, ..TextStyle::caption().weight(Weight::Bold).color(sub.with_alpha(0.65)) };
                             c.text("NETWORK DETAILS", Rect::new(info_r.x + 12.0, info_r.y + 10.0, 180.0, 14.0), &h_st);
+                            let sec_str = if !wifi_on {
+                                "—"
+                            } else if live.wifi_security.is_empty() {
+                                "Secured"
+                            } else {
+                                &live.wifi_security
+                            };
                             let rows = [
                                 ("Primary SSID", if wifi_on { wifi_sub } else { "None" }),
-                                ("Internet Status", if !wifi_on { "Offline" } else if live.internet == Some(false) { "No internet" } else { "Online" }),
+                                ("Internet Status", if !wifi_known { "Checking…" } else if !wifi_on { "Offline" } else if live.internet == Some(false) { "No internet" } else { "Online" }),
                                 ("Bluetooth Link", if live.bt_name.is_empty() { "Standby" } else { &live.bt_name }),
-                                ("Security", if wifi_on { "WPA2 / WPA3 Personal" } else { "—" }),
+                                ("Security", sec_str),
                             ];
                             let l_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
                             let v_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
@@ -5501,18 +5586,31 @@ impl DockControlCenter {
                                 .power_w
                                 .filter(|w| *w > 0.1)
                                 .map(|w| format!("{w:.1} W"))
-                                .unwrap_or_else(|| format!("{}% CPU", extra.cpu_pct));
+                                .or_else(|| extra.cpu_known.then(|| format!("{}% CPU", extra.cpu_pct)))
+                                .or_else(|| extra.battery_secs.map(|s| format!("~{}h {:02}m", s / 3600, (s % 3600) / 60)))
+                                .unwrap_or_else(|| if !tray.has_battery || tray.on_ac { "AC Steady".into() } else { "Battery".into() });
                             let flow = [
-                                ("Source", if tray.on_ac || !tray.has_battery { "AC Adapter" } else { "Battery" }),
-                                ("System Draw", pwr_str.as_str()),
-                                ("Energy Mode", if extra.saver { "Battery Saver" } else { "Balanced" }),
+                                ("Source", if tray.on_ac || !tray.has_battery { "AC Adapter" } else { "Battery" }, None),
+                                ("System Draw", pwr_str.as_str(), Some(FlyoutZone::BatterySysTile)),
+                                ("Energy Mode", if extra.saver { "Battery Saver" } else { "Balanced" }, Some(FlyoutZone::BatteryEnergyTile)),
                             ];
                             let fl_st = TextStyle { size: 10.0, ..TextStyle::caption().color(sub) };
                             let fv_st = TextStyle { size: 12.0, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
-                            for (i, (k, v)) in flow.into_iter().enumerate() {
+                            for (i, (k, v, zone)) in flow.into_iter().enumerate() {
                                 let tx = FLYOUT_PAD + i as f32 * (tile_w + 6.0);
                                 let tr = Rect::new(tx, 158.0, tile_w, 64.0);
-                                c.fill_rrect(tr, 12.0, if light { Color::black(0.05) } else { Color::white(0.06) });
+                                let is_h = zone.is_some() && hovered == zone;
+                                let bg = if is_h {
+                                    accent.with_alpha(if light { 0.14 } else { 0.22 })
+                                } else if light {
+                                    Color::black(0.05)
+                                } else {
+                                    Color::white(0.06)
+                                };
+                                c.fill_rrect(tr, 12.0, bg);
+                                if is_h {
+                                    c.stroke_rrect(tr, 12.0, accent.with_alpha(0.50), 1.0);
+                                }
                                 c.text(k, Rect::new(tr.x + 10.0, tr.y + 10.0, tr.w - 16.0, 14.0), &fl_st);
                                 c.text(v, Rect::new(tr.x + 10.0, tr.y + 30.0, tr.w - 16.0, 18.0), &fv_st);
                             }
@@ -5637,10 +5735,32 @@ impl DockControlCenter {
                                     &s_st,
                                 );
                             } else {
-                                for row in extra.ai_rows.iter().take(4) {
+                                for (idx, row) in extra.ai_rows.iter().take(4).enumerate() {
                                     let cr = Rect::new(FLYOUT_PAD, ry, card.w - 2.0 * FLYOUT_PAD, 60.0);
-                                    c.fill_rrect(cr, 12.0, if light { Color::black(0.05) } else { Color::white(0.06) });
-                                    c.stroke_rrect(cr, 12.0, if light { Color::black(0.08) } else { Color::white(0.09) }, 1.0);
+                                    let is_h = hovered == Some(FlyoutZone::AiRow(idx));
+                                    c.fill_rrect(
+                                        cr,
+                                        12.0,
+                                        if is_h {
+                                            accent.with_alpha(if light { 0.12 } else { 0.20 })
+                                        } else if light {
+                                            Color::black(0.05)
+                                        } else {
+                                            Color::white(0.06)
+                                        },
+                                    );
+                                    c.stroke_rrect(
+                                        cr,
+                                        12.0,
+                                        if is_h {
+                                            accent.with_alpha(0.50)
+                                        } else if light {
+                                            Color::black(0.08)
+                                        } else {
+                                            Color::white(0.09)
+                                        },
+                                        1.0,
+                                    );
                                     let bar_col = if row.pct >= 90 {
                                         Color::hex(0xFF453A)
                                     } else if row.pct >= 70 {
@@ -5749,7 +5869,14 @@ impl DockControlCenter {
                                             sz,
                                             sz,
                                         );
-                                        c.image(img, ir, 4.0);
+                                        if ic.hidden {
+                                            c.with_alpha(if is_h { 1.0 } else { 0.82 }, |c| {
+                                                c.image(img, ir, 4.0);
+                                            });
+                                            c.fill_circle(Point::new(cr.right() - 7.0, cr.y + 7.0), 2.3, sub.with_alpha(0.75));
+                                        } else {
+                                            c.image(img, ir, 4.0);
+                                        }
                                     }
                                 }
                             }
@@ -5896,7 +6023,9 @@ impl DockControlCenter {
 
                 // Row 1: Connected primary network + green pill badge
                 let row1_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
-                let row1_txt = if !wifi_on {
+                let row1_txt = if !wifi_known {
+                    "Checking Wi-Fi…".to_string()
+                } else if !wifi_on {
                     "No active Wi-Fi".to_string()
                 } else if live.ssid.is_empty() {
                     "✓ Connected".to_string()
@@ -5906,19 +6035,23 @@ impl DockControlCenter {
                 c.text(&row1_txt, Rect::new(nb.x + 11.0, nb.y + 26.0, 170.0, 16.0), &row1_st);
                 let badge = Rect::new(nb.right() - 78.0, nb.y + 25.0, 67.0, 17.0);
                 let green = Color::hex(0x4ADE80);
-                c.fill_rrect(badge, 8.5, green.with_alpha(0.16));
-                let b_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).center().color(green) };
-                c.text(if wifi_on { "Connected" } else { "Settings" }, badge, &b_st);
+                c.fill_rrect(badge, 8.5, green.with_alpha(if wifi_on { 0.16 } else { 0.08 }));
+                let b_st = TextStyle {
+                    size: 9.5,
+                    ..TextStyle::caption().weight(Weight::Semibold).center().color(if wifi_on { green } else { sub })
+                };
+                c.text(if !wifi_known { "Live" } else if wifi_on { "Connected" } else { "Settings" }, badge, &b_st);
 
                 // Row 2: live internet reachability (Windows connection profile)
                 let row2_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
                 c.text("Internet", Rect::new(nb.x + 11.0, nb.y + 46.0, 150.0, 15.0), &row2_st);
                 let sec_st = TextStyle { size: 10.0, ..TextStyle::caption().right().color(sub.with_alpha(0.58)) };
-                let net_txt = match (wifi_on, live.internet) {
-                    (false, _) => "Offline",
-                    (true, Some(true)) => "Online",
-                    (true, Some(false)) => "No internet",
-                    (true, None) => "Checking…",
+                let net_txt = match (wifi_known, wifi_on, live.internet) {
+                    (false, _, _) => "Checking…",
+                    (true, false, _) => "Offline",
+                    (true, true, Some(true)) => "Online",
+                    (true, true, Some(false)) => "No internet",
+                    (true, true, None) => "Checking…",
                 };
                 c.text(net_txt, Rect::new(nb.right() - 98.0, nb.y + 46.0, 87.0, 15.0), &sec_st);
 
@@ -5928,10 +6061,22 @@ impl DockControlCenter {
                 let card_rim = if light { Color::black(0.08) } else { Color::white(0.09) };
                 c.fill_rrect(bc, 14.0, card_bg);
                 c.stroke_rrect(bc, 14.0, card_rim, 1.0);
-                c.icon(Icon::Sun, Rect::new(bc.x + 12.0, bc.y + 8.0, 14.0, 14.0), ink);
+                let bright_h = hovered == Some(FlyoutZone::BrightnessIcon);
+                if bright_h {
+                    c.fill_rrect(
+                        flyout_brightness_icon_rect(card),
+                        7.0,
+                        accent.with_alpha(if light { 0.14 } else { 0.22 }),
+                    );
+                }
+                c.icon(Icon::Sun, Rect::new(bc.x + 12.0, bc.y + 8.0, 14.0, 14.0), if bright_h { accent } else { ink });
                 let sl_lbl_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
                 let sl_val_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
-                c.text("Display · Brightness", Rect::new(bc.x + 32.0, bc.y + 7.0, 175.0, 16.0), &sl_lbl_st);
+                c.text(
+                    "Display · Brightness",
+                    Rect::new(bc.x + 32.0, bc.y + 7.0, 175.0, 16.0),
+                    &TextStyle { color: if bright_h { accent } else { ink }, ..sl_lbl_st },
+                );
                 c.text(&format!("{bright_pct}%"), Rect::new(bc.right() - 72.0, bc.y + 7.0, 60.0, 16.0), &sl_val_st);
 
                 let b_track = flyout_brightness_track_rect(card);
@@ -5963,8 +6108,20 @@ impl DockControlCenter {
                 } else {
                     Icon::Volume
                 };
-                c.icon(vol_ic, Rect::new(sc.x + 12.0, sc.y + 8.0, 14.0, 14.0), ink);
-                c.text("Sound · Master Audio", Rect::new(sc.x + 32.0, sc.y + 7.0, 175.0, 16.0), &sl_lbl_st);
+                let vol_h = hovered == Some(FlyoutZone::VolumeIcon);
+                if vol_h {
+                    c.fill_rrect(
+                        flyout_volume_icon_rect(card),
+                        7.0,
+                        accent.with_alpha(if light { 0.14 } else { 0.22 }),
+                    );
+                }
+                c.icon(vol_ic, Rect::new(sc.x + 12.0, sc.y + 8.0, 14.0, 14.0), if vol_h { accent } else { ink });
+                c.text(
+                    "Sound · Master Audio",
+                    Rect::new(sc.x + 32.0, sc.y + 7.0, 175.0, 16.0),
+                    &TextStyle { color: if vol_h { accent } else { ink }, ..sl_lbl_st },
+                );
                 let val_txt = if tray.muted { "Muted".to_string() } else { format!("{vol_pct}%") };
                 c.text(&val_txt, Rect::new(sc.right() - 72.0, sc.y + 7.0, 60.0, 16.0), &sl_val_st);
 
@@ -6020,7 +6177,13 @@ impl DockControlCenter {
                 } else {
                     "⚡ AC Power Connected".to_string()
                 };
-                let ft_l_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).color(Color::hex(0x4ADE80)) };
+                let bat_h = hovered == Some(FlyoutZone::FooterBattery);
+                let ft_l_st = TextStyle {
+                    size: 11.0,
+                    ..TextStyle::caption()
+                        .weight(Weight::Semibold)
+                        .color(if bat_h { ink } else { Color::hex(0x4ADE80) })
+                };
                 c.text(&bat_txt, Rect::new(ft.x, ft.y + 2.0, ft.w * 0.68, ft.h), &ft_l_st);
 
                 let sys_hov = hovered == Some(FlyoutZone::FooterSystem);
@@ -6547,6 +6710,31 @@ mod tests {
         assert_eq!(icons[0].callback, 0x8001);
         assert_eq!(icons[0].tip, "Discord");
         assert!(!icons[0].hidden);
+
+        // Second icon marked NIS_HIDDEN (dwState = 1) must still be preserved & selected for CcView::Tray.
+        buf[8 + 4..8 + 8].copy_from_slice(&0x5678u32.to_le_bytes());
+        buf[8 + 8..8 + 12].copy_from_slice(&9u32.to_le_bytes());
+        buf[8 + 280..8 + 284].copy_from_slice(&1u32.to_le_bytes()); // dwState = NIS_HIDDEN
+        buf[8 + 284..8 + 288].copy_from_slice(&1u32.to_le_bytes()); // dwStateMask = NIS_HIDDEN
+        assert!(on_notify_slice(&mut icons, &buf, false));
+        assert_eq!(icons.len(), 2);
+        assert!(icons[1].hidden);
+        let dummy_img = crate::gfx::ImageData::new(1, 1, vec![0, 0, 0, 255]);
+        icons[0].image = Some(dummy_img.clone());
+        icons[1].image = Some(dummy_img);
+        // Visible first, then hidden — hidden tray icons are NOT dropped.
+        assert_eq!(select_tray_icon_indices(&icons, false), vec![0, 1]);
+        icons.pop();
+        buf[8 + 4..8 + 8].copy_from_slice(&0x1234u32.to_le_bytes());
+        buf[8 + 8..8 + 12].copy_from_slice(&7u32.to_le_bytes());
+        buf[8 + 280..8 + 288].fill(0);
+
+        // Brightness icon click box aligns inside the Display Brightness card above its track.
+        let card = Rect::new(0.0, 0.0, FLYOUT_W, FLYOUT_H);
+        let bi = flyout_brightness_icon_rect(card);
+        let bc = flyout_brightness_card_rect(card);
+        let bt = flyout_brightness_track_rect(card);
+        assert!(bi.x >= bc.x && bi.y >= bc.y && bi.bottom() <= bt.y + 1.0);
 
         // NIM_SETVERSION (msg = 4) -> version 4 at offset 800
         buf[4..8].copy_from_slice(&4u32.to_le_bytes());

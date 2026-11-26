@@ -162,3 +162,19 @@
 {"id": "dock-phase-d-live-window-hover-preview-d", "ev": "open", "title": "Dock Phase D: live window hover preview DWM thumbnails", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795685186}
 {"id": "dock-phase-d-live-window-hover-preview-d", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-d-live-window-hover-preview-d", "who": "ag", "ts": 1795685195}
 {"id": "dock-phase-d-live-window-hover-preview-d", "ev": "done", "owner": "ag", "who": "ag", "commit": "6da5849", "note": "Live DWM thumbnail hover preview popup (multi-window, click-to-focus/Genie-restore, close button, zero idle CPU)", "ts": 1795685790}
+{"id": "dock-phase-e-badges-and-glass-material-c", "ev": "open", "title": "dock phase e badges and glass material customizer", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795686135}
+{"id": "dock-phase-e-badges-and-glass-material-c", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-e-badges-and-glass-material-c", "who": "ag", "ts": 1795686138}
+{"id": "dock-phase-e-badges-and-glass-material-c", "ev": "done", "owner": "ag", "who": "ag", "commit": "f18452a", "note": "support customizable glass material presets and dock badge modes", "ts": 1795686845}
+{"id": "to-do-tab-titles-tasks-subtasks", "ev": "done", "owner": "ag", "who": "ag", "commit": "c9dc100", "note": "shipped in c9dc100", "ts": 1795687293}
+{"id": "apple-watch-health-data-feasibility", "ev": "dropped", "who": "owner", "note": "dropped by maintainer", "ts": 1795687301}
+{"id": "dock-polish-1-multi-window-grouping-and-", "ev": "open", "title": "dock polish 1 multi window grouping and hover fix", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795689816}
+{"id": "dock-polish-1-multi-window-grouping-and-", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-1-multi-window-grouping-and-", "who": "ag", "ts": 1795689822}
+{"id": "dock-polish-1-multi-window-grouping-and-", "ev": "done", "owner": "ag", "who": "ag", "commit": "cea9463", "note": "2-pass pin matching, exe grouping, critically-damped mag spring & slot hit hysteresis", "ts": 1795690261}
+{"id": "dock-polish-2-120fps-fluid-genie-animati", "ev": "open", "title": "dock polish 2 120fps fluid genie animation", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795690292}
+{"id": "dock-polish-2-120fps-fluid-genie-animati", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-2-120fps-fluid-genie-animati", "who": "ag", "ts": 1795690300}
+{"id": "dock-polish-2-120fps-fluid-genie-animati", "ev": "done", "owner": "ag", "who": "ag", "commit": "dd658a4", "note": "Lock GenieGpu frame & fade dt to FrameClock, draw early on vblank before Island glass, fix minimize freeze & fwidth washout, fast 32-bit capture alpha pass", "ts": 1795690511}
+{"id": "dock-polish-3-liquid-glass-shader-parity", "ev": "open", "title": "dock polish 3 liquid glass shader parity", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795690608}
+{"id": "dock-polish-3-liquid-glass-shader-parity", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-3-liquid-glass-shader-parity", "who": "ag", "ts": 1795690614}
+{"id": "dock-polish-3-liquid-glass-shader-parity", "ev": "done", "owner": "ag", "who": "ag", "commit": "13b6707", "note": "Preserved live DXGI screen-copy GlassParams across Dock and DockStack/DockLaunchpad/DockControlCenter + removed dark tray well tint", "ts": 1795690942}
+{"id": "dock-polish-4-tray-hidden-icons-and-clic", "ev": "open", "title": "dock polish 4 tray hidden icons and clickable live status", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795690974}
+{"id": "dock-polish-4-tray-hidden-icons-and-clic", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-4-tray-hidden-icons-and-clic", "who": "ag", "ts": 1795690984}
