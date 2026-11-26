@@ -2380,13 +2380,6 @@ pub fn progress_ring_radius(tile: Rect) -> f32 {
     tile.w * 0.5 + 3.0
 }
 
-fn draw_squircle_shadow(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool) {
-    let a1 = if light { 0.14 } else { 0.34 };
-    let a2 = if light { 0.06 } else { 0.16 };
-    c.fill_rrect(Rect::new(tile.x, tile.y + 3.0, tile.w, tile.h), tr, Color::black(a1));
-    c.fill_rrect(Rect::new(tile.x - 1.0, tile.y + 5.0, tile.w + 2.0, tile.h + 1.0), tr + 1.0, Color::black(a2));
-}
-
 fn draw_active_dot(c: &mut Canvas<'_>, center: Point, radius: f32, ink: Color, alpha: f32) {
     c.fill_circle(center, radius * 2.1, ink.with_alpha(alpha * 0.24));
     c.fill_circle(center, radius, ink.with_alpha(alpha));
@@ -2448,7 +2441,6 @@ fn draw_halo_island_slot_icon(
     halo_icon: Option<&Image>,
 ) {
     if let Some(img) = halo_icon {
-        draw_squircle_shadow(c, tile.inset(1.5, 1.5), tr, light);
         c.image_hq(img, tile.inset(0.5, 0.5));
         if is_hover {
             c.stroke_rrect(tile, tr, Color::hex(0x0A84FF).with_alpha(0.52), 1.0);
@@ -2961,7 +2953,6 @@ fn draw_dock(
                     let is_press = pressed == Some(i);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
-                    draw_squircle_shadow(c, tile, tr, light);
 
                     match slot.action {
                         SlotAction::Launchpad => {
@@ -3085,14 +3076,11 @@ fn draw_dock(
                         }
 
                         if let Some(img) = app.icon.as_ref() {
-                            // Crisp full-bleed app icon with soft drop-shadow (.dock-icon-img in mockup)
-                            draw_squircle_shadow(c, tile.inset(2.0, 2.0), tr, light);
                             c.image_hq(img, tile.inset(0.5, 0.5));
                             if is_hover {
                                 c.stroke_rrect(tile, tr, theme_accent.with_alpha(0.42), 1.0);
                             }
                         } else {
-                            draw_squircle_shadow(c, tile, tr, light);
                             let back = if is_hover {
                                 if light { Color::black(0.10) } else { Color::white(0.18) }
                             } else if app.focused {
@@ -3155,7 +3143,6 @@ fn draw_dock(
                         if let Some(p) = dl_frac {
                             draw_progress_ring(c, tile, p);
                         }
-                        draw_squircle_shadow(c, tile, tr, light);
                         draw_downloads_stack_icon(c, tile, tr, accent, light, is_hover, stack_open);
                         if tray.downloads_active > 0 {
                             draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue, badge_mode);
@@ -3170,7 +3157,6 @@ fn draw_dock(
                     let is_press = pressed == Some(trash_idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
-                    draw_squircle_shadow(c, tile, tr, light);
                     draw_trash_slot_icon(c, tile, tr, light, is_hover);
                 }
 
