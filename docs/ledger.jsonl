@@ -159,3 +159,6 @@
 {"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "open", "title": "Dock Phase C: Fluid drag reordering and poof-to-remove", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795684539}
 {"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-c-fluid-drag-reordering-and-p", "who": "ag", "ts": 1795684548}
 {"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "done", "owner": "ag", "who": "ag", "commit": "f63f0b5", "note": "Spring-animated slot shifting/drop settle, top z-order dragged icon, and 9-puff cloud poof-to-remove particle animation (0% CPU at rest)", "ts": 1795684762}
+{"id": "dock-phase-d-live-window-hover-preview-d", "ev": "open", "title": "Dock Phase D: live window hover preview DWM thumbnails", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795685186}
+{"id": "dock-phase-d-live-window-hover-preview-d", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-d-live-window-hover-preview-d", "who": "ag", "ts": 1795685195}
+{"id": "dock-phase-d-live-window-hover-preview-d", "ev": "done", "owner": "ag", "who": "ag", "commit": "6da5849", "note": "Live DWM thumbnail hover preview popup (multi-window, click-to-focus/Genie-restore, close button, zero idle CPU)", "ts": 1795685790}

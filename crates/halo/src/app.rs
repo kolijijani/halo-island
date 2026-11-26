@@ -69,6 +69,12 @@ const TIMER_PEEK: usize = 10;
 const TIMER_UPDATE: usize = 11;
 /// Halo's drink water reminder (`app_halo`), only while it's switched on.
 pub(crate) const TIMER_WATER: usize = 12;
+/// One-shot dock hover dwell before opening live DWM window preview (260 ms).
+const TIMER_DOCK_PREVIEW_OPEN: usize = 13;
+/// One-shot grace timer after mouse leaves dock/preview so cursor can cross gap (240 ms).
+const TIMER_DOCK_PREVIEW_CLOSE: usize = 14;
+const DOCK_PREVIEW_OPEN_MS: u32 = 260;
+const DOCK_PREVIEW_CLOSE_MS: u32 = 240;
 /// Show over games: how long the readout shows over a game, the least time
 /// between two peeks for a frame-rate drop, and Alt+Shift+F's id.
 const PEEK_S: f64 = 5.0;
@@ -187,6 +193,9 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     }
     if let Err(e) = crate::dock_genie::register() {
         pwarn!("dock genie window: class not registered ({e})");
+    }
+    if let Err(e) = crate::dock_preview::register(dock_preview_wndproc) {
+        pwarn!("dock preview window: class not registered ({e})");
     }
     let hwnd = window::create_island_window()?;
     let helper = window::create_helper_window()?;
@@ -407,6 +416,15 @@ unsafe extern "system" fn dock_launchpad_wndproc(hwnd: HWND, msg: u32, wp: WPARA
     }
 }
 
+/// The bottom dock's transient live DWM window preview messages (`dock_preview`).
+unsafe extern "system" fn dock_preview_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let res = with_app(|app| app.handle_dock_preview_window(hwnd, msg, wp, lp));
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 /// The desktop widgets messages (`dock_widgets`).
 unsafe extern "system" fn dock_widgets_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let mut deferred = Vec::new();
@@ -511,6 +529,10 @@ pub struct App {
     dock_widgets: Option<crate::dock_widgets::DockWidgets>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
+    /// Transient live DWM window hover preview popover, alive only while hovering a running app.
+    dock_preview: Option<crate::dock_preview::DockPreview>,
+    /// App key waiting on `TIMER_DOCK_PREVIEW_OPEN`.
+    dock_preview_pending: Option<String>,
     wifi_connected: Option<bool>,
     wifi_ssid: String,
     wifi_internet: Option<bool>,
@@ -834,6 +856,8 @@ impl App {
             dock_launchpad: None,
             dock_widgets: None,
             dock_genie: None,
+            dock_preview: None,
+            dock_preview_pending: None,
             wifi_connected: None,
             wifi_ssid: String::new(),
             wifi_internet: None,
@@ -996,6 +1020,8 @@ impl App {
         self.dock_stack = None;
         self.dock_flyout = None;
         self.dock_genie = None;
+        self.dock_preview = None;
+        self.dock_preview_pending = None;
         // Stops the frame count's trace session (it would outlive Halo).
         self.frames = None;
         self.set_peek_hotkey(false);
@@ -1978,6 +2004,7 @@ impl App {
             self.dock_flyout = None;
             self.dock_launchpad = None;
             self.dock_genie = None;
+            self.close_dock_preview();
             if self.dock.take().is_some() {
                 pinfo!("dock: disabled");
             }
@@ -2090,8 +2117,153 @@ impl App {
             changed |= lp.set_look(look);
             changed |= lp.set_pinned(self.st.settings.dock_pinned.clone());
         }
+        if let Some(p) = self.dock_preview.as_mut() {
+            changed |= p.set_look(look);
+        }
         if changed {
             self.request_frame();
+        }
+    }
+
+    fn cancel_dock_preview_timers(&self) {
+        unsafe {
+            let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN);
+            let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE);
+        }
+    }
+
+    fn close_dock_preview(&mut self) {
+        self.cancel_dock_preview_timers();
+        self.dock_preview_pending = None;
+        if self.dock_preview.take().is_some() {
+            if let Some(d) = self.dock.as_mut() {
+                d.set_preview_open(false);
+            }
+            self.request_frame();
+        }
+    }
+
+    fn open_dock_preview_for(&mut self, app: &services::dock_apps::RunningApp, anchor: Rect) {
+        if self.locked
+            || self.display_off
+            || self.fullscreen_hidden
+            || self.selftest.is_some()
+            || self.dock_stack.is_some()
+            || self.dock_flyout.is_some()
+            || self.dock_launchpad.is_some()
+        {
+            self.close_dock_preview();
+            return;
+        }
+        let windows = crate::dock_preview::collect_preview_windows(app, |hwnd| {
+            self.dock.as_ref().and_then(|d| d.app_thumb(hwnd))
+        });
+        if windows.is_empty() {
+            self.close_dock_preview();
+            return;
+        }
+        if let Some(p) = self.dock_preview.as_mut() {
+            if p.update_windows(&self.monitor, app, windows, anchor) {
+                self.request_frame();
+                return;
+            }
+            self.close_dock_preview();
+            return;
+        }
+        let look = self.dock_look();
+        let shared = self.gfx.d3d_handles();
+        match crate::dock_preview::DockPreview::open(&self.monitor, app, windows, anchor, look, shared) {
+            Ok(p) => {
+                self.dock_preview = Some(p);
+                if let Some(d) = self.dock.as_mut() {
+                    d.set_preview_open(true);
+                }
+                self.request_frame();
+            }
+            Err(e) => pwarn!("dock preview: couldn't open ({e})"),
+        }
+    }
+
+    fn on_dock_hover_move(&mut self) {
+        let hovered = self.dock.as_ref().and_then(|d| d.hovered_running_app());
+        let blocked = self.dock_stack.is_some()
+            || self.dock_flyout.is_some()
+            || self.dock_launchpad.is_some()
+            || self.fullscreen_hidden
+            || self.locked
+            || self.display_off;
+        if blocked {
+            self.close_dock_preview();
+            return;
+        }
+        match hovered {
+            Some((app, anchor)) => {
+                unsafe {
+                    let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE);
+                }
+                if let Some(p) = self.dock_preview.as_ref() {
+                    if p.app_key != app.key {
+                        // Slide across running dock apps switches immediately with zero delay.
+                        self.dock_preview_pending = None;
+                        unsafe {
+                            let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN);
+                        }
+                        self.open_dock_preview_for(&app, anchor);
+                    }
+                } else if self.dock_preview_pending.as_deref() != Some(app.key.as_str()) {
+                    self.dock_preview_pending = Some(app.key);
+                    unsafe {
+                        let _ = SetTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN, DOCK_PREVIEW_OPEN_MS, None);
+                    }
+                }
+            }
+            None => {
+                self.dock_preview_pending = None;
+                unsafe {
+                    let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN);
+                }
+                if self.dock_preview.is_some() {
+                    unsafe {
+                        let _ = SetTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE, DOCK_PREVIEW_CLOSE_MS, None);
+                    }
+                }
+            }
+        }
+    }
+
+    fn on_dock_hover_leave(&mut self) {
+        self.dock_preview_pending = None;
+        unsafe {
+            let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN);
+        }
+        if self.dock_preview.is_some() {
+            unsafe {
+                let _ = SetTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE, DOCK_PREVIEW_CLOSE_MS, None);
+            }
+        }
+    }
+
+    fn sync_dock_preview_apps(&mut self) {
+        let Some(key) = self.dock_preview.as_ref().map(|p| p.app_key.clone()) else {
+            return;
+        };
+        let Some((app, anchor)) = self.dock.as_ref().and_then(|d| d.running_app_by_key(&key)) else {
+            self.close_dock_preview();
+            return;
+        };
+        let windows = crate::dock_preview::collect_preview_windows(&app, |hwnd| {
+            self.dock.as_ref().and_then(|d| d.app_thumb(hwnd))
+        });
+        if windows.is_empty() {
+            self.close_dock_preview();
+            return;
+        }
+        if let Some(p) = self.dock_preview.as_mut() {
+            if !p.update_windows(&self.monitor, &app, windows, anchor) {
+                self.close_dock_preview();
+            } else {
+                self.request_frame();
+            }
         }
     }
 
@@ -2123,6 +2295,7 @@ impl App {
         self.close_dock_stack();
         self.close_dock_flyout();
         self.close_dock_launchpad();
+        self.close_dock_preview();
     }
 
     fn dock_moving(&self) -> bool {
@@ -2130,6 +2303,7 @@ impl App {
             || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
             || self.dock_flyout.as_ref().is_some_and(|f| f.needs_frame())
             || self.dock_launchpad.as_ref().is_some_and(|lp| lp.needs_frame())
+            || self.dock_preview.as_ref().is_some_and(|p| p.needs_frame())
             || self.dock_widgets.as_ref().is_some_and(|w| w.needs_frame())
             || self.dock_genie.is_some()
     }
@@ -2171,6 +2345,11 @@ impl App {
                 lp.paint(shared.clone());
             }
         }
+        if let Some(p) = self.dock_preview.as_mut() {
+            if p.needs_frame() {
+                p.paint(shared.clone());
+            }
+        }
         let look = self.dock_look();
         if let Some(w) = self.dock_widgets.as_mut() {
             if !self.locked && !self.display_off {
@@ -2190,6 +2369,12 @@ impl App {
     fn handle_dock_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, deferred: &mut Vec<Deferred>) -> Option<LRESULT> {
         let instant = self.reduce_motion || self.st.power.saver;
         let (res, act) = self.dock.as_mut()?.handle_message(hwnd, msg, wp, lp, instant);
+        match msg {
+            WM_MOUSEMOVE => self.on_dock_hover_move(),
+            WM_MOUSELEAVE => self.on_dock_hover_leave(),
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN => self.close_dock_preview(),
+            _ => {}
+        }
         match act {
             crate::dock::DockAction::None => {}
             crate::dock::DockAction::RequestFrame => self.request_frame(),
@@ -2450,6 +2635,75 @@ impl App {
                 crate::shell::open(&path);
             }
             crate::dock::StackAction::Close => self.close_dock_stack(),
+        }
+        res
+    }
+
+    fn handle_dock_preview_window(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        let (res, act) = self.dock_preview.as_mut()?.handle_message(hwnd, msg, wp, lp);
+        match act {
+            crate::dock_preview::PreviewAction::None => {}
+            crate::dock_preview::PreviewAction::RequestFrame => self.request_frame(),
+            crate::dock_preview::PreviewAction::MouseEnter => {
+                unsafe {
+                    let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE);
+                }
+                self.request_frame();
+            }
+            crate::dock_preview::PreviewAction::MouseLeave => {
+                unsafe {
+                    let _ = SetTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE, DOCK_PREVIEW_CLOSE_MS, None);
+                }
+                self.request_frame();
+            }
+            crate::dock_preview::PreviewAction::FocusWindow { hwnd: target, minimized, icon_rect } => {
+                self.close_dock_preview();
+                self.dock_genie = None;
+                let instant = self.reduce_motion || self.st.power.saver;
+                if minimized {
+                    let cached_thumb = self.dock.as_ref().and_then(|d| d.app_thumb(target));
+                    let target_rc = self
+                        .dock
+                        .as_ref()
+                        .and_then(|d| d.app_thumb_rect(target))
+                        .or_else(|| crate::dock_genie::restored_window_rect(target));
+                    if !instant {
+                        if let (Some(img), Some(win_rc)) = (cached_thumb, target_rc) {
+                            let shared = self.gfx.d3d_handles();
+                            if let Ok(g) = crate::dock_genie::DockGenie::start(
+                                &self.monitor,
+                                img,
+                                win_rc,
+                                icon_rect,
+                                crate::dock_genie::GenieDir::Restore,
+                                shared,
+                            ) {
+                                self.dock_genie = Some(g.with_restore_target(target));
+                                self.request_frame();
+                                return res;
+                            }
+                        }
+                    }
+                    crate::dock_genie::restore_window_no_dwm(target);
+                } else {
+                    services::dock_apps::focus_window(target);
+                }
+            }
+            crate::dock_preview::PreviewAction::CloseWindow(target) => {
+                unsafe {
+                    let _ = PostMessageW(target, WM_CLOSE, WPARAM(0), LPARAM(0));
+                }
+                if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
+                    let apps = w.refresh_with_pinned_and_recent(
+                        &self.st.settings.dock_pinned,
+                        &mut self.st.settings.dock_recent,
+                    );
+                    let _ = d.set_apps(apps);
+                }
+                self.sync_dock_preview_apps();
+                self.request_frame();
+            }
+            crate::dock_preview::PreviewAction::Dismiss => self.close_dock_preview(),
         }
         res
     }
@@ -2966,6 +3220,33 @@ impl App {
                 self.try_add_tray();
             }
             TIMER_WATER => self.water_due(),
+            TIMER_DOCK_PREVIEW_OPEN => {
+                unsafe {
+                    let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_OPEN);
+                }
+                let pending = self.dock_preview_pending.take();
+                if let (Some(key), Some((app, anchor))) =
+                    (pending, self.dock.as_ref().and_then(|d| d.hovered_running_app()))
+                {
+                    if app.key == key {
+                        self.open_dock_preview_for(&app, anchor);
+                    }
+                }
+            }
+            TIMER_DOCK_PREVIEW_CLOSE => {
+                unsafe {
+                    let _ = KillTimer(self.hwnd, TIMER_DOCK_PREVIEW_CLOSE);
+                }
+                let mut pt = POINT::default();
+                let keep = unsafe { GetCursorPos(&mut pt).is_ok() }
+                    && self
+                        .dock_preview
+                        .as_ref()
+                        .is_some_and(|p| p.contains_screen_point_or_bridge(pt));
+                if !keep {
+                    self.close_dock_preview();
+                }
+            }
             TIMER_UPDATE => {
                 unsafe {
                     let _ = KillTimer(self.hwnd, TIMER_UPDATE);
@@ -3625,6 +3906,7 @@ impl App {
                     if changed {
                         self.request_frame();
                     }
+                    self.sync_dock_preview_apps();
                 }
             }
             AppEvent::DockWindowMinimizing { hwnd: raw_hwnd, capture } => {
@@ -4101,6 +4383,9 @@ impl App {
             }
             if let Some(d) = self.dock.as_mut() {
                 d.set_fullscreen_hidden(hide);
+            }
+            if hide {
+                self.close_dock_preview();
             }
             self.fs_slide = slide.then_some((now, hide));
             self.request_frame();
@@ -4797,6 +5082,7 @@ impl App {
                 d.set_fullscreen_hidden(true);
                 d.sync_glass(false, &self.sink, self.monitor.handle, None);
             }
+            self.close_dock_preview();
             // Nothing is drawn, but timers, chimes and commands keep working.
             // Glass stops copying the screen: nobody sees the island.
             let off = RECT::default();

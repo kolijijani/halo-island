@@ -423,7 +423,7 @@ pub fn is_system_taskbar_hidden() -> bool {
     TASKBAR_HIDDEN_BY_HALO.load(std::sync::atomic::Ordering::Acquire)
 }
 
-fn register_class(class: PCWSTR, wndproc: crate::window::WndProc) -> Result<()> {
+pub(crate) fn register_class(class: PCWSTR, wndproc: crate::window::WndProc) -> Result<()> {
     unsafe {
         let hinst = GetModuleHandleW(None)?;
         let wc = WNDCLASSEXW {
@@ -772,6 +772,7 @@ pub struct Dock {
     pressed_tray: Option<DockTrayZone>,
     stack_open: bool,
     ctrl_open: bool,
+    preview_open: bool,
     bottom_most: bool,
     cfg: DockConfig,
     dirty: bool,
@@ -865,6 +866,7 @@ impl Dock {
             pressed_tray: None,
             stack_open: false,
             ctrl_open: false,
+            preview_open: false,
             bottom_most: true,
             cfg: DockConfig::default(),
             dirty: true,
@@ -933,6 +935,43 @@ impl Dock {
             self.ctrl_open = open;
             self.dirty = true;
         }
+    }
+
+    pub fn set_preview_open(&mut self, open: bool) {
+        if self.preview_open != open {
+            self.preview_open = open;
+            self.dirty = true;
+        }
+    }
+
+    /// Currently hovered running app (and its screen rect) for live window hover preview.
+    pub fn hovered_running_app(&self) -> Option<(RunningApp, Rect)> {
+        if self.tucked || self.fs_hidden || self.dragging_app || !self.cfg.show_apps {
+            return None;
+        }
+        let idx = self.hovered?;
+        if idx < ANCHOR_SLOTS.len() {
+            return None;
+        }
+        let app_idx = idx - ANCHOR_SLOTS.len();
+        let app = self.apps.get(app_idx)?;
+        if !app.running || (app.windows.is_empty() && app.hwnd.is_invalid()) {
+            return None;
+        }
+        Some((app.clone(), self.slot_screen_rect(idx)))
+    }
+
+    /// Look up a running app and its current screen rect by key (for keeping an open preview synced).
+    pub fn running_app_by_key(&self, key: &str) -> Option<(RunningApp, Rect)> {
+        if !self.cfg.show_apps {
+            return None;
+        }
+        let app_idx = self.apps.iter().position(|a| a.key == key && a.running)?;
+        let app = &self.apps[app_idx];
+        if app.windows.is_empty() && app.hwnd.is_invalid() {
+            return None;
+        }
+        Some((app.clone(), self.slot_screen_rect(ANCHOR_SLOTS.len() + app_idx)))
     }
 
     pub fn set_bottom_most(&mut self, mon: &MonitorInfo, bottom_most: bool) {
@@ -1987,6 +2026,7 @@ impl Dock {
                     show_downloads,
                     stack_open,
                     ctrl_open,
+                    self.preview_open,
                     hovered,
                     pressed,
                     drag_pos,
@@ -2389,6 +2429,7 @@ fn draw_dock(
     show_downloads: bool,
     stack_open: bool,
     ctrl_open: bool,
+    preview_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
     drag_pos: Option<Point>,
@@ -2781,7 +2822,13 @@ fn draw_dock(
                     } else if i == trash_idx {
                         Some("Trash")
                     } else {
-                        apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
+                        apps.get(i - ANCHOR_SLOTS.len()).and_then(|a| {
+                            if preview_open && a.running {
+                                None
+                            } else {
+                                Some(a.name.as_str())
+                            }
+                        })
                     };
                     label.zip(slot_rects.get(i).copied())
                 } else if let (Some(i), Some(dp)) = (pressed, drag_pos) {

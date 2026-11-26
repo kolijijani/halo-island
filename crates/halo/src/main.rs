@@ -38,6 +38,8 @@ pub mod dock_widgets;
 mod dock_genie;
 mod dock_genie_gpu;
 #[cfg(windows)]
+mod dock_preview;
+#[cfg(windows)]
 mod dragdrop;
 #[cfg(windows)]
 mod events;
