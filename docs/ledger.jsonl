@@ -182,3 +182,6 @@
 {"id": "dock-polish-5-auto-close-control-center-", "ev": "open", "title": "dock polish 5 auto close control center on outside click", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795691506}
 {"id": "dock-polish-5-auto-close-control-center-", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-5-auto-close-control-center-", "who": "ag", "ts": 1795691508}
 {"id": "dock-polish-5-auto-close-control-center-", "ev": "done", "owner": "ag", "who": "ag", "commit": "436fa3e", "note": "auto-close Control Center and dock popovers on outside click and foreground changes", "ts": 1795692046}
+{"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "open", "title": "dock polish 6 authentic app icons for halo shelf tasks focus settings trash", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795692082}
+{"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-6-authentic-app-icons-for-ha", "who": "ag", "ts": 1795692086}
+{"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "done", "owner": "ag", "who": "ag", "commit": "a96dc67d5b28707ad229d0e050db7798e4219335", "note": "authentic app icons for halo shelf tasks focus settings trash", "ts": 1795692612}
