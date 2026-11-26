@@ -127,3 +127,6 @@
 {"id": "dock-phase-12-release-build-live-verific", "ev": "open", "title": "dock phase 12: release build, live verification, metrics", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795664017}
 {"id": "dock-phase-12-release-build-live-verific", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-12-release-build-live-verific", "who": "ag", "ts": 1795664017}
 {"id": "dock-phase-12-release-build-live-verific", "ev": "done", "owner": "ag", "who": "ag", "commit": "c37950e", "note": "Removed unused draw_minimized_window_tile; 14/14 dock tests & 121/121 selftest states passed; release halo.exe 9.66 MB, idle ~87 MB priv / ~49.5M cycles/s", "ts": 1795664328}
+{"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "open", "title": "Dock Phase 13: True Liquid Glass and Live WGC Backdrop parity", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795665740}
+{"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-13-true-liquid-glass-and-live", "who": "ag", "ts": 1795665740}
+{"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "done", "owner": "ag", "who": "ag", "commit": "95e7e86", "note": "Shared monitor DXGI backdrop worker, secondary window capture exclusion, live Glass::frame on Dock, removed opaque overlay mud", "ts": 1795666484}
