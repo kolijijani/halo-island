@@ -207,6 +207,15 @@ pub struct DockTrayState {
     pub focus_active: bool,
 }
 
+/// Live strings for the Control Center (kept out of the `Copy` tray state).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DockLive {
+    pub ssid: String,
+    pub internet: Option<bool>,
+    pub bt_name: String,
+    pub bt_battery: Option<u8>,
+}
+
 impl DockTrayState {
     pub fn clock_text(&self) -> String {
         if self.use_24h {
@@ -2854,6 +2863,7 @@ pub struct DockControlCenter {
     light: bool,
     look: &'static Look,
     tray: DockTrayState,
+    live: DockLive,
     hovered: Option<FlyoutZone>,
     dragging_vol: bool,
     tracking: bool,
@@ -2879,6 +2889,7 @@ impl DockControlCenter {
         mon: &MonitorInfo,
         anchor_screen: Rect,
         tray: DockTrayState,
+        live: DockLive,
         look: &'static Look,
         shared: Option<SharedD3d>,
     ) -> Result<Self> {
@@ -2918,12 +2929,22 @@ impl DockControlCenter {
             light: look.light,
             look,
             tray,
+            live,
             hovered: None,
             dragging_vol: false,
             tracking: false,
             shown: false,
             dirty: true,
         })
+    }
+
+    pub fn set_live(&mut self, live: DockLive) -> bool {
+        if self.live == live {
+            return false;
+        }
+        self.live = live;
+        self.dirty = true;
+        true
     }
 
     pub fn set_look(&mut self, look: &'static Look) -> bool {
@@ -3115,6 +3136,7 @@ impl DockControlCenter {
         let look = self.look;
         let light = look.light;
         let tray = self.tray;
+        let live = self.live.clone();
         let hovered = self.hovered;
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -3159,20 +3181,35 @@ impl DockControlCenter {
 
                 // 1. 2x2 Quick Tiles Grid (.cc-grid: Wi-Fi, Bluetooth, Focus Mode, Screen Snip)
                 let wifi_on = tray.wifi_connected != Some(false);
+                let wifi_sub: &str = if !wifi_on {
+                    "Offline"
+                } else if live.ssid.is_empty() {
+                    "Connected"
+                } else {
+                    &live.ssid
+                };
+                let bt_sub = if live.bt_name.is_empty() {
+                    "Not connected".to_string()
+                } else if let Some(b) = live.bt_battery {
+                    format!("{} · {b}%", live.bt_name)
+                } else {
+                    live.bt_name.clone()
+                };
+                let bt_on = !live.bt_name.is_empty();
                 let tiles: [(FlyoutZone, Icon, &str, &str, Option<Color>); 4] = [
                     (
                         FlyoutZone::TileWifi,
                         if wifi_on { Icon::Wifi } else { Icon::WifiOff },
                         "Wi-Fi",
-                        if wifi_on { "Unifi_5GHz" } else { "Offline" },
+                        wifi_sub,
                         if wifi_on { Some(Color::hex(0x2563EB)) } else { None },
                     ),
                     (
                         FlyoutZone::TileBluetooth,
                         Icon::Bluetooth,
                         "Bluetooth",
-                        "Pods Pro · 94%",
-                        Some(Color::hex(0x2563EB)),
+                        &bt_sub,
+                        if bt_on { Some(Color::hex(0x2563EB)) } else { None },
                     ),
                     (
                         FlyoutZone::TileFocus,
@@ -3251,46 +3288,38 @@ impl DockControlCenter {
                 let hdr_r_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(sub.with_alpha(0.54)) };
                 c.text("AVAILABLE NETWORKS", Rect::new(nb.x + 11.0, nb.y + 7.0, 150.0, 13.0), &hdr_st);
                 c.text(
-                    if wifi_on { "Wi-Fi 6 · 866 Mbps" } else { "Offline" },
+                    if wifi_on { "Wi-Fi" } else { "Offline" },
                     Rect::new(nb.right() - 135.0, nb.y + 7.0, 124.0, 13.0),
                     &hdr_r_st,
                 );
 
                 // Row 1: Connected primary network + green pill badge
                 let row1_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
-                c.text(
-                    if wifi_on { "✓ Unifi_5GHz" } else { "No active Wi-Fi" },
-                    Rect::new(nb.x + 11.0, nb.y + 26.0, 170.0, 16.0),
-                    &row1_st,
-                );
+                let row1_txt = if !wifi_on {
+                    "No active Wi-Fi".to_string()
+                } else if live.ssid.is_empty() {
+                    "✓ Connected".to_string()
+                } else {
+                    format!("✓ {}", live.ssid)
+                };
+                c.text(&row1_txt, Rect::new(nb.x + 11.0, nb.y + 26.0, 170.0, 16.0), &row1_st);
                 let badge = Rect::new(nb.right() - 78.0, nb.y + 25.0, 67.0, 17.0);
                 let green = Color::hex(0x4ADE80);
                 c.fill_rrect(badge, 8.5, green.with_alpha(0.16));
                 let b_st = TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Semibold).center().color(green) };
                 c.text(if wifi_on { "Connected" } else { "Settings" }, badge, &b_st);
 
-                // Row 2: Secondary mesh network + 4 signal bars
+                // Row 2: live internet reachability (Windows connection profile)
                 let row2_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
-                c.text("Studio_Mesh_5G", Rect::new(nb.x + 11.0, nb.y + 46.0, 150.0, 15.0), &row2_st);
+                c.text("Internet", Rect::new(nb.x + 11.0, nb.y + 46.0, 150.0, 15.0), &row2_st);
                 let sec_st = TextStyle { size: 10.0, ..TextStyle::caption().right().color(sub.with_alpha(0.58)) };
-                c.text("Secured", Rect::new(nb.right() - 88.0, nb.y + 46.0, 56.0, 15.0), &sec_st);
-                for b in 0..4 {
-                    let bh = 4.0 + b as f32 * 2.2;
-                    let bx = nb.right() - 25.0 + b as f32 * 3.6;
-                    let by = nb.y + 58.0 - bh;
-                    c.fill_rrect(Rect::new(bx, by, 2.2, bh), 0.8, ink.with_alpha(0.82));
-                }
-
-                // Row 3: Personal Hotspot
-                c.text("koliji-iPhone", Rect::new(nb.x + 11.0, nb.y + 63.0, 150.0, 14.0), &row2_st);
-                c.text("Hotspot", Rect::new(nb.right() - 88.0, nb.y + 63.0, 56.0, 14.0), &sec_st);
-                for b in 0..4 {
-                    let bh = 4.0 + b as f32 * 2.2;
-                    let bx = nb.right() - 25.0 + b as f32 * 3.6;
-                    let by = nb.y + 74.0 - bh;
-                    let a = if b < 3 { 0.82 } else { 0.26 };
-                    c.fill_rrect(Rect::new(bx, by, 2.2, bh), 0.8, ink.with_alpha(a));
-                }
+                let net_txt = match (wifi_on, live.internet) {
+                    (false, _) => "Offline",
+                    (true, Some(true)) => "Online",
+                    (true, Some(false)) => "No internet",
+                    (true, None) => "Checking…",
+                };
+                c.text(net_txt, Rect::new(nb.right() - 98.0, nb.y + 46.0, 87.0, 15.0), &sec_st);
 
                 // 3. Interactive Sound Master Volume Slider Card (.cc-slider-card)
                 let sc = flyout_slider_card_rect(card);

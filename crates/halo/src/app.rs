@@ -476,6 +476,10 @@ pub struct App {
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
     wifi_connected: Option<bool>,
+    wifi_ssid: String,
+    wifi_internet: Option<bool>,
+    bt_name: String,
+    bt_battery: Option<u8>,
     clock: FrameClock,
     sink: EventSink,
     rx: Receiver<AppEvent>,
@@ -793,6 +797,10 @@ impl App {
             dock_flyout: None,
             dock_genie: None,
             wifi_connected: None,
+            wifi_ssid: String::new(),
+            wifi_internet: None,
+            bt_name: String::new(),
+            bt_battery: None,
             clock,
             sink,
             rx,
@@ -1953,11 +1961,21 @@ impl App {
 
     /// Push passive `AppState` and island theme changes to the dock and its System Tray Capsule;
     /// rests while locked or display is off and marks dirty only on visible change.
+    fn dock_live_state(&self) -> crate::dock::DockLive {
+        crate::dock::DockLive {
+            ssid: self.wifi_ssid.clone(),
+            internet: self.wifi_internet,
+            bt_name: self.bt_name.clone(),
+            bt_battery: self.bt_battery,
+        }
+    }
+
     fn sync_dock_tray(&mut self) {
         if self.locked || self.display_off {
             return;
         }
         let tray = self.dock_tray_state();
+        let live = self.dock_live_state();
         let look = self.dock_look();
         let mut changed = false;
         if let Some(d) = self.dock.as_mut() {
@@ -1969,6 +1987,7 @@ impl App {
         }
         if let Some(f) = self.dock_flyout.as_mut() {
             changed |= f.set_tray(tray);
+            changed |= f.set_live(live);
             changed |= f.set_look(look);
         }
         if changed {
@@ -2160,8 +2179,9 @@ impl App {
                 } else {
                     let look = self.dock_look();
                     let tray = self.dock_tray_state();
+                    let live = self.dock_live_state();
                     let shared = self.gfx.d3d_handles();
-                    match crate::dock::DockControlCenter::open(&self.monitor, anchor_rect, tray, look, shared) {
+                    match crate::dock::DockControlCenter::open(&self.monitor, anchor_rect, tray, live, look, shared) {
                         Ok(f) => {
                             self.dock_flyout = Some(f);
                             if let Some(d) = self.dock.as_mut() {
@@ -3138,12 +3158,22 @@ impl App {
                 }
             }
             AppEvent::Bluetooth { name, connected, battery, audio } => {
+                if connected {
+                    self.bt_name = name.clone();
+                    self.bt_battery = battery;
+                } else if self.bt_name == name {
+                    self.bt_name.clear();
+                    self.bt_battery = None;
+                }
+                self.sync_dock_tray();
                 if self.st.settings.hud_bluetooth {
                     self.st.offer_popup(HudKind::Bluetooth { name, connected, battery, audio });
                 }
             }
             AppEvent::Wifi(w) => {
                 self.wifi_connected = Some(w.connected);
+                self.wifi_ssid = w.ssid.clone().unwrap_or_default();
+                self.wifi_internet = Some(w.internet);
                 self.sync_dock_tray();
                 // Nobody can see it: old news by the time they're back.
                 if self.st.settings.hud_wifi && !self.locked && !self.display_off {
