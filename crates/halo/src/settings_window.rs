@@ -30,7 +30,7 @@ use crate::ui::{wid, wid_n, CursorKind, Hit, Input, MouseButton, PillStyle, Ui, 
 use crate::version::VERSION;
 use halo_core::caffeine;
 use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::settings::{DockIconSize, DockThemeMode, IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
+use halo_core::settings::{DockBadgeMode, DockGlassMaterial, DockIconSize, DockThemeMode, IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -351,6 +351,8 @@ pub enum Key {
     LyricsCredit,
     DockEnabled,
     DockTheme,
+    DockGlassMaterial,
+    DockBadgeMode,
     DockIconSize,
     DockMagnification,
     DockHideTaskbar,
@@ -675,6 +677,17 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 (DockThemeMode::LiquidGlass, "Liquid Glass"),
                 (DockThemeMode::Classic, "Classic"),
             ];
+            const DOCK_GLASS_MATERIALS: [(DockGlassMaterial, &str); 4] = [
+                (DockGlassMaterial::Dynamic, "Dynamic"),
+                (DockGlassMaterial::SmokedDark, "Smoked Dark"),
+                (DockGlassMaterial::CrystalLight, "Crystal Light"),
+                (DockGlassMaterial::FrostedMatte, "Frosted Matte"),
+            ];
+            const DOCK_BADGES: [(DockBadgeMode, &str); 3] = [
+                (DockBadgeMode::Count, "Count pill"),
+                (DockBadgeMode::Dot, "Minimalist dot"),
+                (DockBadgeMode::Hidden, "Hidden"),
+            ];
             const DOCK_SIZES: [(DockIconSize, &str); 3] = [
                 (DockIconSize::Compact, "Compact"),
                 (DockIconSize::Default, "Default"),
@@ -695,6 +708,18 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                             "Appearance",
                             Some("Match the island's look or force frosted Liquid Glass"),
                             Ctl::Choice(names(&DOCK_THEMES), chosen(&DOCK_THEMES, s.dock_theme)),
+                        ),
+                        item(
+                            Key::DockGlassMaterial,
+                            "Glass material",
+                            Some("Refraction tuning: Dynamic, Smoked Dark, Crystal Light, or Frosted Matte"),
+                            Ctl::Choice(names(&DOCK_GLASS_MATERIALS), chosen(&DOCK_GLASS_MATERIALS, s.dock_glass_material)),
+                        ),
+                        item(
+                            Key::DockBadgeMode,
+                            "Notification badges",
+                            Some("Badge style: macOS count pill, minimalist dot, or hidden"),
+                            Ctl::Choice(names(&DOCK_BADGES), chosen(&DOCK_BADGES, s.dock_badge_mode)),
                         ),
                         item(
                             Key::DockIconSize,
@@ -985,6 +1010,8 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Island, "Mini handle", Key::StepAside),
     (Section::Dock, "Enable Bottom Dock", Key::DockEnabled),
     (Section::Dock, "Appearance", Key::DockTheme),
+    (Section::Dock, "Glass material", Key::DockGlassMaterial),
+    (Section::Dock, "Notification badges", Key::DockBadgeMode),
     (Section::Dock, "Icon size", Key::DockIconSize),
     (Section::Dock, "Hover magnification", Key::DockMagnification),
     (Section::Dock, "Auto-hide Windows taskbar", Key::DockHideTaskbar),
@@ -1202,6 +1229,34 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
                     DockThemeMode::FollowIsland => DockThemeMode::LiquidGlass,
                     DockThemeMode::LiquidGlass => DockThemeMode::Classic,
                     DockThemeMode::Classic => DockThemeMode::FollowIsland,
+                };
+            }
+            _ => return,
+        },
+        Key::DockGlassMaterial => match act {
+            Act::Pick(0) => s.dock_glass_material = DockGlassMaterial::Dynamic,
+            Act::Pick(1) => s.dock_glass_material = DockGlassMaterial::SmokedDark,
+            Act::Pick(2) => s.dock_glass_material = DockGlassMaterial::CrystalLight,
+            Act::Pick(3) => s.dock_glass_material = DockGlassMaterial::FrostedMatte,
+            Act::Toggle => {
+                s.dock_glass_material = match s.dock_glass_material {
+                    DockGlassMaterial::Dynamic => DockGlassMaterial::SmokedDark,
+                    DockGlassMaterial::SmokedDark => DockGlassMaterial::CrystalLight,
+                    DockGlassMaterial::CrystalLight => DockGlassMaterial::FrostedMatte,
+                    DockGlassMaterial::FrostedMatte => DockGlassMaterial::Dynamic,
+                };
+            }
+            _ => return,
+        },
+        Key::DockBadgeMode => match act {
+            Act::Pick(0) => s.dock_badge_mode = DockBadgeMode::Count,
+            Act::Pick(1) => s.dock_badge_mode = DockBadgeMode::Dot,
+            Act::Pick(2) => s.dock_badge_mode = DockBadgeMode::Hidden,
+            Act::Toggle => {
+                s.dock_badge_mode = match s.dock_badge_mode {
+                    DockBadgeMode::Count => DockBadgeMode::Dot,
+                    DockBadgeMode::Dot => DockBadgeMode::Hidden,
+                    DockBadgeMode::Hidden => DockBadgeMode::Count,
                 };
             }
             _ => return,

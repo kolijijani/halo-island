@@ -102,6 +102,32 @@ pub enum DockThemeMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum DockBadgeMode {
+    /// Full macOS-style red count pill (or 99+).
+    #[default]
+    Count,
+    /// Subtle macOS minimalist red notification dot without numbers.
+    Dot,
+    /// Hide notification badges completely.
+    Hidden,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockGlassMaterial {
+    /// Adaptive blur and specular response matching system / wallpaper.
+    #[default]
+    Dynamic,
+    /// Deep dark-smoked obsidian glass (higher contrast on bright backgrounds).
+    SmokedDark,
+    /// Luminous frosted crystal glass (clean crisp bright refraction).
+    CrystalLight,
+    /// Ultra-frosted high-diffuse matte finish.
+    FrostedMatte,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DockIconSize {
     Compact,
     #[default]
@@ -196,6 +222,10 @@ pub struct Settings {
     /// Floating bottom dock shelf (Windows only; off by default so idle cost is zero).
     pub dock_enabled: bool,
     pub dock_theme: DockThemeMode,
+    #[serde(default)]
+    pub dock_glass_material: DockGlassMaterial,
+    #[serde(default)]
+    pub dock_badge_mode: DockBadgeMode,
     pub dock_icon_size: DockIconSize,
     /// Parabolic hover magnification on dock icons.
     #[serde(default = "bool_true")]
@@ -500,6 +530,8 @@ impl Default for Settings {
             step_aside: true,
             dock_enabled: false,
             dock_theme: DockThemeMode::FollowIsland,
+            dock_glass_material: DockGlassMaterial::Dynamic,
+            dock_badge_mode: DockBadgeMode::Count,
             dock_icon_size: DockIconSize::Default,
             dock_magnification: true,
             dock_hide_taskbar: true,

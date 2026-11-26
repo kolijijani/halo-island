@@ -11,7 +11,7 @@ use crate::services::dock_apps::RunningApp;
 use crate::window::MonitorInfo;
 use halo_core::geom::{Color, Point, Rect};
 use halo_core::look::{self, Look};
-use halo_core::settings::{DockIconSize, NotchTheme, NotchType};
+use halo_core::settings::{DockBadgeMode, DockGlassMaterial, DockIconSize, NotchTheme, NotchType};
 use halo_core::spring::Spring;
 use halo_core::svgpath::Seg;
 use windows::core::{w, Result, PCWSTR};
@@ -98,33 +98,91 @@ pub fn resolve_dock_look(
 /// Build [`GlassParams`] for a floating rounded capsule (`shoulder = -1.0`) so the
 /// dock shelf renders through Halo Island's GPU `res/glass.hlsl` liquid-glass pass.
 pub fn dock_glass_params(body: Rect, radius: f32, look: &Look, scale: f32) -> GlassParams {
+    dock_glass_params_with_material(body, radius, look, scale, DockGlassMaterial::Dynamic)
+}
+
+/// Build customizable [`GlassParams`] tuning refraction tint, rim specular, dispersion,
+/// and diffusion to match the chosen [`DockGlassMaterial`].
+pub fn dock_glass_params_with_material(
+    body: Rect,
+    radius: f32,
+    look: &Look,
+    scale: f32,
+    mat: DockGlassMaterial,
+) -> GlassParams {
     let th = halo_core::glass::thickness(body.h);
     let mix = if look.light { 1.0 } else { 0.0 };
-    let (ground_dark, ground_light) = if look.light {
+    let (mut ground_dark, mut ground_light) = if look.light {
         (look::GLASS_DARK.ground, look.ground)
     } else {
         (look.ground, look::GLASS_LIGHT.ground)
     };
+
+    let (tint_dark, tint_light, rim, glow, frost_mix, saturation, dispersion) = match mat {
+        DockGlassMaterial::Dynamic => (
+            0.34,
+            0.42,
+            0.80 + 0.15 * mix,
+            0.09 + 0.01 * mix,
+            th.t,
+            1.45,
+            0.03,
+        ),
+        DockGlassMaterial::SmokedDark => {
+            ground_dark = Color::hex(0x05070A);
+            (
+                0.62,
+                0.58,
+                0.92,
+                0.12,
+                (th.t + 0.12).min(1.0),
+                1.15,
+                0.015,
+            )
+        }
+        DockGlassMaterial::CrystalLight => {
+            ground_light = Color::hex(0xF8FAFC);
+            (
+                0.18,
+                0.24,
+                0.96,
+                0.14,
+                (th.t * 0.72).max(0.15),
+                1.60,
+                0.055,
+            )
+        }
+        DockGlassMaterial::FrostedMatte => (
+            0.44,
+            0.50,
+            0.70,
+            0.06,
+            (th.t + 0.35).min(1.0),
+            1.20,
+            0.01,
+        ),
+    };
+
     GlassParams {
         body,
         radius,
         shoulder: -1.0,
         bevel: th.bevel,
         mag: th.mag,
-        frost_mix: th.t,
+        frost_mix,
         light_mix: mix,
-        tint_dark: 0.34,
-        tint_light: 0.42,
+        tint_dark,
+        tint_light,
         ground_dark,
         ground_light,
-        rim: 0.80 + 0.15 * mix,
-        glow: 0.09 + 0.01 * mix,
+        rim,
+        glow,
         light_dir: (-0.6, -0.8),
-        shadow_alpha: halo_core::glass::shadow_alpha(0.38, th.t),
+        shadow_alpha: halo_core::glass::shadow_alpha(0.38, frost_mix),
         shadow_reach: th.shadow_reach,
         shadow_drop: th.shadow_drop,
-        saturation: 1.45,
-        dispersion: 0.03,
+        saturation,
+        dispersion,
         lens: 1.0,
         use_copy: false,
         probe: false,
@@ -142,6 +200,8 @@ pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DockConfig {
     pub icon_size: DockIconSize,
+    pub glass_material: DockGlassMaterial,
+    pub badge_mode: DockBadgeMode,
     pub magnification: bool,
     pub bottom_most: bool,
     pub show_apps: bool,
@@ -153,6 +213,8 @@ impl Default for DockConfig {
     fn default() -> Self {
         Self {
             icon_size: DockIconSize::Default,
+            glass_material: DockGlassMaterial::Dynamic,
+            badge_mode: DockBadgeMode::Count,
             magnification: true,
             bottom_most: true,
             show_apps: true,
@@ -1976,6 +2038,8 @@ impl Dock {
         let ctrl_open = self.ctrl_open;
         let show_apps = self.cfg.show_apps;
         let show_downloads = self.cfg.show_downloads;
+        let badge_mode = self.cfg.badge_mode;
+        let glass_mat = self.cfg.glass_material;
         let drag_pos = if self.dragging_app { self.mouse } else { None };
         let drag_out = self.drag_out;
 
@@ -1992,14 +2056,15 @@ impl Dock {
         let (look, glass_params) = if tuck_t < 0.995 && theme_look.material == look::Material::Glass {
             let r = SHELF_R.min(shelf.h * 0.5);
             self.glass.app_light = theme_look.light;
-            let (light, gp, moving) = self.glass.frame(shelf, r, -1.0, true, now, dt, scale, gfx);
+            let (light, _gp, moving) = self.glass.frame(shelf, r, -1.0, true, now, dt, scale, gfx);
             self.glass_moving = moving;
             let gl = look::glass(light);
             self.look = gl;
             self.light = light;
             gfx.set_look(gl);
-            gfx.prepare_glass(&gp, full);
-            (gl, Some(gp))
+            let custom_gp = dock_glass_params_with_material(shelf, r, gl, scale, glass_mat);
+            gfx.prepare_glass(&custom_gp, full);
+            (gl, Some(custom_gp))
         } else {
             self.glass_moving = false;
             self.look = theme_look;
@@ -2024,6 +2089,7 @@ impl Dock {
                     &slot_rects,
                     apps_slice,
                     show_downloads,
+                    badge_mode,
                     stack_open,
                     ctrl_open,
                     self.preview_open,
@@ -2219,17 +2285,28 @@ fn draw_launchpad_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is_
     }
 }
 
-/// Draw a macOS-style top-right notification badge pill (`.dock-badge` / `.dock-badge.blue`).
-fn draw_dock_badge(c: &mut Canvas<'_>, tile: Rect, count: u16, style: DockBadgeStyle) {
-    if count == 0 {
+/// Draw a macOS-style top-right notification badge pill or minimalist dot based on [`DockBadgeMode`].
+fn draw_dock_badge(c: &mut Canvas<'_>, tile: Rect, count: u16, style: DockBadgeStyle, mode: DockBadgeMode) {
+    if count == 0 || mode == DockBadgeMode::Hidden {
         return;
     }
-    let br = badge_rect(tile, count);
-    let r = br.h * 0.5;
     let (base, glow) = match style {
         DockBadgeStyle::Red => (Color::hex(0xE62E3D), Color::hex(0xE62E3D).with_alpha(0.42)),
         DockBadgeStyle::Blue => (Color::hex(0x2563EB), Color::hex(0x2563EB).with_alpha(0.42)),
     };
+
+    if mode == DockBadgeMode::Dot {
+        let dot_sz = 8.5f32.min(tile.w * 0.22);
+        let dot_r = dot_sz * 0.5;
+        let dot_rect = Rect::new(tile.right() - dot_sz + 1.0, tile.y - 1.0, dot_sz, dot_sz);
+        c.fill_rrect(Rect::new(dot_rect.x, dot_rect.y + 1.0, dot_sz, dot_sz), dot_r, glow);
+        c.fill_rrect(dot_rect, dot_r, base);
+        c.stroke_rrect(dot_rect, dot_r, Color::white(0.45), 1.0);
+        return;
+    }
+
+    let br = badge_rect(tile, count);
+    let r = br.h * 0.5;
     c.fill_rrect(Rect::new(br.x, br.y + 1.5, br.w, br.h), r, glow);
     c.fill_rrect(br, r, base);
     let segs = crate::pill::shape::segments(br, r);
@@ -2427,6 +2504,7 @@ fn draw_dock(
     slot_rects: &[Rect],
     apps: &[RunningApp],
     show_downloads: bool,
+    badge_mode: DockBadgeMode,
     stack_open: bool,
     ctrl_open: bool,
     preview_open: bool,
@@ -2503,10 +2581,10 @@ fn draw_dock(
 
                     match slot.action {
                         SlotAction::Page(PageKind::Tasks) if tray.tasks_open > 0 => {
-                            draw_dock_badge(c, tile, tray.tasks_open, DockBadgeStyle::Red);
+                            draw_dock_badge(c, tile, tray.tasks_open, DockBadgeStyle::Red, badge_mode);
                         }
                         SlotAction::Page(PageKind::Shelf) if tray.shelf_count > 0 => {
-                            draw_dock_badge(c, tile, tray.shelf_count, DockBadgeStyle::Blue);
+                            draw_dock_badge(c, tile, tray.shelf_count, DockBadgeStyle::Blue, badge_mode);
                         }
                         _ => {}
                     }
@@ -2612,7 +2690,7 @@ fn draw_dock(
                         }
 
                         if app.badge > 0 {
-                            draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
+                            draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red, badge_mode);
                         }
 
                         // Active running-app indicator dot (only when running; pinned idle apps have no dot).
@@ -2643,7 +2721,7 @@ fn draw_dock(
                         draw_squircle_shadow(c, tile, tr, light);
                         draw_downloads_stack_icon(c, tile, tr, accent, light, is_hover, stack_open);
                         if tray.downloads_active > 0 {
-                            draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue);
+                            draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue, badge_mode);
                         }
                         if stack_open {
                             draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent, 0.95);
@@ -5947,6 +6025,21 @@ mod tests {
         assert_eq!(gp_halo.light_mix, 1.0);
         assert_eq!(gp_halo.ground_light, look::HALO.ground);
         assert!((gp_halo.rim - 0.95).abs() < 1e-4);
+
+        // Phase E: Glass Material variations and badge modes
+        let gp_smoked = dock_glass_params_with_material(shelf, SHELF_R, &look::GLASS_DARK, 1.0, DockGlassMaterial::SmokedDark);
+        assert_eq!(gp_smoked.tint_dark, 0.62);
+        assert_eq!(gp_smoked.ground_dark, Color::hex(0x05070A));
+        assert_eq!(gp_smoked.rim, 0.92);
+
+        let gp_crystal = dock_glass_params_with_material(shelf, SHELF_R, &look::GLASS_LIGHT, 1.0, DockGlassMaterial::CrystalLight);
+        assert_eq!(gp_crystal.tint_light, 0.24);
+        assert_eq!(gp_crystal.ground_light, Color::hex(0xF8FAFC));
+        assert_eq!(gp_crystal.dispersion, 0.055);
+
+        let gp_matte = dock_glass_params_with_material(shelf, SHELF_R, &look::GLASS_DARK, 1.0, DockGlassMaterial::FrostedMatte);
+        assert_eq!(gp_matte.glow, 0.06);
+        assert_eq!(gp_matte.saturation, 1.20);
 
         // Parabolic launch/click bounce curve: 0 at rest/end, negative upward lift during hops, decaying amplitude.
         assert_eq!(bounce_offset_y(0.0), 0.0);

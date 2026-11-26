@@ -1940,6 +1940,8 @@ impl App {
         let s = &self.st.settings;
         crate::dock::DockConfig {
             icon_size: s.dock_icon_size,
+            glass_material: s.dock_glass_material,
+            badge_mode: s.dock_badge_mode,
             magnification: s.dock_magnification,
             bottom_most: s.dock_bottom_most,
             show_apps: s.dock_show_apps,
@@ -3550,6 +3552,8 @@ impl App {
         }
         if (before.dock_enabled != self.st.settings.dock_enabled
             || before.dock_theme != self.st.settings.dock_theme
+            || before.dock_glass_material != self.st.settings.dock_glass_material
+            || before.dock_badge_mode != self.st.settings.dock_badge_mode
             || before.dock_icon_size != self.st.settings.dock_icon_size
             || before.dock_magnification != self.st.settings.dock_magnification
             || before.dock_hide_taskbar != self.st.settings.dock_hide_taskbar
