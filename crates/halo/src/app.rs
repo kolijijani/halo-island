@@ -2297,6 +2297,11 @@ impl App {
             }
             crate::dock::DockAction::LaunchPinnedApp(spec) => {
                 self.close_dock_popovers();
+                let instant = self.reduce_motion || self.st.power.saver;
+                if let Some(d) = self.dock.as_mut() {
+                    d.trigger_launch(&spec, instant);
+                }
+                self.request_frame();
                 crate::shell::open_dock_spec(&spec);
             }
             crate::dock::DockAction::ToggleDownloadsStack(icon_rect) => {
@@ -2531,6 +2536,11 @@ impl App {
             crate::dock::LaunchpadAction::RequestFrame => self.request_frame(),
             crate::dock::LaunchpadAction::LaunchApp(spec) => {
                 self.close_dock_launchpad();
+                let instant = self.reduce_motion || self.st.power.saver;
+                if let Some(d) = self.dock.as_mut() {
+                    d.trigger_launch(&spec, instant);
+                }
+                self.request_frame();
                 crate::shell::open_dock_spec(&spec);
             }
             crate::dock::LaunchpadAction::TogglePin(spec) => {
@@ -2656,6 +2666,11 @@ impl App {
                 services::dock_apps::focus_window(hwnd);
             }
             crate::dock::DockCmd::LaunchApp(spec) => {
+                let instant = self.reduce_motion || self.st.power.saver;
+                if let Some(d) = self.dock.as_mut() {
+                    d.trigger_launch(&spec, instant);
+                }
+                self.request_frame();
                 crate::shell::open_dock_spec(&spec);
             }
             crate::dock::DockCmd::KeepInDock(spec) => {

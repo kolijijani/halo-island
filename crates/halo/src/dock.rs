@@ -711,6 +711,7 @@ pub struct Dock {
     thumbs: std::collections::HashMap<isize, (Image, Option<RECT>)>,
     scales: Vec<Spring>,
     bounces: Vec<f32>,
+    launching: std::collections::HashMap<String, f32>,
     tracking: bool,
     mouse: Option<Point>,
     hovered: Option<usize>,
@@ -801,6 +802,7 @@ impl Dock {
             thumbs: std::collections::HashMap::new(),
             scales: (0..ANCHOR_SLOTS.len() + 2).map(|_| mag_spring(1.0)).collect(),
             bounces: vec![0.0; ANCHOR_SLOTS.len() + 2],
+            launching: std::collections::HashMap::new(),
             tracking: false,
             mouse: None,
             hovered: None,
@@ -947,7 +949,8 @@ impl Dock {
                 || self.glass_moving
                 || !self.tuck.is_settled_eps(TUCK_EPS)
                 || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS))
-                || self.bounces.iter().any(|&b| b > 0.0))
+                || self.bounces.iter().any(|&b| b > 0.0)
+                || !self.launching.is_empty())
     }
 
     pub fn trigger_bounce(&mut self, index: usize, instant: bool) {
@@ -959,6 +962,47 @@ impl Dock {
                 self.dirty = true;
             }
         }
+    }
+
+    /// Mark an app as launching by spec / exe / key so its icon bounces repeatedly until
+    /// a window appears or timeout passes.
+    pub fn trigger_launch(&mut self, spec: &str, instant: bool) {
+        if instant {
+            return;
+        }
+        let clean = spec.trim().to_ascii_lowercase();
+        if clean.is_empty() {
+            return;
+        }
+        self.launching.insert(clean.clone(), 3.5);
+        if let Some(i) = self.find_slot_by_spec(&clean) {
+            self.trigger_bounce(i, false);
+        }
+        self.dirty = true;
+    }
+
+    /// Stop launch bounce for matching app spec or exe.
+    #[allow(dead_code)]
+    pub fn cancel_launch(&mut self, spec: &str) {
+        let clean = spec.trim().to_ascii_lowercase();
+        self.launching.remove(&clean);
+    }
+
+    /// Locate slot index for a given app spec, exe, or key.
+    pub fn find_slot_by_spec(&self, spec: &str) -> Option<usize> {
+        let clean = spec.trim().to_ascii_lowercase();
+        let stem = std::path::Path::new(&clean)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&clean)
+            .to_ascii_lowercase();
+        self.visible_apps().iter().position(|a| {
+            a.launch.as_ref().is_some_and(|l| l.to_ascii_lowercase() == clean || l.to_ascii_lowercase().contains(&stem))
+                || a.exe.as_ref().is_some_and(|e| e.to_ascii_lowercase() == clean || e.to_ascii_lowercase().contains(&stem))
+                || a.key.to_ascii_lowercase() == clean
+                || a.key.to_ascii_lowercase().contains(&stem)
+                || a.name.to_ascii_lowercase().contains(&stem)
+        }).map(|idx| ANCHOR_SLOTS.len() + idx)
     }
 
     fn visible_apps(&self) -> &[RunningApp] {
@@ -1026,6 +1070,20 @@ impl Dock {
             apps.iter().any(|a| {
                 a.hwnd.0 as isize == raw || a.windows.iter().any(|(w, _)| w.0 as isize == raw)
             })
+        });
+        // Check if any launching app has now appeared as running with a window or process
+        self.launching.retain(|target, _| {
+            let running = apps.iter().any(|a| {
+                if !a.running {
+                    return false;
+                }
+                let t = target.to_ascii_lowercase();
+                a.launch.as_ref().is_some_and(|l| l.to_ascii_lowercase() == t || l.to_ascii_lowercase().contains(&t))
+                    || a.exe.as_ref().is_some_and(|e| e.to_ascii_lowercase() == t || e.to_ascii_lowercase().contains(&t))
+                    || a.key.to_ascii_lowercase() == t
+                    || a.name.to_ascii_lowercase() == t
+            });
+            !running
         });
         for next in &mut apps {
             if next.minimized && next.thumb.is_none() {
@@ -1667,10 +1725,27 @@ impl Dock {
                 s.snap(s.target);
             }
             self.bounces.fill(0.0);
+            self.launching.clear();
         } else {
             self.tuck.step_eps(dt, TUCK_EPS);
             for s in &mut self.scales {
                 s.step_eps(dt, MAG_EPS);
+            }
+            // Step launch timers and keep bouncing active launching apps
+            if !self.launching.is_empty() {
+                self.launching.retain(|_, time_left| {
+                    *time_left -= dt;
+                    *time_left > 0.0
+                });
+                for (target, _) in &self.launching {
+                    if let Some(i) = self.find_slot_by_spec(target) {
+                        if let Some(b) = self.bounces.get_mut(i) {
+                            if *b <= 0.0 {
+                                *b = 0.001;
+                            }
+                        }
+                    }
+                }
             }
             for b in &mut self.bounces {
                 if *b > 0.0 {
@@ -5625,6 +5700,44 @@ mod tests {
         let hop2 = bounce_offset_y(0.75);
         assert!(hop1 < -10.0, "first bounce hop must lift icon upward: {hop1}");
         assert!(hop2 < -3.0 && hop2 > hop1, "second bounce hop must decay: {hop2} vs {hop1}");
+    }
+
+    #[test]
+    fn launch_bounce_tracking_and_auto_settle() {
+        if unsafe { GetModuleHandleW(PCWSTR::null()) }.is_err() {
+            return;
+        }
+        unsafe extern "system" fn test_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+            unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+        }
+        let _ = crate::window::register_classes(test_proc, test_proc);
+        let _ = register(test_proc);
+        let m = crate::window::pick_monitor(halo_core::settings::MonitorChoice::Primary);
+        let mut dock = Dock::new(&m, false, None).expect("open dock");
+        let sample = vec![
+            RunningApp {
+                key: "calc".into(),
+                name: "Calculator".into(),
+                exe: Some("calc.exe".into()),
+                launch: Some("calc.exe".into()),
+                running: false,
+                ..Default::default()
+            },
+        ];
+        dock.set_apps(sample.clone());
+        let calc_idx = ANCHOR_SLOTS.len();
+        assert_eq!(dock.find_slot_by_spec("calc.exe"), Some(calc_idx));
+
+        // Trigger launch
+        dock.trigger_launch("calc.exe", false);
+        assert!(dock.needs_frame());
+        assert!(dock.bounces[calc_idx] > 0.0);
+
+        // App becomes running in next refresh -> launch bounces stop
+        let mut running_sample = sample;
+        running_sample[0].running = true;
+        dock.set_apps(running_sample);
+        assert!(dock.launching.is_empty(), "launching map must clear once app runs");
     }
 
     #[test]
