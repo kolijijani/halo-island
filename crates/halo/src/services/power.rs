@@ -3,14 +3,17 @@
 
 use crate::commands::PowerAction;
 use crate::state::PowerState;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use windows::core::GUID;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LUID, WPARAM};
+use windows::core::{w, GUID};
+use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, HWND, LPARAM, LUID, WPARAM};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, SE_SHUTDOWN_NAME, TOKEN_ADJUST_PRIVILEGES,
     TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
+use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
+use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Power::{
     GetSystemPowerStatus, RegisterPowerSettingNotification, SetSuspendState, POWERBROADCAST_SETTING, SYSTEM_POWER_STATUS,
 };
@@ -113,6 +116,105 @@ pub fn brightness_change(wp: WPARAM, lp: LPARAM) -> Option<f32> {
     }
     let v = unsafe { std::ptr::read_unaligned(s.Data.as_ptr() as *const u32) };
     Some((v.min(100) as f32) / 100.0)
+}
+
+const IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS: u32 = 0x0023_0498;
+const IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS: u32 = 0x0023_049C;
+
+static PENDING_BRIGHTNESS: AtomicU8 = AtomicU8::new(u8::MAX);
+static BRIGHTNESS_WORKER: AtomicBool = AtomicBool::new(false);
+
+/// Query the built-in panel brightness percentage (`0..=100`) via `\\.\LCD`.
+/// Returns `None` on desktop monitors without an integrated panel driver.
+pub fn query_brightness() -> Option<u8> {
+    unsafe {
+        let h = CreateFileW(
+            w!("\\\\.\\LCD"),
+            (GENERIC_READ | GENERIC_WRITE).0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAGS_AND_ATTRIBUTES(0),
+            None,
+        )
+        .ok()?;
+        let mut buf = [0u8; 3];
+        let mut got = 0u32;
+        let ok = DeviceIoControl(
+            h,
+            IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS,
+            None,
+            0,
+            Some(buf.as_mut_ptr().cast()),
+            buf.len() as u32,
+            Some(&mut got),
+            None,
+        )
+        .is_ok();
+        let _ = CloseHandle(h);
+        if !ok || got < 3 {
+            return None;
+        }
+        // DISPLAY_BRIGHTNESS: [ucDisplayPolicy, ucACBrightness, ucDCBrightness]
+        let pct = if buf[0] == 2 { buf[2] } else { buf[1] };
+        Some(pct.min(100))
+    }
+}
+
+/// Set built-in panel brightness (`0..=100`) via `\\.\LCD`.
+pub fn set_brightness(pct: u8) -> bool {
+    let p = pct.min(100);
+    let buf = [3u8, p, p];
+    unsafe {
+        let Ok(h) = CreateFileW(
+            w!("\\\\.\\LCD"),
+            (GENERIC_READ | GENERIC_WRITE).0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAGS_AND_ATTRIBUTES(0),
+            None,
+        ) else {
+            return false;
+        };
+        let ok = DeviceIoControl(
+            h,
+            IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS,
+            Some(buf.as_ptr().cast()),
+            buf.len() as u32,
+            None,
+            0,
+            None,
+            None,
+        )
+        .is_ok();
+        let _ = CloseHandle(h);
+        ok
+    }
+}
+
+/// Coalesced non-blocking brightness setter for smooth 120 Hz Control Center slider drags.
+pub fn set_brightness_async(pct: u8) {
+    PENDING_BRIGHTNESS.store(pct.min(100), Ordering::Release);
+    if BRIGHTNESS_WORKER
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        std::thread::spawn(|| {
+            loop {
+                let next = PENDING_BRIGHTNESS.swap(u8::MAX, Ordering::AcqRel);
+                if next == u8::MAX {
+                    break;
+                }
+                let _ = set_brightness(next);
+            }
+            BRIGHTNESS_WORKER.store(false, Ordering::Release);
+            let tail = PENDING_BRIGHTNESS.swap(u8::MAX, Ordering::AcqRel);
+            if tail != u8::MAX {
+                let _ = set_brightness(tail);
+            }
+        });
+    }
 }
 
 /// Enable `SE_SHUTDOWN_NAME` on the current process token before `ExitWindowsEx`.

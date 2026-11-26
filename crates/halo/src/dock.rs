@@ -3046,19 +3046,46 @@ impl DockStack {
 // ============================================================================
 
 pub const FLYOUT_W: f32 = 348.0;
-pub const FLYOUT_H: f32 = 324.0;
+pub const FLYOUT_H: f32 = 416.0;
 pub const FLYOUT_PAD: f32 = 15.0;
 pub const FLYOUT_R: f32 = 20.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CcView {
+    #[default]
+    Main,
+    Wifi,
+    Battery,
+    Calendar,
+    Ai,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DockAiRow {
+    pub name: String,
+    pub pct: u8,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DockCcExtra {
+    pub saver: bool,
+    pub cpu_pct: u8,
+    pub power_w: Option<f32>,
+    pub ai_rows: Vec<DockAiRow>,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlyoutAction {
     None,
     RequestFrame,
     SetVolume(f32),
+    SetBrightness(u8),
     ToggleMute,
     ToggleFocus,
     OpenUri(&'static str),
     OpenSystemPage,
+    OpenAiPage,
     Close,
 }
 
@@ -3069,9 +3096,20 @@ pub enum FlyoutZone {
     TileFocus,
     TileSnip,
     NetworkBox,
+    BrightnessSlider,
     VolumeIcon,
     VolumeSlider,
+    SubWifi,
+    SubBattery,
+    SubCalendar,
+    SubAi,
     FooterSystem,
+    SubBack,
+    SubAction1,
+    SubAction2,
+    CalPrev,
+    CalNext,
+    CalToday,
 }
 
 /// Physical pixel bounds `(x, y, w, h)` for the Control Center flyout anchored above `anchor_screen`.
@@ -3106,29 +3144,83 @@ pub fn flyout_tile_rect(card: Rect, idx: usize) -> Rect {
 
 /// Recessed Available Networks card rectangle (`.cc-net-box`).
 pub fn flyout_net_box_rect(card: Rect) -> Rect {
-    Rect::new(FLYOUT_PAD, 134.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 82.0)
+    Rect::new(FLYOUT_PAD, 132.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 78.0)
+}
+
+/// Display Brightness slider card rectangle (`.cc-bright-card`).
+pub fn flyout_brightness_card_rect(card: Rect) -> Rect {
+    Rect::new(FLYOUT_PAD, 218.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 58.0)
+}
+
+/// Interactive pill track inside the Display Brightness slider card.
+pub fn flyout_brightness_track_rect(card: Rect) -> Rect {
+    let bc = flyout_brightness_card_rect(card);
+    Rect::new(bc.x + 12.0, bc.y + 30.0, (bc.w - 24.0).max(40.0), 20.0)
 }
 
 /// Sound Master Volume slider card rectangle (`.cc-slider-card`).
 pub fn flyout_slider_card_rect(card: Rect) -> Rect {
-    Rect::new(FLYOUT_PAD, 226.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 62.0)
+    Rect::new(FLYOUT_PAD, 284.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 58.0)
 }
 
 /// Interactive pill track inside the Sound slider card (`.cc-sl-track`).
 pub fn flyout_slider_track_rect(card: Rect) -> Rect {
     let sc = flyout_slider_card_rect(card);
-    Rect::new(sc.x + 12.0, sc.y + 32.0, (sc.w - 24.0).max(40.0), 20.0)
+    Rect::new(sc.x + 12.0, sc.y + 30.0, (sc.w - 24.0).max(40.0), 20.0)
 }
 
 /// Speaker mute-toggle hit box inside `.cc-sl-top`.
 pub fn flyout_volume_icon_rect(card: Rect) -> Rect {
     let sc = flyout_slider_card_rect(card);
-    Rect::new(sc.x + 8.0, sc.y + 6.0, 28.0, 22.0)
+    Rect::new(sc.x + 8.0, sc.y + 5.0, 28.0, 22.0)
+}
+
+/// Quick sub-flyout pill button (`idx` in `0..4`: Wi-Fi, Battery, Calendar, AI Usage).
+pub fn flyout_sub_pill_rect(card: Rect, idx: usize) -> Rect {
+    let gap = 6.0;
+    let inner_w = (card.w - 2.0 * FLYOUT_PAD).max(120.0);
+    let w = (inner_w - 3.0 * gap) * 0.25;
+    Rect::new(FLYOUT_PAD + idx as f32 * (w + gap), 350.0, w, 24.0)
 }
 
 /// Footer status row rectangle (`.cc-foot`).
 pub fn flyout_footer_rect(card: Rect) -> Rect {
-    Rect::new(FLYOUT_PAD, 294.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 20.0)
+    Rect::new(FLYOUT_PAD, 382.0, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 20.0)
+}
+
+fn cc_back_rect() -> Rect {
+    Rect::new(FLYOUT_PAD, FLYOUT_PAD, 138.0, 26.0)
+}
+
+fn cc_sub_action_rect(card: Rect, row: usize) -> Rect {
+    let y = card.h - FLYOUT_PAD - (2 - row) as f32 * 34.0 + 4.0;
+    Rect::new(FLYOUT_PAD, y, (card.w - 2.0 * FLYOUT_PAD).max(80.0), 28.0)
+}
+
+fn cc_cal_nav_rects(card: Rect) -> (Rect, Rect, Rect) {
+    let y = 78.0;
+    let title = Rect::new(FLYOUT_PAD, y, 160.0, 26.0);
+    let prev = Rect::new(card.w - FLYOUT_PAD - 56.0, y, 26.0, 26.0);
+    let next = Rect::new(card.w - FLYOUT_PAD - 26.0, y, 26.0, 26.0);
+    (title, prev, next)
+}
+
+fn cc_today_ymd() -> (i32, u8, u8) {
+    let dt = crate::clock::local_shown();
+    (dt.year.max(2024), dt.month.clamp(1, 12), dt.day.clamp(1, 31))
+}
+
+fn cc_days_in_month(y: i32, m: u8) -> i32 {
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][(m.clamp(1, 12) - 1) as usize]
+}
+
+/// 0 = Sunday (Sakamoto).
+fn cc_weekday(y: i32, m: u8, d: i32) -> i32 {
+    const T: [i32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let mi = (m.clamp(1, 12) - 1) as usize;
+    let y = if m < 3 { y - 1 } else { y };
+    (y + y / 4 - y / 100 + y / 400 + T[mi] + d).rem_euclid(7)
 }
 
 /// Transient System Tray Control Center popover (`Halo.DockFlyout`).
@@ -3141,8 +3233,14 @@ pub struct DockControlCenter {
     look: &'static Look,
     tray: DockTrayState,
     live: DockLive,
+    pub view: CcView,
+    pub brightness_pct: u8,
+    pub extra: DockCcExtra,
+    pub cal_year: i32,
+    pub cal_month: u8,
     hovered: Option<FlyoutZone>,
     dragging_vol: bool,
+    dragging_bright: bool,
     tracking: bool,
     shown: bool,
     dirty: bool,
@@ -3198,6 +3296,8 @@ impl DockControlCenter {
         };
         gfx.set_shared_d3d(shared);
         let _ = gfx.set_surface(w, h);
+        let (cal_year, cal_month, _) = cc_today_ymd();
+        let brightness_pct = crate::services::power::query_brightness().unwrap_or(80);
         Ok(Self {
             gfx: Some(gfx),
             hwnd,
@@ -3207,12 +3307,44 @@ impl DockControlCenter {
             look,
             tray,
             live,
+            view: CcView::Main,
+            brightness_pct,
+            extra: DockCcExtra::default(),
+            cal_year,
+            cal_month,
             hovered: None,
             dragging_vol: false,
+            dragging_bright: false,
             tracking: false,
             shown: false,
             dirty: true,
         })
+    }
+
+    pub fn set_brightness_pct(&mut self, pct: u8) -> bool {
+        let clamped = pct.min(100);
+        if self.dragging_bright || self.brightness_pct == clamped {
+            return false;
+        }
+        self.brightness_pct = clamped;
+        self.dirty = true;
+        true
+    }
+
+    pub fn set_extra(&mut self, extra: DockCcExtra) -> bool {
+        if self.extra == extra {
+            return false;
+        }
+        self.extra = extra;
+        self.dirty = true;
+        true
+    }
+
+    pub fn step_calendar_month(&mut self, delta: i32) {
+        let total = self.cal_year * 12 + (self.cal_month.clamp(1, 12) as i32 - 1) + delta;
+        self.cal_year = total.div_euclid(12);
+        self.cal_month = (total.rem_euclid(12) + 1) as u8;
+        self.dirty = true;
     }
 
     pub fn set_live(&mut self, live: DockLive) -> bool {
@@ -3258,6 +3390,33 @@ impl DockControlCenter {
 
     fn hit_test(&self, p: Point) -> Option<FlyoutZone> {
         let card = self.card_dip();
+        if self.view != CcView::Main {
+            if cc_back_rect().contains(p) {
+                return Some(FlyoutZone::SubBack);
+            }
+            if self.view == CcView::Calendar {
+                let (title_r, prev_r, next_r) = cc_cal_nav_rects(card);
+                if prev_r.contains(p) {
+                    return Some(FlyoutZone::CalPrev);
+                }
+                if next_r.contains(p) {
+                    return Some(FlyoutZone::CalNext);
+                }
+                if title_r.contains(p) {
+                    return Some(FlyoutZone::CalToday);
+                }
+            }
+            if cc_sub_action_rect(card, 0).contains(p) {
+                return Some(FlyoutZone::SubAction1);
+            }
+            if cc_sub_action_rect(card, 1).contains(p) {
+                return Some(FlyoutZone::SubAction2);
+            }
+            return None;
+        }
+        if flyout_brightness_track_rect(card).inset(-4.0, -4.0).contains(p) {
+            return Some(FlyoutZone::BrightnessSlider);
+        }
         if flyout_slider_track_rect(card).inset(-4.0, -4.0).contains(p) {
             return Some(FlyoutZone::VolumeSlider);
         }
@@ -3280,8 +3439,25 @@ impl DockControlCenter {
         if flyout_net_box_rect(card).contains(p) {
             return Some(FlyoutZone::NetworkBox);
         }
-        if flyout_footer_rect(card).contains(p) {
-            return Some(FlyoutZone::FooterSystem);
+        for (i, z) in [
+            FlyoutZone::SubWifi,
+            FlyoutZone::SubBattery,
+            FlyoutZone::SubCalendar,
+            FlyoutZone::SubAi,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if flyout_sub_pill_rect(card, i).contains(p) {
+                return Some(z);
+            }
+        }
+        let ft = flyout_footer_rect(card);
+        if ft.contains(p) {
+            if p.x >= ft.right() - 96.0 {
+                return Some(FlyoutZone::FooterSystem);
+            }
+            return Some(FlyoutZone::SubBattery);
         }
         None
     }
@@ -3291,7 +3467,13 @@ impl DockControlCenter {
         ((x - tr.x) / tr.w.max(1.0)).clamp(0.0, 1.0)
     }
 
-    pub fn handle_message(&mut self, hwnd: HWND, msg: u32, _wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, FlyoutAction) {
+    fn brightness_at_x(&self, x: f32) -> u8 {
+        let tr = flyout_brightness_track_rect(self.card_dip());
+        let frac = ((x - tr.x) / tr.w.max(1.0)).clamp(0.0, 1.0);
+        (frac * 100.0).round() as u8
+    }
+
+    pub fn handle_message(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, FlyoutAction) {
         if hwnd != self.hwnd {
             return (None, FlyoutAction::None);
         }
@@ -3302,6 +3484,14 @@ impl DockControlCenter {
         };
         match msg {
             WM_MOUSEACTIVATE => (Some(LRESULT(MA_NOACTIVATE as isize)), FlyoutAction::None),
+            WM_MOUSEWHEEL if self.view == CcView::Calendar => {
+                let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
+                if delta != 0 {
+                    self.step_calendar_month(if delta > 0 { -1 } else { 1 });
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
             WM_MOUSEMOVE => {
                 if !self.tracking {
                     self.tracking = true;
@@ -3316,6 +3506,14 @@ impl DockControlCenter {
                     }
                 }
                 let p = to_dip(lp, self.scale());
+                if self.dragging_bright {
+                    let pct = self.brightness_at_x(p.x);
+                    if self.brightness_pct != pct {
+                        self.brightness_pct = pct;
+                        self.dirty = true;
+                    }
+                    return (Some(LRESULT(0)), FlyoutAction::SetBrightness(pct));
+                }
                 if self.dragging_vol {
                     let v = self.volume_at_x(p.x);
                     let pct = (v * 100.0).round() as u8;
@@ -3337,7 +3535,7 @@ impl DockControlCenter {
             }
             WM_MOUSELEAVE => {
                 self.tracking = false;
-                if !self.dragging_vol && self.hovered.take().is_some() {
+                if !self.dragging_vol && !self.dragging_bright && self.hovered.take().is_some() {
                     self.dirty = true;
                     return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
                 }
@@ -3345,23 +3543,46 @@ impl DockControlCenter {
             }
             WM_LBUTTONDOWN => {
                 let p = to_dip(lp, self.scale());
-                if self.hit_test(p) == Some(FlyoutZone::VolumeSlider) {
-                    self.dragging_vol = true;
-                    unsafe {
-                        SetCapture(self.hwnd);
+                match self.hit_test(p) {
+                    Some(FlyoutZone::BrightnessSlider) => {
+                        self.dragging_bright = true;
+                        unsafe {
+                            SetCapture(self.hwnd);
+                        }
+                        let pct = self.brightness_at_x(p.x);
+                        self.brightness_pct = pct;
+                        self.dirty = true;
+                        return (Some(LRESULT(0)), FlyoutAction::SetBrightness(pct));
                     }
-                    let v = self.volume_at_x(p.x);
-                    let pct = (v * 100.0).round() as u8;
-                    self.tray.volume_pct = pct;
-                    self.tray.muted = pct == 0;
-                    self.tray.volume_known = true;
-                    self.dirty = true;
-                    return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
+                    Some(FlyoutZone::VolumeSlider) => {
+                        self.dragging_vol = true;
+                        unsafe {
+                            SetCapture(self.hwnd);
+                        }
+                        let v = self.volume_at_x(p.x);
+                        let pct = (v * 100.0).round() as u8;
+                        self.tray.volume_pct = pct;
+                        self.tray.muted = pct == 0;
+                        self.tray.volume_known = true;
+                        self.dirty = true;
+                        return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
+                    }
+                    _ => {}
                 }
                 (Some(LRESULT(0)), FlyoutAction::None)
             }
             WM_LBUTTONUP => {
                 let p = to_dip(lp, self.scale());
+                if self.dragging_bright {
+                    self.dragging_bright = false;
+                    unsafe {
+                        let _ = ReleaseCapture();
+                    }
+                    let pct = self.brightness_at_x(p.x);
+                    self.brightness_pct = pct;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::SetBrightness(pct));
+                }
                 if self.dragging_vol {
                     self.dragging_vol = false;
                     unsafe {
@@ -3372,12 +3593,78 @@ impl DockControlCenter {
                     return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
                 }
                 let act = match self.hit_test(p) {
-                    Some(FlyoutZone::TileWifi) | Some(FlyoutZone::NetworkBox) => {
-                        FlyoutAction::OpenUri("ms-availablenetworks:")
+                    Some(FlyoutZone::TileWifi) => FlyoutAction::OpenUri("ms-availablenetworks:"),
+                    Some(FlyoutZone::NetworkBox) | Some(FlyoutZone::SubWifi) => {
+                        self.view = CcView::Wifi;
+                        self.hovered = None;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
                     }
+                    Some(FlyoutZone::SubBattery) => {
+                        self.view = CcView::Battery;
+                        self.hovered = None;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::SubCalendar) => {
+                        let (y, m, _) = cc_today_ymd();
+                        self.cal_year = y;
+                        self.cal_month = m;
+                        self.view = CcView::Calendar;
+                        self.hovered = None;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::SubAi) => {
+                        self.view = CcView::Ai;
+                        self.hovered = None;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::SubBack) => {
+                        self.view = CcView::Main;
+                        self.hovered = None;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::CalPrev) => {
+                        self.step_calendar_month(-1);
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::CalNext) => {
+                        self.step_calendar_month(1);
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::CalToday) => {
+                        let (y, m, _) = cc_today_ymd();
+                        self.cal_year = y;
+                        self.cal_month = m;
+                        self.dirty = true;
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::SubAction1) => match self.view {
+                        CcView::Wifi => FlyoutAction::OpenUri("ms-availablenetworks:"),
+                        CcView::Battery => FlyoutAction::OpenUri("ms-settings:powersleep"),
+                        CcView::Calendar => FlyoutAction::OpenUri("ms-actioncenter:"),
+                        CcView::Ai => FlyoutAction::OpenAiPage,
+                        CcView::Main => FlyoutAction::None,
+                    },
+                    Some(FlyoutZone::SubAction2) => match self.view {
+                        CcView::Wifi => FlyoutAction::OpenUri("ms-settings:network-wifi"),
+                        CcView::Battery => FlyoutAction::OpenSystemPage,
+                        CcView::Calendar => FlyoutAction::OpenUri("ms-settings:dateandtime"),
+                        CcView::Ai => FlyoutAction::OpenAiPage,
+                        CcView::Main => FlyoutAction::None,
+                    },
                     Some(FlyoutZone::TileBluetooth) => FlyoutAction::OpenUri("ms-settings:bluetooth"),
                     Some(FlyoutZone::TileFocus) => FlyoutAction::ToggleFocus,
                     Some(FlyoutZone::TileSnip) => FlyoutAction::OpenUri("ms-screenclip:"),
+                    Some(FlyoutZone::BrightnessSlider) => {
+                        let pct = self.brightness_at_x(p.x);
+                        self.brightness_pct = pct;
+                        self.dirty = true;
+                        FlyoutAction::SetBrightness(pct)
+                    }
                     Some(FlyoutZone::VolumeIcon) => FlyoutAction::ToggleMute,
                     Some(FlyoutZone::VolumeSlider) => FlyoutAction::SetVolume(self.volume_at_x(p.x)),
                     Some(FlyoutZone::FooterSystem) => FlyoutAction::OpenSystemPage,
@@ -3387,12 +3674,25 @@ impl DockControlCenter {
             }
             WM_CAPTURECHANGED => {
                 self.dragging_vol = false;
+                self.dragging_bright = false;
                 (Some(LRESULT(0)), FlyoutAction::None)
             }
-            WM_RBUTTONUP => (Some(LRESULT(0)), FlyoutAction::Close),
+            WM_RBUTTONUP => {
+                if self.view != CcView::Main {
+                    self.view = CcView::Main;
+                    self.hovered = None;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::Close)
+            }
             WM_SETCURSOR if (lp.0 & 0xffff) as u32 == HTCLIENT => {
                 unsafe {
-                    let id = if self.hovered.is_some() || self.dragging_vol { IDC_HAND } else { IDC_ARROW };
+                    let id = if self.hovered.is_some() || self.dragging_vol || self.dragging_bright {
+                        IDC_HAND
+                    } else {
+                        IDC_ARROW
+                    };
                     if let Ok(c) = LoadCursorW(None, id) {
                         SetCursor(c);
                     }
@@ -3414,6 +3714,11 @@ impl DockControlCenter {
         let light = look.light;
         let tray = self.tray;
         let live = self.live.clone();
+        let view = self.view;
+        let bright_pct = self.brightness_pct.min(100);
+        let extra = self.extra.clone();
+        let cal_year = self.cal_year;
+        let cal_month = self.cal_month.clamp(1, 12);
         let hovered = self.hovered;
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -3436,13 +3741,13 @@ impl DockControlCenter {
             c.unthemed(|c| {
                 let ink = look.ink;
                 let sub = ink.with_alpha(if light { 0.58 } else { 0.68 });
+                let accent = look.accent.unwrap_or(Color::hex(0x0A84FF));
                 if let Some(gp) = glass_params.as_ref() {
                     c.glass(gp, card);
                 } else {
                     crate::pill::shape::draw_body(c, body, FLYOUT_R, look.ground, Some(look.border));
                 }
 
-                // 1. 2x2 Quick Tiles Grid (.cc-grid: Wi-Fi, Bluetooth, Focus Mode, Screen Snip)
                 let wifi_on = tray.wifi_connected != Some(false);
                 let wifi_sub: &str = if !wifi_on {
                     "Offline"
@@ -3451,6 +3756,312 @@ impl DockControlCenter {
                 } else {
                     &live.ssid
                 };
+
+                if view != CcView::Main {
+                    let back_r = cc_back_rect();
+                    let back_hov = hovered == Some(FlyoutZone::SubBack);
+                    let back_bg = if back_hov {
+                        if light { Color::black(0.10) } else { Color::white(0.14) }
+                    } else if light {
+                        Color::black(0.05)
+                    } else {
+                        Color::white(0.07)
+                    };
+                    c.fill_rrect(back_r, 8.0, back_bg);
+                    let back_st = TextStyle {
+                        size: 11.5,
+                        ..TextStyle::caption().weight(Weight::Semibold).color(if back_hov { accent } else { ink })
+                    };
+                    c.text("← Control Center", Rect::new(back_r.x + 8.0, back_r.y + 4.0, back_r.w - 12.0, 18.0), &back_st);
+
+                    let view_title = match view {
+                        CcView::Wifi => "WI-FI & NETWORK",
+                        CcView::Battery => "BATTERY & POWER",
+                        CcView::Calendar => "CALENDAR",
+                        CcView::Ai => "AI QUOTA & USAGE",
+                        CcView::Main => "",
+                    };
+                    let vt_st = TextStyle {
+                        size: 10.0,
+                        ..TextStyle::caption().weight(Weight::Bold).right().color(sub.with_alpha(0.75))
+                    };
+                    c.text(view_title, Rect::new(card.w - FLYOUT_PAD - 150.0, FLYOUT_PAD + 5.0, 150.0, 16.0), &vt_st);
+                    c.fill_rrect(
+                        Rect::new(FLYOUT_PAD, 47.0, card.w - 2.0 * FLYOUT_PAD, 1.0),
+                        0.5,
+                        if light { Color::black(0.08) } else { Color::white(0.10) },
+                    );
+
+                    match view {
+                        CcView::Wifi => {
+                            let hero = Rect::new(FLYOUT_PAD, 58.0, card.w - 2.0 * FLYOUT_PAD, 92.0);
+                            c.fill_rrect(hero, 14.0, if light { Color::black(0.05) } else { Color::white(0.07) });
+                            c.stroke_rrect(hero, 14.0, if light { Color::black(0.08) } else { Color::white(0.10) }, 1.0);
+                            let cir_c = Point::new(hero.x + 28.0, hero.y + 32.0);
+                            let ac = if wifi_on { Color::hex(0x2563EB) } else { Color::hex(0x64748B) };
+                            c.fill_circle(cir_c, 16.0, ac);
+                            c.icon(
+                                if wifi_on { Icon::Wifi } else { Icon::WifiOff },
+                                Rect::new(cir_c.x - 8.0, cir_c.y - 8.0, 16.0, 16.0),
+                                Color::white(1.0),
+                            );
+                            let t_st = TextStyle { size: 13.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                            c.text(wifi_sub, Rect::new(hero.x + 54.0, hero.y + 13.0, hero.w - 66.0, 18.0), &t_st);
+                            let net_txt = match (wifi_on, live.internet) {
+                                (false, _) => "Wi-Fi adapter offline",
+                                (true, Some(true)) => "Connected · Internet reachable",
+                                (true, Some(false)) => "Connected · No internet access",
+                                (true, None) => "Connected · Checking reachability…",
+                            };
+                            let s_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
+                            c.text(net_txt, Rect::new(hero.x + 54.0, hero.y + 33.0, hero.w - 66.0, 15.0), &s_st);
+                            let sig_txt = if wifi_on { "Signal: Strong (802.11ax / Wi-Fi)" } else { "Radio switched off" };
+                            c.text(sig_txt, Rect::new(hero.x + 14.0, hero.y + 62.0, hero.w - 28.0, 15.0), &s_st);
+
+                            let info_r = Rect::new(FLYOUT_PAD, 160.0, card.w - 2.0 * FLYOUT_PAD, 156.0);
+                            c.fill_rrect(info_r, 14.0, if light { Color::black(0.04) } else { Color::rgba(0.0, 0.0, 0.0, 0.24) });
+                            let h_st = TextStyle { size: 10.0, ..TextStyle::caption().weight(Weight::Bold).color(sub.with_alpha(0.65)) };
+                            c.text("NETWORK DETAILS", Rect::new(info_r.x + 12.0, info_r.y + 10.0, 180.0, 14.0), &h_st);
+                            let rows = [
+                                ("Primary SSID", if wifi_on { wifi_sub } else { "None" }),
+                                ("Internet Status", if !wifi_on { "Offline" } else if live.internet == Some(false) { "No internet" } else { "Online" }),
+                                ("Bluetooth Link", if live.bt_name.is_empty() { "Standby" } else { &live.bt_name }),
+                                ("Security", if wifi_on { "WPA2 / WPA3 Personal" } else { "—" }),
+                            ];
+                            let l_st = TextStyle { size: 11.0, ..TextStyle::caption().color(sub) };
+                            let v_st = TextStyle { size: 11.0, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
+                            for (idx, (k, val)) in rows.into_iter().enumerate() {
+                                let ry = info_r.y + 34.0 + idx as f32 * 28.0;
+                                c.text(k, Rect::new(info_r.x + 12.0, ry, 130.0, 16.0), &l_st);
+                                c.text(val, Rect::new(info_r.right() - 170.0, ry, 158.0, 16.0), &v_st);
+                            }
+                        }
+                        CcView::Battery => {
+                            let hero = Rect::new(FLYOUT_PAD, 58.0, card.w - 2.0 * FLYOUT_PAD, 90.0);
+                            c.fill_rrect(hero, 14.0, if light { Color::black(0.05) } else { Color::white(0.07) });
+                            c.stroke_rrect(hero, 14.0, if light { Color::black(0.08) } else { Color::white(0.10) }, 1.0);
+                            let pct_str = if tray.has_battery {
+                                format!("{}%", tray.battery_pct)
+                            } else {
+                                "AC".to_string()
+                            };
+                            let big_st = TextStyle { size: 28.0, ..TextStyle::caption().weight(Weight::Bold).color(ink) };
+                            c.text(&pct_str, Rect::new(hero.x + 14.0, hero.y + 12.0, 110.0, 34.0), &big_st);
+                            let (status_lbl, badge_col) = if !tray.has_battery {
+                                ("Desktop AC Power", Color::hex(0x34C759))
+                            } else if tray.charging {
+                                ("Charging · AC Connected", Color::hex(0x34C759))
+                            } else if tray.on_ac {
+                                ("Plugged In · Holding Charge", Color::hex(0x34C759))
+                            } else if tray.battery_pct <= 20 {
+                                ("Low Battery · Discharging", Color::hex(0xFF9F0A))
+                            } else {
+                                ("Running on Battery", Color::hex(0x38BDF8))
+                            };
+                            let st_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(badge_col) };
+                            c.text(status_lbl, Rect::new(hero.x + 14.0, hero.y + 52.0, hero.w - 28.0, 16.0), &st_st);
+
+                            let tile_w = (card.w - 2.0 * FLYOUT_PAD - 12.0) / 3.0;
+                            let pwr_str = extra
+                                .power_w
+                                .filter(|w| *w > 0.1)
+                                .map(|w| format!("{w:.1} W"))
+                                .unwrap_or_else(|| format!("{}% CPU", extra.cpu_pct));
+                            let flow = [
+                                ("Source", if tray.on_ac || !tray.has_battery { "AC Adapter" } else { "Battery" }),
+                                ("System Draw", pwr_str.as_str()),
+                                ("Energy Mode", if extra.saver { "Battery Saver" } else { "Balanced" }),
+                            ];
+                            let fl_st = TextStyle { size: 10.0, ..TextStyle::caption().color(sub) };
+                            let fv_st = TextStyle { size: 12.0, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                            for (i, (k, v)) in flow.into_iter().enumerate() {
+                                let tx = FLYOUT_PAD + i as f32 * (tile_w + 6.0);
+                                let tr = Rect::new(tx, 158.0, tile_w, 64.0);
+                                c.fill_rrect(tr, 12.0, if light { Color::black(0.05) } else { Color::white(0.06) });
+                                c.text(k, Rect::new(tr.x + 10.0, tr.y + 10.0, tr.w - 16.0, 14.0), &fl_st);
+                                c.text(v, Rect::new(tr.x + 10.0, tr.y + 30.0, tr.w - 16.0, 18.0), &fv_st);
+                            }
+
+                            let br_info = Rect::new(FLYOUT_PAD, 232.0, card.w - 2.0 * FLYOUT_PAD, 82.0);
+                            c.fill_rrect(br_info, 12.0, if light { Color::black(0.04) } else { Color::rgba(0.0, 0.0, 0.0, 0.24) });
+                            c.text(
+                                "DISPLAY & AUDIO TELEMETRY",
+                                Rect::new(br_info.x + 12.0, br_info.y + 10.0, 200.0, 14.0),
+                                &TextStyle { size: 9.5, ..TextStyle::caption().weight(Weight::Bold).color(sub.with_alpha(0.65)) },
+                            );
+                            let line1 = format!("Panel Brightness: {bright_pct}%");
+                            let line2 = format!(
+                                "Audio Output: {}",
+                                if tray.muted { "Muted".to_string() } else { format!("{}%", tray.volume_pct) }
+                            );
+                            let info_st = TextStyle { size: 11.0, ..TextStyle::caption().color(ink) };
+                            c.text(&line1, Rect::new(br_info.x + 12.0, br_info.y + 32.0, br_info.w - 24.0, 16.0), &info_st);
+                            c.text(&line2, Rect::new(br_info.x + 12.0, br_info.y + 52.0, br_info.w - 24.0, 16.0), &info_st);
+                        }
+                        CcView::Calendar => {
+                            const MONTHS: [&str; 12] = [
+                                "January", "February", "March", "April", "May", "June",
+                                "July", "August", "September", "October", "November", "December",
+                            ];
+                            const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                            let (ty, tm, td) = cc_today_ymd();
+                            let wd = DAYS[cc_weekday(ty, tm, td as i32) as usize];
+                            let today_line = format!("{wd}, {td} {} {ty}", MONTHS[(tm - 1) as usize]);
+                            let td_st = TextStyle { size: 12.0, ..TextStyle::caption().weight(Weight::Semibold).color(sub) };
+                            c.text(&today_line, Rect::new(FLYOUT_PAD, 54.0, card.w - 2.0 * FLYOUT_PAD, 18.0), &td_st);
+
+                            let (title_r, prev_r, next_r) = cc_cal_nav_rects(card);
+                            let away = (cal_year, cal_month) != (ty, tm);
+                            if hovered == Some(FlyoutZone::CalToday) && away {
+                                c.fill_rrect(title_r, 7.0, if light { Color::black(0.08) } else { Color::white(0.12) });
+                            }
+                            let m_title = format!("{} {}", MONTHS[(cal_month - 1) as usize], cal_year);
+                            let mt_st = TextStyle {
+                                size: 13.5,
+                                ..TextStyle::caption().weight(Weight::Bold).color(if away { accent } else { ink })
+                            };
+                            c.text(&m_title, Rect::new(title_r.x + 4.0, title_r.y + 4.0, title_r.w, 20.0), &mt_st);
+
+                            for (btn_r, z, lbl) in [(prev_r, FlyoutZone::CalPrev, "‹"), (next_r, FlyoutZone::CalNext, "›")] {
+                                let is_h = hovered == Some(z);
+                                c.fill_rrect(
+                                    btn_r,
+                                    7.0,
+                                    if is_h {
+                                        if light { Color::black(0.12) } else { Color::white(0.16) }
+                                    } else if light {
+                                        Color::black(0.05)
+                                    } else {
+                                        Color::white(0.08)
+                                    },
+                                );
+                                let b_st = TextStyle { size: 14.0, ..TextStyle::caption().weight(Weight::Bold).center().color(ink) };
+                                c.text(lbl, Rect::new(btn_r.x, btn_r.y + 2.0, btn_r.w, btn_r.h), &b_st);
+                            }
+
+                            let grid_w = card.w - 2.0 * FLYOUT_PAD;
+                            let cell_w = grid_w / 7.0;
+                            let head_y = 110.0;
+                            let hd_st = TextStyle { size: 10.5, ..TextStyle::caption().weight(Weight::Semibold).center().color(sub) };
+                            for (i, d) in ["S", "M", "T", "W", "T", "F", "S"].into_iter().enumerate() {
+                                c.text(d, Rect::new(FLYOUT_PAD + i as f32 * cell_w, head_y, cell_w, 16.0), &hd_st);
+                            }
+
+                            let first = cc_weekday(cal_year, cal_month, 1);
+                            let n_days = cc_days_in_month(cal_year, cal_month);
+                            let (py, pm) = if cal_month == 1 { (cal_year - 1, 12) } else { (cal_year, cal_month - 1) };
+                            let prev_n = cc_days_in_month(py, pm);
+                            let row_h = 31.0;
+                            let start_y = 130.0;
+                            for cell in 0..42 {
+                                let col = cell % 7;
+                                let row = cell / 7;
+                                let d = cell - first + 1;
+                                let (num, inside) = if d < 1 {
+                                    (prev_n + d, false)
+                                } else if d > n_days {
+                                    (d - n_days, false)
+                                } else {
+                                    (d, true)
+                                };
+                                let cr = Rect::new(FLYOUT_PAD + col as f32 * cell_w, start_y + row as f32 * row_h, cell_w, row_h);
+                                let is_today = inside && (cal_year, cal_month, d) == (ty, tm, td as i32);
+                                if is_today {
+                                    c.fill_circle(cr.center(), 12.5, accent);
+                                }
+                                let col_txt = if is_today {
+                                    Color::white(1.0)
+                                } else if !inside {
+                                    sub.with_alpha(0.32)
+                                } else if col == 0 || col == 6 {
+                                    sub
+                                } else {
+                                    ink
+                                };
+                                let d_st = TextStyle {
+                                    size: 11.5,
+                                    ..TextStyle::caption()
+                                        .weight(if is_today { Weight::Bold } else { Weight::Regular })
+                                        .center()
+                                        .color(col_txt)
+                                };
+                                c.text(&num.to_string(), Rect::new(cr.x, cr.y + 7.0, cr.w, 16.0), &d_st);
+                            }
+                        }
+                        CcView::Ai => {
+                            let mut ry = 58.0;
+                            if extra.ai_rows.is_empty() {
+                                let empty_r = Rect::new(FLYOUT_PAD, ry, card.w - 2.0 * FLYOUT_PAD, 110.0);
+                                c.fill_rrect(empty_r, 14.0, if light { Color::black(0.05) } else { Color::white(0.06) });
+                                let t_st = TextStyle { size: 12.5, ..TextStyle::caption().weight(Weight::Semibold).center().color(ink) };
+                                let s_st = TextStyle { size: 11.0, ..TextStyle::caption().center().color(sub) };
+                                c.text("AI Usage Telemetry Ready", Rect::new(empty_r.x + 12.0, empty_r.y + 30.0, empty_r.w - 24.0, 18.0), &t_st);
+                                c.text(
+                                    "Open the AI Usage tab to inspect Claude Code, Codex, Gemini, and Antigravity quotas.",
+                                    Rect::new(empty_r.x + 16.0, empty_r.y + 54.0, empty_r.w - 32.0, 32.0),
+                                    &s_st,
+                                );
+                            } else {
+                                for row in extra.ai_rows.iter().take(4) {
+                                    let cr = Rect::new(FLYOUT_PAD, ry, card.w - 2.0 * FLYOUT_PAD, 60.0);
+                                    c.fill_rrect(cr, 12.0, if light { Color::black(0.05) } else { Color::white(0.06) });
+                                    c.stroke_rrect(cr, 12.0, if light { Color::black(0.08) } else { Color::white(0.09) }, 1.0);
+                                    let bar_col = if row.pct >= 90 {
+                                        Color::hex(0xFF453A)
+                                    } else if row.pct >= 70 {
+                                        Color::hex(0xFF9F0A)
+                                    } else {
+                                        Color::hex(0x34C759)
+                                    };
+                                    c.fill_circle(Point::new(cr.x + 14.0, cr.y + 16.0), 4.0, bar_col);
+                                    let n_st = TextStyle { size: 12.0, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                                    c.text(&row.name, Rect::new(cr.x + 24.0, cr.y + 8.0, 160.0, 16.0), &n_st);
+                                    let p_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Bold).right().color(bar_col) };
+                                    c.text(&format!("{}%", row.pct), Rect::new(cr.right() - 68.0, cr.y + 8.0, 56.0, 16.0), &p_st);
+                                    let d_st = TextStyle { size: 10.5, ..TextStyle::caption().color(sub) };
+                                    c.text(&row.detail, Rect::new(cr.x + 12.0, cr.y + 26.0, cr.w - 24.0, 14.0), &d_st);
+                                    let tr = Rect::new(cr.x + 12.0, cr.y + 44.0, cr.w - 24.0, 6.0);
+                                    c.fill_rrect(tr, 3.0, if light { Color::black(0.12) } else { Color::white(0.12) });
+                                    let fw = (tr.w * (row.pct.min(100) as f32 / 100.0)).max(6.0);
+                                    c.fill_rrect(Rect::new(tr.x, tr.y, fw.min(tr.w), tr.h), 3.0, bar_col);
+                                    ry += 66.0;
+                                }
+                            }
+                        }
+                        CcView::Main => {}
+                    }
+
+                    let actions = match view {
+                        CcView::Wifi => [("Available Networks…", FlyoutZone::SubAction1), ("Network & Internet Settings…", FlyoutZone::SubAction2)],
+                        CcView::Battery => [("Power & Battery Settings…", FlyoutZone::SubAction1), ("Open System Monitor →", FlyoutZone::SubAction2)],
+                        CcView::Calendar => [("Notifications Center", FlyoutZone::SubAction1), ("Date & Time Settings…", FlyoutZone::SubAction2)],
+                        CcView::Ai => [("Open AI Usage Tab →", FlyoutZone::SubAction1), ("Configure Providers…", FlyoutZone::SubAction2)],
+                        CcView::Main => [("", FlyoutZone::SubAction1), ("", FlyoutZone::SubAction2)],
+                    };
+                    for (idx, (lbl, z)) in actions.into_iter().enumerate() {
+                        let ar = cc_sub_action_rect(card, idx);
+                        let is_h = hovered == Some(z);
+                        c.fill_rrect(
+                            ar,
+                            8.0,
+                            if is_h {
+                                accent.with_alpha(if light { 0.16 } else { 0.24 })
+                            } else if light {
+                                Color::black(0.05)
+                            } else {
+                                Color::white(0.07)
+                            },
+                        );
+                        let a_st = TextStyle {
+                            size: 11.5,
+                            ..TextStyle::caption().weight(Weight::Medium).color(if is_h { accent } else { ink })
+                        };
+                        c.text(lbl, Rect::new(ar.x + 10.0, ar.y + 6.0, ar.w - 20.0, 16.0), &a_st);
+                    }
+                    return;
+                }
+
+                // 1. 2x2 Quick Tiles Grid (.cc-grid: Wi-Fi, Bluetooth, Focus Mode, Screen Snip)
                 let bt_sub = if live.bt_name.is_empty() {
                     "Not connected".to_string()
                 } else if let Some(b) = live.bt_battery {
@@ -3584,11 +4195,38 @@ impl DockControlCenter {
                 };
                 c.text(net_txt, Rect::new(nb.right() - 98.0, nb.y + 46.0, 87.0, 15.0), &sec_st);
 
-                // 3. Interactive Sound Master Volume Slider Card (.cc-slider-card)
+                // 3. Interactive Display Brightness Slider Card (.cc-bright-card)
+                let bc = flyout_brightness_card_rect(card);
+                let card_bg = if light { Color::black(0.05) } else { Color::white(0.06) };
+                let card_rim = if light { Color::black(0.08) } else { Color::white(0.09) };
+                c.fill_rrect(bc, 14.0, card_bg);
+                c.stroke_rrect(bc, 14.0, card_rim, 1.0);
+                c.icon(Icon::Sun, Rect::new(bc.x + 12.0, bc.y + 8.0, 14.0, 14.0), ink);
+                let sl_lbl_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
+                let sl_val_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
+                c.text("Display · Brightness", Rect::new(bc.x + 32.0, bc.y + 7.0, 175.0, 16.0), &sl_lbl_st);
+                c.text(&format!("{bright_pct}%"), Rect::new(bc.right() - 72.0, bc.y + 7.0, 60.0, 16.0), &sl_val_st);
+
+                let b_track = flyout_brightness_track_rect(card);
+                let b_r = b_track.h * 0.5;
+                c.fill_rrect(b_track, b_r, if light { Color::black(0.14) } else { Color::rgba(0.0, 0.0, 0.0, 0.38) });
+                c.stroke_rrect(b_track, b_r, if light { Color::black(0.10) } else { Color::white(0.11) }, 1.0);
+                let b_frac = (bright_pct as f32 / 100.0).clamp(0.0, 1.0);
+                let b_fill_w = (b_track.w * b_frac).max(b_track.h);
+                let b_fill_r = Rect::new(b_track.x, b_track.y, b_fill_w.min(b_track.w), b_track.h);
+                let fill_col = if light { accent } else { Color::white(0.95) };
+                c.fill_rrect(b_fill_r, b_r, fill_col);
+                let b_knob_cx = (b_fill_r.right() - b_r).max(b_track.x + b_r);
+                c.fill_circle(
+                    Point::new(b_knob_cx, b_track.y + b_r),
+                    6.5,
+                    if light { Color::white(0.92) } else { Color::hex(0x0F172A).with_alpha(0.28) },
+                );
+
+                // 4. Interactive Sound Master Volume Slider Card (.cc-slider-card)
                 let sc = flyout_slider_card_rect(card);
-                let sc_bg = if light { Color::black(0.05) } else { Color::white(0.06) };
-                c.fill_rrect(sc, 14.0, sc_bg);
-                c.stroke_rrect(sc, 14.0, if light { Color::black(0.08) } else { Color::white(0.09) }, 1.0);
+                c.fill_rrect(sc, 14.0, card_bg);
+                c.stroke_rrect(sc, 14.0, card_rim, 1.0);
 
                 let vol_pct = if tray.muted { 0 } else if tray.volume_known { tray.volume_pct.min(100) } else { 64 };
                 let vol_ic = if tray.muted || vol_pct == 0 {
@@ -3598,12 +4236,10 @@ impl DockControlCenter {
                 } else {
                     Icon::Volume
                 };
-                c.icon(vol_ic, Rect::new(sc.x + 12.0, sc.y + 9.0, 14.0, 14.0), ink);
-                let sl_lbl_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).color(ink) };
-                c.text("Sound · Master Audio", Rect::new(sc.x + 32.0, sc.y + 8.0, 175.0, 16.0), &sl_lbl_st);
-                let sl_val_st = TextStyle { size: 11.5, ..TextStyle::caption().weight(Weight::Semibold).right().color(ink) };
+                c.icon(vol_ic, Rect::new(sc.x + 12.0, sc.y + 8.0, 14.0, 14.0), ink);
+                c.text("Sound · Master Audio", Rect::new(sc.x + 32.0, sc.y + 7.0, 175.0, 16.0), &sl_lbl_st);
                 let val_txt = if tray.muted { "Muted".to_string() } else { format!("{vol_pct}%") };
-                c.text(&val_txt, Rect::new(sc.right() - 72.0, sc.y + 8.0, 60.0, 16.0), &sl_val_st);
+                c.text(&val_txt, Rect::new(sc.right() - 72.0, sc.y + 7.0, 60.0, 16.0), &sl_val_st);
 
                 let track = flyout_slider_track_rect(card);
                 let tr_r = track.h * 0.5;
@@ -3613,7 +4249,6 @@ impl DockControlCenter {
                 let frac = (vol_pct as f32 / 100.0).clamp(0.0, 1.0);
                 let fill_w = (track.w * frac).max(track.h);
                 let fill_r = Rect::new(track.x, track.y, fill_w.min(track.w), track.h);
-                let fill_col = if light { look.accent.unwrap_or(Color::hex(0x0A84FF)) } else { Color::white(0.95) };
                 c.fill_rrect(fill_r, tr_r, fill_col);
                 let knob_cx = (fill_r.right() - tr_r).max(track.x + tr_r);
                 let knob_cy = track.y + tr_r;
@@ -3623,7 +4258,33 @@ impl DockControlCenter {
                     if light { Color::white(0.92) } else { Color::hex(0x0F172A).with_alpha(0.28) },
                 );
 
-                // 4. Footer Status Bar (.cc-foot: battery charging status + System page link)
+                // 5. Sub-flyout Quick Pills (Wi-Fi, Battery, Calendar, AI Usage)
+                let sub_pills = [
+                    (FlyoutZone::SubWifi, "Wi-Fi"),
+                    (FlyoutZone::SubBattery, "Battery"),
+                    (FlyoutZone::SubCalendar, "Calendar"),
+                    (FlyoutZone::SubAi, "AI Usage"),
+                ];
+                for (idx, (z, lbl)) in sub_pills.into_iter().enumerate() {
+                    let pr = flyout_sub_pill_rect(card, idx);
+                    let is_h = hovered == Some(z);
+                    let p_bg = if is_h {
+                        accent.with_alpha(if light { 0.18 } else { 0.26 })
+                    } else if light {
+                        Color::black(0.05)
+                    } else {
+                        Color::white(0.07)
+                    };
+                    c.fill_rrect(pr, 8.0, p_bg);
+                    c.stroke_rrect(pr, 8.0, if is_h { accent.with_alpha(0.50) } else { card_rim }, 1.0);
+                    let p_st = TextStyle {
+                        size: 10.5,
+                        ..TextStyle::caption().weight(Weight::Semibold).center().color(if is_h { accent } else { ink })
+                    };
+                    c.text(lbl, Rect::new(pr.x, pr.y + 5.0, pr.w, 15.0), &p_st);
+                }
+
+                // 6. Footer Status Bar (.cc-foot: battery charging status + System page link)
                 let ft = flyout_footer_rect(card);
                 let bat_txt = if tray.has_battery {
                     let mode = if tray.charging || tray.on_ac { "AC Charging" } else { "Battery" };
@@ -3936,13 +4597,25 @@ mod tests {
         assert!(t1.x > t0.right() && t2.y > t0.bottom() && t3.x == t1.x && t3.y == t2.y);
 
         let nb = flyout_net_box_rect(card);
+        let bc = flyout_brightness_card_rect(card);
+        let bt = flyout_brightness_track_rect(card);
         let sc = flyout_slider_card_rect(card);
         let tr = flyout_slider_track_rect(card);
+        let p0 = flyout_sub_pill_rect(card, 0);
+        let p3 = flyout_sub_pill_rect(card, 3);
         let ft = flyout_footer_rect(card);
         assert!(nb.y > t2.bottom());
-        assert!(sc.y > nb.bottom());
+        assert!(bc.y > nb.bottom());
+        assert!(bt.x > bc.x && bt.right() < bc.right());
+        assert!(sc.y > bc.bottom());
         assert!(tr.x > sc.x && tr.right() < sc.right());
-        assert!(ft.y > sc.bottom() && ft.bottom() <= card.h);
+        assert!(p0.y > sc.bottom() && p3.right() <= card.w - FLYOUT_PAD + 0.5);
+        assert!(ft.y > p0.bottom() && ft.bottom() <= card.h);
+
+        // Calendar month stepping wraps December -> January and January -> December cleanly.
+        assert_eq!(cc_days_in_month(2024, 2), 29);
+        assert_eq!(cc_days_in_month(2026, 2), 28);
+        assert_eq!(cc_days_in_month(2026, 11), 30);
     }
 
     #[test]

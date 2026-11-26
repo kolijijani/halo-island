@@ -1689,6 +1689,9 @@ impl App {
                     self.display_off = !on;
                 }
                 if let Some(level) = services::power::brightness_change(wp, lp) {
+                    if let Some(f) = self.dock_flyout.as_mut() {
+                        f.set_brightness_pct((level.clamp(0.0, 1.0) * 100.0).round() as u8);
+                    }
                     self.on_event(AppEvent::Brightness { level });
                 }
                 let p = services::power::query();
@@ -1983,6 +1986,44 @@ impl App {
         }
     }
 
+    fn dock_cc_extra(&self) -> crate::dock::DockCcExtra {
+        let mut ai_rows = Vec::new();
+        for (id, r) in &self.st.usage.readings {
+            if let Some(snap) = &r.snapshot {
+                let pct = snap
+                    .windows
+                    .first()
+                    .map(|w| (w.used.clamp(0.0, 1.0) * 100.0).round() as u8)
+                    .unwrap_or(0);
+                let detail = snap
+                    .windows
+                    .first()
+                    .map(|w| w.label.clone())
+                    .or_else(|| snap.plan.clone())
+                    .unwrap_or_else(|| "Active".to_string());
+                ai_rows.push(crate::dock::DockAiRow {
+                    name: id.name().to_string(),
+                    pct,
+                    detail,
+                });
+            }
+        }
+        let sys = self.st.system.latest.as_ref();
+        crate::dock::DockCcExtra {
+            saver: self.st.power.saver,
+            cpu_pct: sys
+                .and_then(|r| r.cpu.as_ref())
+                .map_or(0, |c| (c.load.clamp(0.0, 1.0) * 100.0).round() as u8),
+            power_w: sys.and_then(|r| {
+                r.power
+                    .as_ref()
+                    .map(|p| p.total_w)
+                    .or_else(|| r.cpu.as_ref().and_then(|c| c.power_w))
+            }),
+            ai_rows,
+        }
+    }
+
     fn sync_dock_tray(&mut self) {
         if self.locked || self.display_off {
             return;
@@ -1990,6 +2031,7 @@ impl App {
         let tray = self.dock_tray_state();
         let live = self.dock_live_state();
         let look = self.dock_look();
+        let extra = self.dock_cc_extra();
         let mut changed = false;
         if let Some(d) = self.dock.as_mut() {
             changed |= d.set_tray(tray);
@@ -2001,6 +2043,7 @@ impl App {
         if let Some(f) = self.dock_flyout.as_mut() {
             changed |= f.set_tray(tray);
             changed |= f.set_live(live);
+            changed |= f.set_extra(extra);
             changed |= f.set_look(look);
         }
         if changed {
@@ -2211,7 +2254,8 @@ impl App {
                     let live = self.dock_live_state();
                     let shared = self.gfx.d3d_handles();
                     match crate::dock::DockControlCenter::open(&self.monitor, anchor_rect, tray, live, look, shared) {
-                        Ok(f) => {
+                        Ok(mut f) => {
+                            let _ = f.set_extra(self.dock_cc_extra());
                             self.dock_flyout = Some(f);
                             if let Some(d) = self.dock.as_mut() {
                                 d.set_ctrl_open(true);
@@ -2311,6 +2355,10 @@ impl App {
                 self.sync_dock_tray();
                 self.request_frame();
             }
+            crate::dock::FlyoutAction::SetBrightness(pct) => {
+                services::power::set_brightness_async(pct);
+                self.request_frame();
+            }
             crate::dock::FlyoutAction::ToggleMute => {
                 let target = if self.st.volume.muted || self.st.volume.level <= 0.01 { 0.64 } else { 0.0 };
                 let cur = if self.st.volume.known { self.st.volume.level } else { 0.64 };
@@ -2341,6 +2389,12 @@ impl App {
             crate::dock::FlyoutAction::OpenSystemPage => {
                 self.close_dock_flyout();
                 self.st.page = PageKind::System;
+                self.expand();
+                self.request_frame();
+            }
+            crate::dock::FlyoutAction::OpenAiPage => {
+                self.close_dock_flyout();
+                self.st.page = PageKind::Ai;
                 self.expand();
                 self.request_frame();
             }
