@@ -150,3 +150,12 @@
 {"id": "dock-phase-19-desktop-widgets-2x2-liquid", "ev": "done", "owner": "ag", "who": "ag", "commit": "659aed6c9b494c27b76eb293b76fff39d6d94ded", "note": "Desktop 2x2 Liquid Glass widgets tiles: clock, date, battery, system; draggable, corner snapping, 0% CPU rest", "ts": 1795681240}
 {"id": "dock-phase-20-final-parity-audit-polish", "ev": "open", "title": "Dock Phase 20: Final parity audit & polish", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795681363}
 {"id": "dock-phase-20-final-parity-audit-polish", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-20-final-parity-audit-polish", "who": "ag", "ts": 1795681373}
+{"id": "dock-phase-20-final-parity-audit-polish", "ev": "done", "owner": "ag", "who": "ag", "commit": "a52259b", "note": "Final parity audit complete, zero dock warnings, 20/20 dock tests pass", "ts": 1795681399}
+{"id": "dock-phase-a-120fps-smooth-genie-restore", "ev": "open", "title": "Dock Phase A: 120fps smooth Genie restore & native minimize hook", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795683771}
+{"id": "dock-phase-a-120fps-smooth-genie-restore", "ev": "done", "owner": "ag", "who": "ag", "commit": "7bcc871", "note": "Continuous restore curve, triple-buffered GPU swapchain, cached maximized/normal rects, DWM transition hold, and titlebar minimize WinEvent hook", "ts": 1795683783}
+{"id": "dock-phase-b-app-launch-bounce-physics", "ev": "open", "title": "dock-phase-b-app-launch-bounce-physics", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795683988}
+{"id": "dock-phase-b-app-launch-bounce-physics", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-b-app-launch-bounce-physics", "who": "ag", "ts": 1795683988}
+{"id": "dock-phase-b-app-launch-bounce-physics", "ev": "done", "owner": "ag", "who": "ag", "commit": "564e581", "note": "macOS style continuous launch bounce with auto-settle when window appears", "ts": 1795684360}
+{"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "open", "title": "Dock Phase C: Fluid drag reordering and poof-to-remove", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795684539}
+{"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-c-fluid-drag-reordering-and-p", "who": "ag", "ts": 1795684548}
+{"id": "dock-phase-c-fluid-drag-reordering-and-p", "ev": "done", "owner": "ag", "who": "ag", "commit": "f63f0b5", "note": "Spring-animated slot shifting/drop settle, top z-order dragged icon, and 9-puff cloud poof-to-remove particle animation (0% CPU at rest)", "ts": 1795684762}

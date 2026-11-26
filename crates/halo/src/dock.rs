@@ -692,6 +692,52 @@ fn mag_spring(value: f32) -> Spring {
     Spring::new(value, 460.0, 38.0)
 }
 
+const SLOT_SHIFT_EPS: f32 = 0.25;
+
+fn shift_spring(value: f32) -> Spring {
+    Spring::new(value, 520.0, 38.0)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PoofPuff {
+    angle: f32,
+    dist: f32,
+    r0: f32,
+    r1: f32,
+    delay: f32,
+}
+
+#[derive(Clone, Debug)]
+struct PoofEffect {
+    center: Point,
+    elapsed: f32,
+    duration: f32,
+    puffs: [PoofPuff; 9],
+}
+
+impl PoofEffect {
+    fn new(center: Point) -> Self {
+        const TAU: f32 = std::f32::consts::TAU;
+        let puffs = [
+            PoofPuff { angle: 0.0, dist: 0.0, r0: 10.0, r1: 22.0, delay: 0.0 },
+            PoofPuff { angle: 0.0 * TAU / 8.0 + 0.15, dist: 22.0, r0: 6.5, r1: 14.5, delay: 0.01 },
+            PoofPuff { angle: 1.0 * TAU / 8.0 + 0.22, dist: 25.0, r0: 6.0, r1: 13.5, delay: 0.03 },
+            PoofPuff { angle: 2.0 * TAU / 8.0 + 0.08, dist: 21.0, r0: 7.0, r1: 15.0, delay: 0.02 },
+            PoofPuff { angle: 3.0 * TAU / 8.0 + 0.28, dist: 26.0, r0: 5.5, r1: 12.5, delay: 0.04 },
+            PoofPuff { angle: 4.0 * TAU / 8.0 + 0.12, dist: 23.0, r0: 6.5, r1: 14.0, delay: 0.01 },
+            PoofPuff { angle: 5.0 * TAU / 8.0 + 0.25, dist: 25.5, r0: 6.0, r1: 13.0, delay: 0.03 },
+            PoofPuff { angle: 6.0 * TAU / 8.0 + 0.06, dist: 21.5, r0: 7.0, r1: 15.0, delay: 0.02 },
+            PoofPuff { angle: 7.0 * TAU / 8.0 + 0.20, dist: 24.0, r0: 5.8, r1: 13.2, delay: 0.04 },
+        ];
+        Self { center, elapsed: 0.0, duration: 0.42, puffs }
+    }
+
+    fn step(&mut self, dt: f32) -> bool {
+        self.elapsed += dt.max(0.0);
+        self.elapsed < self.duration
+    }
+}
+
 pub struct Dock {
     /// Dropped before `hwnd` so DirectComposition detaches cleanly first.
     gfx: Option<Gfx>,
@@ -710,8 +756,10 @@ pub struct Dock {
     apps: Vec<RunningApp>,
     thumbs: std::collections::HashMap<isize, (Image, Option<RECT>)>,
     scales: Vec<Spring>,
+    slot_x_offsets: Vec<Spring>,
     bounces: Vec<f32>,
     launching: std::collections::HashMap<String, f32>,
+    poofs: Vec<PoofEffect>,
     tracking: bool,
     mouse: Option<Point>,
     hovered: Option<usize>,
@@ -801,8 +849,10 @@ impl Dock {
             apps: Vec::new(),
             thumbs: std::collections::HashMap::new(),
             scales: (0..ANCHOR_SLOTS.len() + 2).map(|_| mag_spring(1.0)).collect(),
+            slot_x_offsets: (0..ANCHOR_SLOTS.len() + 2).map(|_| shift_spring(0.0)).collect(),
             bounces: vec![0.0; ANCHOR_SLOTS.len() + 2],
             launching: std::collections::HashMap::new(),
+            poofs: Vec::new(),
             tracking: false,
             mouse: None,
             hovered: None,
@@ -907,6 +957,7 @@ impl Dock {
         self.set_bottom_most(mon, cfg.bottom_most);
         let total = self.total_slots();
         self.scales.resize_with(total, || mag_spring(1.0));
+        self.slot_x_offsets.resize_with(total, || shift_spring(0.0));
         self.bounces.resize(total, 0.0);
         if !cfg.magnification {
             self.reset_mag_targets(true);
@@ -941,16 +992,18 @@ impl Dock {
         self.at.2 as f32 / self.scale().max(1.0)
     }
 
-    /// True only while a visual change, tuck, magnification spring, or launch bounce needs vblank frames;
-    /// false at rest so `FrameClock` parks at 0% CPU.
+    /// True only while a visual change, tuck, magnification spring, reorder shift, launch bounce,
+    /// or poof cloud needs vblank frames; false at rest so `FrameClock` parks at 0% CPU.
     pub fn needs_frame(&self) -> bool {
         !self.fs_hidden
             && (self.dirty
                 || self.glass_moving
                 || !self.tuck.is_settled_eps(TUCK_EPS)
                 || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS))
+                || self.slot_x_offsets.iter().any(|s| !s.is_settled_eps(SLOT_SHIFT_EPS))
                 || self.bounces.iter().any(|&b| b > 0.0)
-                || !self.launching.is_empty())
+                || !self.launching.is_empty()
+                || !self.poofs.is_empty())
     }
 
     pub fn trigger_bounce(&mut self, index: usize, instant: bool) {
@@ -1100,6 +1153,7 @@ impl Dock {
         self.apps = apps;
         let total = self.total_slots();
         self.scales.resize_with(total, || mag_spring(1.0));
+        self.slot_x_offsets.resize_with(total, || shift_spring(0.0));
         self.bounces.resize(total, 0.0);
         if self.hovered.is_some_and(|i| i >= total) {
             self.hovered = None;
@@ -1466,8 +1520,32 @@ impl Dock {
                                         }
                                     }
                                     if target_app != app_idx {
+                                        let total = self.total_slots();
+                                        self.slot_x_offsets.resize_with(total, || shift_spring(0.0));
                                         let item = self.apps.remove(app_idx);
                                         self.apps.insert(target_app, item);
+                                        if !instant {
+                                            if app_idx < target_app {
+                                                for k in app_idx..target_app {
+                                                    let cur = ANCHOR_SLOTS.len() + k;
+                                                    let prev = cur + 1;
+                                                    if let (Some(old_r), Some(new_r)) = (rects.get(prev), rects.get(cur)) {
+                                                        self.slot_x_offsets[cur].value += old_r.x - new_r.x;
+                                                        self.slot_x_offsets[cur].set_target(0.0);
+                                                    }
+                                                }
+                                            } else {
+                                                for k in (target_app + 1)..=app_idx {
+                                                    let cur = ANCHOR_SLOTS.len() + k;
+                                                    let prev = cur - 1;
+                                                    if let (Some(old_r), Some(new_r)) = (rects.get(prev), rects.get(cur)) {
+                                                        self.slot_x_offsets[cur].value += old_r.x - new_r.x;
+                                                        self.slot_x_offsets[cur].set_target(0.0);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        self.slot_x_offsets[ANCHOR_SLOTS.len() + target_app].snap(0.0);
                                         self.pressed = Some(ANCHOR_SLOTS.len() + target_app);
                                     }
                                 }
@@ -1549,15 +1627,68 @@ impl Dock {
                 if was_dragging {
                     if let Some(slot_idx) = down {
                         let app_idx = slot_idx.saturating_sub(ANCHOR_SLOTS.len());
+                        let sw = self.surf_w_dip();
+                        let scales = self.current_scales();
+                        let tray_w = self.effective_tray_w();
+                        let (_, _, _, _, old_rects, _) = layout_slots_configured(
+                            sw,
+                            ANCHOR_SLOTS.len(),
+                            self.visible_apps().len(),
+                            self.stack_count(),
+                            tray_w,
+                            &scales,
+                            self.tuck.value,
+                            self.cfg.slot_max(),
+                            self.cfg.shelf_h(),
+                        );
                         if was_drag_out {
                             if let Some(app) = self.apps.get(app_idx).filter(|a| a.pinned && !a.running) {
                                 if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                                    if !instant {
+                                        let base_y = old_rects.get(slot_idx).map_or(44.0, |r| r.y + r.h * 0.5);
+                                        let poof_x = p.x.clamp(28.0, (sw - 28.0).max(28.0));
+                                        let poof_y = p.y.clamp(24.0, base_y.max(24.0));
+                                        self.poofs.push(PoofEffect::new(Point::new(poof_x, poof_y)));
+                                    }
                                     self.apps.remove(app_idx);
                                     let total = self.total_slots();
                                     self.scales.resize_with(total, || mag_spring(1.0));
+                                    self.slot_x_offsets.resize_with(total, || shift_spring(0.0));
                                     self.bounces.resize(total, 0.0);
+                                    if !instant {
+                                        let new_scales = self.current_scales();
+                                        let (_, _, _, _, new_rects, _) = layout_slots_configured(
+                                            sw,
+                                            ANCHOR_SLOTS.len(),
+                                            self.visible_apps().len(),
+                                            self.stack_count(),
+                                            tray_w,
+                                            &new_scales,
+                                            self.tuck.value,
+                                            self.cfg.slot_max(),
+                                            self.cfg.shelf_h(),
+                                        );
+                                        for (ni, new_r) in new_rects.iter().enumerate() {
+                                            let oi = if ni < slot_idx { ni } else { ni + 1 };
+                                            if let Some(old_r) = old_rects.get(oi) {
+                                                self.slot_x_offsets[ni].value += old_r.x - new_r.x;
+                                                self.slot_x_offsets[ni].set_target(0.0);
+                                            }
+                                        }
+                                    }
                                     return (Some(LRESULT(0)), DockAction::RemovePinnedApp(spec));
                                 }
+                            }
+                        }
+                        if !instant {
+                            let total = self.total_slots();
+                            self.slot_x_offsets.resize_with(total, || shift_spring(0.0));
+                            if let (Some(base_r), Some(off)) =
+                                (old_rects.get(slot_idx), self.slot_x_offsets.get_mut(slot_idx))
+                            {
+                                let delta = (p.x - (base_r.x + base_r.w * 0.5)).clamp(-sw * 0.5, sw * 0.5);
+                                off.value = delta;
+                                off.set_target(0.0);
                             }
                         }
                         let new_order: Vec<String> = self
@@ -1724,12 +1855,22 @@ impl Dock {
             for s in &mut self.scales {
                 s.snap(s.target);
             }
+            for o in &mut self.slot_x_offsets {
+                o.snap(0.0);
+            }
             self.bounces.fill(0.0);
             self.launching.clear();
+            self.poofs.clear();
         } else {
             self.tuck.step_eps(dt, TUCK_EPS);
             for s in &mut self.scales {
                 s.step_eps(dt, MAG_EPS);
+            }
+            for o in &mut self.slot_x_offsets {
+                o.step_eps(dt, SLOT_SHIFT_EPS);
+            }
+            if !self.poofs.is_empty() {
+                self.poofs.retain_mut(|poof| poof.step(dt));
             }
             // Step launch timers and keep bouncing active launching apps
             if !self.launching.is_empty() {
@@ -1782,6 +1923,10 @@ impl Dock {
             self.cfg.shelf_h(),
         );
         for (i, r) in slot_rects.iter_mut().enumerate() {
+            let dx = self.slot_x_offsets.get(i).map_or(0.0, |s| s.value);
+            if dx != 0.0 {
+                r.x += dx;
+            }
             let dy = self.bounces.get(i).copied().map_or(0.0, bounce_offset_y);
             if dy != 0.0 {
                 r.y += dy;
@@ -1792,7 +1937,7 @@ impl Dock {
         let ctrl_open = self.ctrl_open;
         let show_apps = self.cfg.show_apps;
         let show_downloads = self.cfg.show_downloads;
-        let drag_x = if self.dragging_app { self.mouse.map(|p| p.x) } else { None };
+        let drag_pos = if self.dragging_app { self.mouse } else { None };
         let drag_out = self.drag_out;
 
         let Some(gfx) = self.gfx.as_mut() else { return };
@@ -1844,8 +1989,9 @@ impl Dock {
                     ctrl_open,
                     hovered,
                     pressed,
-                    drag_x,
+                    drag_pos,
                     drag_out,
+                    &self.poofs,
                     tray_rect,
                     &tray,
                     hovered_tray,
@@ -2179,6 +2325,53 @@ fn draw_trash_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is
     c.icon(Icon::Trash, ic_box, ic_col);
 }
 
+fn draw_poof_effects(c: &mut Canvas<'_>, poofs: &[PoofEffect], light: bool) {
+    for poof in poofs {
+        for puff in &poof.puffs {
+            let avail = (poof.duration - puff.delay).max(0.05);
+            let local_t = ((poof.elapsed - puff.delay) / avail).clamp(0.0, 1.0);
+            if local_t <= 0.0 || local_t >= 1.0 {
+                continue;
+            }
+            let ease_out = 1.0 - (1.0 - local_t).powi(3);
+            let dist = puff.dist * ease_out;
+            let px = poof.center.x + puff.angle.cos() * dist;
+            let py = poof.center.y + puff.angle.sin() * dist - local_t * 6.0;
+            let r = if local_t < 0.35 {
+                let s = local_t / 0.35;
+                puff.r0 + (puff.r1 - puff.r0) * (1.0 - (1.0 - s).powi(2))
+            } else {
+                let s = (local_t - 0.35) / 0.65;
+                puff.r1 * (1.0 - 0.45 * s * s)
+            };
+            let alpha = if local_t < 0.15 {
+                local_t / 0.15
+            } else {
+                (1.0 - (local_t - 0.15) / 0.85).powf(1.75)
+            };
+            if r <= 0.5 || alpha <= 0.01 {
+                continue;
+            }
+            c.fill_circle(Point::new(px, py + 1.5), r * 1.05, Color::black(alpha * 0.16));
+            let cloud = if light {
+                Color::rgba(0.93, 0.95, 0.98, alpha * 0.92)
+            } else {
+                Color::rgba(0.96, 0.97, 1.0, alpha * 0.88)
+            };
+            c.fill_circle(Point::new(px, py), r, cloud);
+        }
+    }
+}
+
+fn dragged_slot_rect(base_sr: Rect, drag_pos: Point, drag_out: bool) -> Rect {
+    let lifted_y = if drag_out {
+        (drag_pos.y - base_sr.h * 0.5).clamp(6.0, (base_sr.y - 18.0).max(6.0))
+    } else {
+        base_sr.y - 5.0
+    };
+    Rect::new(drag_pos.x - base_sr.w * 0.5, lifted_y, base_sr.w, base_sr.h)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_dock(
     c: &mut Canvas<'_>,
@@ -2198,8 +2391,9 @@ fn draw_dock(
     ctrl_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
-    drag_x: Option<f32>,
+    drag_pos: Option<Point>,
     drag_out: bool,
+    poofs: &[PoofEffect],
     tray_rect: Option<Rect>,
     tray: &DockTrayState,
     hovered_tray: Option<DockTrayZone>,
@@ -2287,15 +2481,26 @@ fn draw_dock(
 
                 let dl_frac = tray.download_progress.map(|p| (p as f32 / 100.0).clamp(0.0, 1.0));
                 let mut browser_ring_drawn = false;
+                let dragged_j = drag_pos.and_then(|_| {
+                    pressed
+                        .filter(|&i| i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + apps.len())
+                        .map(|i| i - ANCHOR_SLOTS.len())
+                });
 
-                for (j, app) in apps.iter().enumerate() {
+                // Render stationary/shifting apps first, then the dragged app last so it floats on top.
+                let order = (0..apps.len())
+                    .filter(|&j| Some(j) != dragged_j)
+                    .chain(dragged_j);
+
+                for j in order {
+                    let app = &apps[j];
                     let idx = ANCHOR_SLOTS.len() + j;
                     let Some(&base_sr) = slot_rects.get(idx) else { continue };
                     let is_hover = hovered == Some(idx);
                     let is_press = pressed == Some(idx);
-                    let is_dragged = is_press && drag_x.is_some();
-                    let sr = if let Some(dx) = drag_x.filter(|_| is_press) {
-                        Rect::new(dx - base_sr.w * 0.5, base_sr.y - if drag_out { 28.0 } else { 4.0 }, base_sr.w, base_sr.h)
+                    let is_dragged = Some(j) == dragged_j;
+                    let sr = if let Some(dp) = drag_pos.filter(|_| is_dragged) {
+                        dragged_slot_rect(base_sr, dp, drag_out)
                     } else {
                         base_sr
                     };
@@ -2307,7 +2512,7 @@ fn draw_dock(
                     }
                     let tile = if is_press && !is_dragged { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
-                    let item_alpha = if is_dragged && drag_out { 0.45 } else { 1.0 };
+                    let item_alpha = if is_dragged && drag_out { 0.50 } else { 1.0 };
                     c.with_alpha(item_alpha, |c| {
                         let ring_p = app.progress.or_else(|| {
                             if !browser_ring_drawn && is_browser_key(&app.key) {
@@ -2579,13 +2784,13 @@ fn draw_dock(
                         apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
                     };
                     label.zip(slot_rects.get(i).copied())
-                } else if let (Some(i), Some(dx)) = (pressed, drag_x) {
+                } else if let (Some(i), Some(dp)) = (pressed, drag_pos) {
                     let label = if drag_out {
                         Some("Remove from Dock")
                     } else {
                         apps.get(i.saturating_sub(ANCHOR_SLOTS.len())).map(|a| a.name.as_str())
                     };
-                    label.zip(slot_rects.get(i).map(|sr| Rect::new(dx - sr.w * 0.5, sr.y - if drag_out { 28.0 } else { 4.0 }, sr.w, sr.h)))
+                    label.zip(slot_rects.get(i).map(|&sr| dragged_slot_rect(sr, dp, drag_out)))
                 } else if let (Some(z), Some(tr)) = (hovered_tray, tray_rect) {
                     let (weather_r, full_status_r, clock_r) = tray_zone_rects(tr, tray);
                     let (chev_r, status_r) = tray_chevron_and_status_rects(full_status_r);
@@ -2634,6 +2839,9 @@ fn draw_dock(
                     ];
                     c.path(&caret, Some(tip_bg), Some((tip_rim, 1.0)));
                     c.text(label, pill, &st);
+                }
+                if !poofs.is_empty() {
+                    draw_poof_effects(c, poofs, light);
                 }
             });
         }
@@ -5986,5 +6194,28 @@ mod tests {
         assert!(c4.right() <= card.w - FLYOUT_PAD + 0.5);
         assert!(c19.bottom() <= cc_sub_action_rect(card, 0).y);
         assert!(c0.w >= 48.0 && c0.h >= 40.0);
+    }
+
+    #[test]
+    fn drag_reorder_spring_and_poof_effect_settle() {
+        let mut poof = PoofEffect::new(Point::new(120.0, 36.0));
+        assert!(poof.step(0.10));
+        assert!(poof.step(0.20));
+        assert!(!poof.step(0.20)); // elapsed >= 0.42s -> expires for 0% CPU at rest
+
+        let mut sp = shift_spring(48.0);
+        sp.set_target(0.0);
+        assert!(!sp.is_settled_eps(SLOT_SHIFT_EPS));
+        for _ in 0..120 {
+            sp.step_eps(1.0 / 120.0, SLOT_SHIFT_EPS);
+        }
+        assert!(sp.is_settled_eps(SLOT_SHIFT_EPS));
+        assert!(sp.value.abs() <= SLOT_SHIFT_EPS);
+
+        let base = Rect::new(200.0, 72.0, 48.0, 48.0);
+        let in_shelf = dragged_slot_rect(base, Point::new(260.0, 80.0), false);
+        assert!((in_shelf.y - (base.y - 5.0)).abs() < 0.01);
+        let pulled_out = dragged_slot_rect(base, Point::new(260.0, 20.0), true);
+        assert!(pulled_out.y < in_shelf.y);
     }
 }
