@@ -391,7 +391,7 @@ pub(crate) fn on_notify_slice(icons: &mut Vec<TrayIcon>, b: &[u8], decode_icon: 
                 if hicon != ic.hicon || ic.image.is_none() {
                     ic.hicon = hicon;
                     if decode_icon {
-                        ic.image = icon_image(hicon, 32);
+                        ic.image = icon_image(hicon, 64);
                     }
                 }
             }

@@ -6146,18 +6146,18 @@ impl DockControlCenter {
                                     if let Some(img) = ic.image.as_ref() {
                                         let sz = if is_h { 24.0 } else { 22.0 };
                                         let ir = Rect::new(
-                                            cr.x + (cr.w - sz) * 0.5,
-                                            cr.y + (cr.h - sz) * 0.5,
+                                            (cr.x + (cr.w - sz) * 0.5).round(),
+                                            (cr.y + (cr.h - sz) * 0.5).round(),
                                             sz,
                                             sz,
                                         );
                                         if ic.hidden {
                                             c.with_alpha(if is_h { 1.0 } else { 0.82 }, |c| {
-                                                c.image(img, ir, 4.0);
+                                                c.image_hq(img, ir);
                                             });
                                             c.fill_circle(Point::new(cr.right() - 7.0, cr.y + 7.0), 2.3, sub.with_alpha(0.75));
                                         } else {
-                                            c.image(img, ir, 4.0);
+                                            c.image_hq(img, ir);
                                         }
                                     }
                                 }
