@@ -1962,8 +1962,8 @@ impl Dock {
                     return (Some(LRESULT(0)), act);
                 }
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
-                    self.trigger_bounce(i, instant);
                     if i < ANCHOR_SLOTS.len() {
+                        self.trigger_bounce(i, instant);
                         let act = match ANCHOR_SLOTS[i].action {
                             SlotAction::Launchpad => DockAction::OpenLaunchpad,
                             SlotAction::ToggleIsland => DockAction::ToggleIsland,
@@ -1975,9 +1975,12 @@ impl Dock {
                     let vis_apps = self.visible_apps();
                     if let Some(app) = vis_apps.get(i - ANCHOR_SLOTS.len()) {
                         if !app.running {
-                            if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                            let spec = app.launch.clone().or_else(|| app.exe.clone());
+                            self.trigger_bounce(i, instant);
+                            if let Some(spec) = spec {
                                 return (Some(LRESULT(0)), DockAction::LaunchPinnedApp(spec));
                             }
+                            return (Some(LRESULT(0)), DockAction::RequestFrame);
                         }
                         let icon_rect = self.slot_screen_rect(i);
                         return (
@@ -1990,6 +1993,7 @@ impl Dock {
                             },
                         );
                     }
+                    self.trigger_bounce(i, instant);
                     if Some(i) == self.downloads_slot_index() {
                         let icon_rect = self.slot_screen_rect(i);
                         return (Some(LRESULT(0)), DockAction::ToggleDownloadsStack(icon_rect));

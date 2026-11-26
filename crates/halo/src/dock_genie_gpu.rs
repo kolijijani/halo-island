@@ -24,15 +24,14 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 /// Rows of the strip mesh: each strip is two affine triangles, so fewer rows show as kinks in the curve.
 pub const ROWS: usize = 128;
 const FMT: DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
-const SAMPLES: u32 = 4;
 const CLASS: PCWSTR = w!("Halo.DockGenieGpu");
 /// Snappy macOS-paced durations (driven at full display refresh rate, e.g. 120/144/240 Hz).
 pub const MINIMIZE_SECS: f64 = 0.36;
 pub const RESTORE_SECS: f64 = 0.36;
-/// After a restore lands: ~1-2 frames for DWM to composite the live window behind the overlay,
+/// After a restore lands: ~2 frames for DWM to composite the live window behind the overlay,
 /// then a crisp cross-dissolve so handoff feels instantaneous with zero pause or pop.
-const RESTORE_PAINT: f64 = 0.016;
-const RESTORE_FADE: f64 = 0.045;
+const RESTORE_PAINT: f64 = 0.024;
+const RESTORE_FADE: f64 = 0.050;
 /// Windows 11's window corner radius and (roughly) its active-window shadow, at 100% scale.
 const CORNER: f32 = 8.0;
 const SHADOW_SIGMA: f32 = 10.0;
@@ -140,7 +139,15 @@ fn look_of(win: R, mon: &MonitorInfo) -> Look {
         && win.right() >= wk.right as f64 - 4.0
         && win.bottom() >= wk.bottom as f64 - 4.0;
     if maxed {
-        return Look { w: win.w as f32, h: win.h as f32, margin: 0.0, radius: 0.0, sigma: 1.0, shadow: 0.0, drop: 0.0 };
+        return Look {
+            w: win.w as f32,
+            h: win.h as f32,
+            margin: (2.0 * s).ceil(),
+            radius: 0.0,
+            sigma: 1.0,
+            shadow: 0.0,
+            drop: 0.0,
+        };
     }
     let (sigma, drop) = (SHADOW_SIGMA * s, SHADOW_DROP * s);
     Look {
@@ -177,16 +184,16 @@ pub fn shape(win: R, icon: R, p: f64) -> Vec<(f64, f64, f64)> {
 /// Direction-aware genie mesh at normalized time `t` (`0.0..=1.0`).
 ///
 /// Minimize bends into a funnel then sucks down into the icon.
-/// Restore uses a continuous cubic ease-out so vertical emergence and horizontal
-/// widening finish together at `t = 1.0` with zero mid-air stall.
+/// Restore glides upward with steady mid-screen velocity (`u`) so vertical emergence
+/// and funnel release finish together at `t = 1.0` without stalling mid-way.
 pub fn shape_for(win: R, icon: R, t: f64, dir: GenieDir) -> Vec<(f64, f64, f64)> {
     let t = t.clamp(0.0, 1.0);
     match dir {
         GenieDir::Minimize => shape(win, icon, t),
         GenieDir::Restore => {
-            let ease_out = 1.0 - (1.0 - t).powi(3);
-            let slide = 1.0 - ease_out;
-            let squeeze = 1.0 - smooth((t - 0.10) / 0.90);
+            let u = 0.45 * (1.0 - (1.0 - t).powi(2)) + 0.55 * smooth(t);
+            let slide = 1.0 - u;
+            let squeeze = 1.0 - smooth((u - 0.42) / 0.58);
             shape_with(win, icon, squeeze, slide)
         }
     }
@@ -237,6 +244,7 @@ fn shaders() -> Option<&'static (Vec<u8>, Vec<u8>)> {
 
 pub struct GenieGpu {
     hwnd: HWND,
+    dev: ID3D11Device,
     ctx: ID3D11DeviceContext,
     swap: IDXGISwapChain1,
     _dcomp: IDCompositionDevice,
@@ -250,8 +258,6 @@ pub struct GenieGpu {
     sampler: ID3D11SamplerState,
     raster: ID3D11RasterizerState,
     blend: ID3D11BlendState,
-    msaa: ID3D11Texture2D,
-    rtv: ID3D11RenderTargetView,
     srv: ID3D11ShaderResourceView,
     area: R,
     size: (u32, u32),
@@ -322,9 +328,10 @@ impl GenieGpu {
                 None,
             )?;
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
-            match Self::build(hwnd, dev, ctx, img, size) {
+            match Self::build(hwnd, dev.clone(), ctx, img, size) {
                 Ok(parts) => Ok(Self {
                     hwnd,
+                    dev,
                     ctx: parts.0,
                     swap: parts.1,
                     _dcomp: parts.2,
@@ -338,9 +345,7 @@ impl GenieGpu {
                     sampler: parts.10,
                     raster: parts.11,
                     blend: parts.12,
-                    msaa: parts.13,
-                    rtv: parts.14,
-                    srv: parts.15,
+                    srv: parts.13,
                     area,
                     size,
                     win,
@@ -356,6 +361,22 @@ impl GenieGpu {
                     let _ = DestroyWindow(hwnd);
                     Err(e)
                 }
+            }
+        }
+    }
+
+    pub fn raise_topmost(&self) {
+        if !self.hwnd.is_invalid() {
+            unsafe {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
             }
         }
     }
@@ -381,8 +402,6 @@ impl GenieGpu {
         ID3D11SamplerState,
         ID3D11RasterizerState,
         ID3D11BlendState,
-        ID3D11Texture2D,
-        ID3D11RenderTargetView,
         ID3D11ShaderResourceView,
     )> {
         let (vsb, psb) = shaders().ok_or_else(|| windows::core::Error::from(E_FAIL))?;
@@ -394,9 +413,9 @@ impl GenieGpu {
             Format: FMT,
             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            BufferCount: 3,
+            BufferCount: 2,
             Scaling: DXGI_SCALING_STRETCH,
-            SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+            SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
             AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
             ..Default::default()
         };
@@ -471,7 +490,7 @@ impl GenieGpu {
             &D3D11_RASTERIZER_DESC {
                 FillMode: D3D11_FILL_SOLID,
                 CullMode: D3D11_CULL_NONE,
-                MultisampleEnable: true.into(),
+                MultisampleEnable: false.into(),
                 DepthClipEnable: true.into(),
                 ..Default::default()
             },
@@ -491,26 +510,6 @@ impl GenieGpu {
         };
         let mut blend = None;
         dev.CreateBlendState(&bd, Some(&mut blend))?;
-
-        let mut msaa = None;
-        dev.CreateTexture2D(
-            &D3D11_TEXTURE2D_DESC {
-                Width: w,
-                Height: h,
-                MipLevels: 1,
-                ArraySize: 1,
-                Format: FMT,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: SAMPLES, Quality: 0 },
-                Usage: D3D11_USAGE_DEFAULT,
-                BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
-                ..Default::default()
-            },
-            None,
-            Some(&mut msaa),
-        )?;
-        let msaa = msaa.ok_or_else(|| windows::core::Error::from(E_FAIL))?;
-        let mut rtv = None;
-        dev.CreateRenderTargetView(&msaa, None, Some(&mut rtv))?;
 
         // Mipmapped, so the shrink into the icon stays smooth instead of shimmering.
         let mut t = None;
@@ -552,16 +551,20 @@ impl GenieGpu {
             sampler.ok_or_else(missing)?,
             raster.ok_or_else(missing)?,
             blend.ok_or_else(missing)?,
-            msaa,
-            rtv.ok_or_else(missing)?,
             srv,
         ))
     }
 
     /// Advance by `dt` seconds from the vblank-locked FrameClock and draw one frame.
     pub fn frame(&mut self, dt: f64) -> Step {
-        let step = dt.clamp(0.0, 0.05);
         if let Some(fade_elapsed) = self.landed_elapsed.as_mut() {
+            // Clamp the first tick after `ShowWindow(SW_RESTORE)` so cross-process
+            // layout latency never swallows DWM's composite window before fading.
+            let step = if *fade_elapsed == 0.0 && dt > 0.0 {
+                dt.clamp(0.0, 1.0 / 60.0)
+            } else {
+                dt.clamp(0.0, 0.05)
+            };
             *fade_elapsed += step;
             let fade = *fade_elapsed - RESTORE_PAINT;
             if fade >= RESTORE_FADE {
@@ -571,6 +574,12 @@ impl GenieGpu {
             let rows = shape(self.win.grow(self.look.margin as f64), self.icon, 0.0);
             return if self.draw(&rows, alpha as f32).is_ok() { Step::Moving } else { Step::Done };
         }
+        // Clamp the first tick after swapchain setup so setup latency never skips the launch.
+        let step = if self.elapsed == 0.0 && dt > 0.0 {
+            dt.clamp(0.0, 1.0 / 60.0)
+        } else {
+            dt.clamp(0.0, 0.05)
+        };
         self.elapsed += step;
         let t = (self.elapsed / self.duration).min(1.0);
         let alpha = match self.dir {
@@ -598,10 +607,14 @@ impl GenieGpu {
         let (ox, oy) = (self.area.x, self.area.y);
         unsafe {
             let ctx = &self.ctx;
+            let back: ID3D11Texture2D = self.swap.GetBuffer(0)?;
+            let mut rtv = None;
+            self.dev.CreateRenderTargetView(&back, None, Some(&mut rtv))?;
+            let rtv = rtv.ok_or_else(|| windows::core::Error::from(E_FAIL))?;
             let mut m = D3D11_MAPPED_SUBRESOURCE::default();
             ctx.OMSetBlendState(&self.blend, None, 0xffff_ffff);
-            ctx.ClearRenderTargetView(&self.rtv, &[0.0, 0.0, 0.0, 0.0]);
-            ctx.OMSetRenderTargets(Some(&[Some(self.rtv.clone())]), None::<&ID3D11DepthStencilView>);
+            ctx.ClearRenderTargetView(&rtv, &[0.0, 0.0, 0.0, 0.0]);
+            ctx.OMSetRenderTargets(Some(&[Some(rtv)]), None::<&ID3D11DepthStencilView>);
             ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
                 Width: self.size.0 as f32,
                 Height: self.size.1 as f32,
@@ -649,8 +662,6 @@ impl GenieGpu {
             ctx.PSSetShaderResources(0, Some(&[Some(self.srv.clone())]));
             ctx.Draw((rows.len() * 2) as u32, 0);
 
-            let back: ID3D11Texture2D = self.swap.GetBuffer(0)?;
-            ctx.ResolveSubresource(&back, 0, &self.msaa, 0, FMT);
             // The device is the island's too: leave nothing bound that its own drawing doesn't set.
             ctx.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
             ctx.OMSetBlendState(None::<&ID3D11BlendState>, None, 0xffff_ffff);
@@ -710,6 +721,16 @@ mod tests {
         assert!((landed[0].2 - win.y).abs() < 1e-6);
         assert!((landed[0].0 - win.x).abs() < 1e-6);
         assert!((landed[0].1 - win.right()).abs() < 1e-6);
+
+        // Mid-animation (t = 0.40 -> 0.70) must sustain >25% of vertical travel so maximized
+        // windows never appear stalled in the middle of the screen.
+        let r40 = shape_for(win, icon, 0.40, GenieDir::Restore);
+        let r70 = shape_for(win, icon, 0.70, GenieDir::Restore);
+        let total_travel = icon.bottom() - win.y;
+        assert!(
+            (r40[0].2 - r70[0].2) > total_travel * 0.25,
+            "mid-restore must keep brisk vertical velocity without plateau"
+        );
     }
 
     #[test]

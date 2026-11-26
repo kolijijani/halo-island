@@ -552,6 +552,8 @@ pub struct App {
     dock_widgets: Option<crate::dock_widgets::DockWidgets>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
+    /// Deferred `DockAppsChanged` refresh held while `dock_genie` is animating so `EnumWindows` never stalls frames.
+    dock_apps_deferred: bool,
     /// Transient live DWM window hover preview popover, alive only while hovering a running app.
     dock_preview: Option<crate::dock_preview::DockPreview>,
     /// App key waiting on `TIMER_DOCK_PREVIEW_OPEN`.
@@ -883,6 +885,7 @@ impl App {
             dock_launchpad: None,
             dock_widgets: None,
             dock_genie: None,
+            dock_apps_deferred: false,
             dock_preview: None,
             dock_preview_pending: None,
             dock_click_hook: None,
@@ -2435,15 +2438,44 @@ impl App {
         }
     }
 
+    fn refresh_dock_apps(&mut self) {
+        if self.locked || self.display_off {
+            return;
+        }
+        let prev_rec = self.st.settings.dock_recent.clone();
+        let mut changed = false;
+        if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
+            let apps = w.refresh_with_pinned_and_recent(
+                &self.st.settings.dock_pinned,
+                &mut self.st.settings.dock_recent,
+            );
+            changed = d.set_apps(apps);
+        }
+        if self.st.settings.dock_recent != prev_rec {
+            self.save_settings();
+        }
+        if changed {
+            self.request_frame();
+        }
+        self.sync_dock_preview_apps();
+    }
+
     fn paint_dock_genie_if_needed(&mut self, dt: f32) {
         if self.dock_genie.is_none() {
             return;
         }
         let instant = self.reduce_motion || self.st.power.saver;
         let shared = self.gfx.d3d_handles();
+        let mut finished = false;
         if let Some(g) = self.dock_genie.as_mut() {
             if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
-                self.dock_genie = None;
+                finished = true;
+            }
+        }
+        if finished {
+            self.dock_genie = None;
+            if std::mem::take(&mut self.dock_apps_deferred) {
+                self.refresh_dock_apps();
             }
         }
     }
@@ -4098,23 +4130,10 @@ impl App {
                 self.start_raises();
             }
             AppEvent::DockAppsChanged => {
-                if !self.locked && !self.display_off {
-                    let prev_rec = self.st.settings.dock_recent.clone();
-                    let mut changed = false;
-                    if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
-                        let apps = w.refresh_with_pinned_and_recent(
-                            &self.st.settings.dock_pinned,
-                            &mut self.st.settings.dock_recent,
-                        );
-                        changed = d.set_apps(apps);
-                    }
-                    if self.st.settings.dock_recent != prev_rec {
-                        self.save_settings();
-                    }
-                    if changed {
-                        self.request_frame();
-                    }
-                    self.sync_dock_preview_apps();
+                if self.dock_genie.is_some() {
+                    self.dock_apps_deferred = true;
+                } else {
+                    self.refresh_dock_apps();
                 }
             }
             AppEvent::DockWindowMinimizing { hwnd: raw_hwnd, capture } => {
@@ -4938,6 +4957,9 @@ impl App {
         }
         if let Some(d) = self.dock.as_ref() {
             d.raise_topmost();
+        }
+        if let Some(g) = self.dock_genie.as_ref() {
+            g.raise_topmost();
         }
         if let Some(lp) = self.dock_launchpad.as_ref() {
             unsafe {

@@ -104,8 +104,8 @@ pub fn genie_slices(
     let (bend, suck) = match dir {
         GenieDir::Minimize => (smoothstep(0.0, 0.42, t), smoothstep(0.05, 1.0, t)),
         GenieDir::Restore => {
-            let ease_out = 1.0 - (1.0 - t).powi(3);
-            (1.0 - smoothstep(0.10, 1.0, t), 1.0 - ease_out)
+            let u = 0.45 * (1.0 - (1.0 - t).powi(2)) + 0.55 * smoothstep(0.0, 1.0, t);
+            (1.0 - smoothstep(0.42, 1.0, u), 1.0 - u)
         }
     };
 
@@ -519,6 +519,24 @@ impl DockGenie {
         self
     }
 
+    pub fn raise_topmost(&self) {
+        if let Some(gpu) = self.gpu.as_ref() {
+            gpu.raise_topmost();
+        } else if !self.hwnd.is_invalid() {
+            unsafe {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+
     /// Advance and paint one frame. Returns `false` when the animation finishes
     /// so the caller drops `DockGenie` immediately (zero idle cost).
     pub fn tick_and_paint(&mut self, dt: f32, shared: Option<SharedD3d>) -> bool {
@@ -540,7 +558,12 @@ impl DockGenie {
                 }
             };
         }
-        self.elapsed += dt.clamp(0.0, 0.05);
+        let step = if self.elapsed == 0.0 && dt > 0.0 {
+            dt.clamp(0.0, 1.0 / 60.0)
+        } else {
+            dt.clamp(0.0, 0.05)
+        };
+        self.elapsed += step;
         let t = (self.elapsed / GENIE_DURATION).clamp(0.0, 1.0);
         if t >= 1.0 {
             if let Some(target) = self.restore_target.take() {
