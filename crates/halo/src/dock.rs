@@ -520,7 +520,7 @@ struct AnchorSlot {
     active: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum SlotAction {
     Launchpad,
     ToggleIsland,
@@ -967,6 +967,7 @@ pub struct Dock {
     ctrl_open: bool,
     preview_open: bool,
     bottom_most: bool,
+    halo_icon: Option<Image>,
     cfg: DockConfig,
     dirty: bool,
     mask: Option<(HitMask, f64)>,
@@ -1026,6 +1027,9 @@ impl Dock {
         unsafe {
             DragAcceptFiles(hwnd, true);
         }
+        let halo_icon = std::env::current_exe().ok().and_then(|p| {
+            crate::services::dock_apps::extract_app_icon(HWND::default(), p.to_str(), None)
+        });
         Ok(Self {
             gfx: Some(gfx),
             glass: crate::glass::Glass::new_secondary(look.light),
@@ -1061,6 +1065,7 @@ impl Dock {
             ctrl_open: false,
             preview_open: false,
             bottom_most: true,
+            halo_icon,
             cfg: DockConfig::default(),
             dirty: true,
             mask: None,
@@ -2230,6 +2235,7 @@ impl Dock {
                     sep3_x,
                     &slot_rects,
                     apps_slice,
+                    self.halo_icon.as_ref(),
                     show_downloads,
                     badge_mode,
                     stack_open,
@@ -2427,6 +2433,207 @@ fn draw_launchpad_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is_
     }
 }
 
+/// Draw the Halo Island app slot icon: uses the high-res icon extracted from `halo.exe`
+/// with a fallback to the authentic Halo mascot obsidian pill.
+fn draw_halo_island_slot_icon(
+    c: &mut Canvas<'_>,
+    tile: Rect,
+    tr: f32,
+    light: bool,
+    is_hover: bool,
+    halo_icon: Option<&Image>,
+) {
+    if let Some(img) = halo_icon {
+        draw_squircle_shadow(c, tile.inset(1.5, 1.5), tr, light);
+        c.image_hq(img, tile.inset(0.5, 0.5));
+        if is_hover {
+            c.stroke_rrect(tile, tr, Color::hex(0x0A84FF).with_alpha(0.52), 1.0);
+        }
+    } else {
+        c.fill_rrect(tile, tr, Color::hex(0x0B0D12));
+        let tile_segs = crate::pill::shape::segments(tile, tr);
+        c.fill_path_fade(
+            &tile_segs,
+            Color::white(1.0),
+            tile.y,
+            tile.y + tile.h * 0.52,
+            0.26,
+            0.0,
+        );
+        c.fill_circle(tile.center(), tile.w * 0.28, Color::hex(0x0A84FF).with_alpha(0.20));
+
+        let eye_w = (tile.w * 0.14).max(3.0);
+        let eye_h = (tile.h * 0.32).max(6.0);
+        let eye_r = eye_w * 0.5;
+        let eye_dx = (tile.w * 0.11).max(3.0);
+        let cx = tile.center().x;
+        let cy = tile.center().y;
+
+        c.fill_rrect(Rect::from_center(Point::new(cx - eye_dx, cy), eye_w, eye_h), eye_r, Color::hex(0xF2F5FA));
+        c.fill_rrect(Rect::from_center(Point::new(cx + eye_dx, cy), eye_w, eye_h), eye_r, Color::hex(0xF2F5FA));
+
+        let rim = if is_hover {
+            Color::hex(0x0A84FF).with_alpha(0.65)
+        } else {
+            Color::white(0.24)
+        };
+        c.stroke_rrect(tile, tr, rim, 1.0);
+    }
+}
+
+/// Draw the Shelf drop tray app icon: desk organizer / inbox filing tray with layered documents.
+fn draw_shelf_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, _light: bool, is_hover: bool) {
+    c.fill_rrect(tile, tr, Color::hex(0x5E5CE6));
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.55, 0.35, 0.0);
+    c.fill_path_fade(&tile_segs, Color::black(1.0), tile.y + tile.h * 0.50, tile.bottom(), 0.0, 0.28);
+    let rim = if is_hover { Color::white(0.60) } else { Color::white(0.28) };
+    c.stroke_rrect(tile, tr, rim, 1.0);
+
+    let tw = tile.w * 0.64;
+    let th = tile.h * 0.56;
+    let tx = tile.x + (tile.w - tw) * 0.5;
+    let ty = tile.y + (tile.h - th) * 0.5 + tile.h * 0.04;
+
+    // Stacked back sheet
+    c.fill_rrect(Rect::new(tx + tw * 0.10, ty - th * 0.22, tw * 0.72, th * 0.62), 3.0, Color::white(0.55));
+    // Front document sheet with preview content lines
+    let doc = Rect::new(tx + tw * 0.18, ty - th * 0.12, tw * 0.68, th * 0.62);
+    c.fill_rrect(doc, 3.0, Color::white(0.96));
+    c.fill_rrect(Rect::new(doc.x + doc.w * 0.18, doc.y + doc.h * 0.24, doc.w * 0.62, 2.0), 1.0, Color::hex(0x818CF8));
+    c.fill_rrect(Rect::new(doc.x + doc.w * 0.18, doc.y + doc.h * 0.44, doc.w * 0.46, 2.0), 1.0, Color::hex(0xC7D2FE));
+
+    // Front tray lip
+    let tray_lip = Rect::new(tx, ty + th * 0.28, tw, th * 0.56);
+    c.fill_rrect(tray_lip, 4.0, Color::rgba(0.92, 0.94, 1.0, 0.92));
+    c.stroke_rrect(tray_lip, 4.0, Color::white(0.70), 1.0);
+
+    // Front center cutout thumb-notch
+    let notch_w = tw * 0.36;
+    let notch_h = th * 0.22;
+    let notch_r = Rect::new(tx + (tw - notch_w) * 0.5, ty + th * 0.24, notch_w, notch_h);
+    c.fill_rrect(notch_r, notch_h * 0.5, Color::hex(0x4338CA));
+}
+
+/// Draw the Tasks checklist app icon: productivity clipboard with check badges.
+fn draw_tasks_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, _light: bool, is_hover: bool) {
+    c.fill_rrect(tile, tr, Color::hex(0x30D158));
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.55, 0.34, 0.0);
+    c.fill_path_fade(&tile_segs, Color::black(1.0), tile.y + tile.h * 0.50, tile.bottom(), 0.0, 0.25);
+    let rim = if is_hover { Color::white(0.60) } else { Color::white(0.28) };
+    c.stroke_rrect(tile, tr, rim, 1.0);
+
+    let cw = tile.w * 0.62;
+    let ch = tile.h * 0.68;
+    let cx = tile.x + (tile.w - cw) * 0.5;
+    let cy = tile.y + (tile.h - ch) * 0.5 + tile.h * 0.03;
+    let card = Rect::new(cx, cy, cw, ch);
+
+    c.fill_rrect(card.offset(0.0, 2.0), 3.5, Color::black(0.22));
+    c.fill_rrect(card, 3.5, Color::white(0.98));
+
+    // Brass clipboard header clip
+    let clip_w = cw * 0.44;
+    let clip_h = ch * 0.16;
+    let clip_rect = Rect::new(cx + (cw - clip_w) * 0.5, cy - clip_h * 0.45, clip_w, clip_h);
+    c.fill_rrect(clip_rect, 2.0, Color::hex(0xF59E0B));
+    c.stroke_rrect(clip_rect, 2.0, Color::hex(0xD97706), 0.9);
+
+    // Row 1: green completed checkmark
+    let r1_c = Point::new(cx + cw * 0.25, cy + ch * 0.32);
+    let check_r = cw * 0.095;
+    c.fill_circle(r1_c, check_r, Color::hex(0x10B981));
+    c.line(Point::new(r1_c.x - check_r * 0.5, r1_c.y), Point::new(r1_c.x - check_r * 0.1, r1_c.y + check_r * 0.45), Color::white(1.0), 1.2);
+    c.line(Point::new(r1_c.x - check_r * 0.1, r1_c.y + check_r * 0.45), Point::new(r1_c.x + check_r * 0.55, r1_c.y - check_r * 0.4), Color::white(1.0), 1.2);
+    c.fill_rrect(Rect::new(cx + cw * 0.42, cy + ch * 0.29, cw * 0.44, 2.2), 1.0, Color::hex(0x94A3B8));
+
+    // Row 2: cyan completed checkmark
+    let r2_c = Point::new(cx + cw * 0.25, cy + ch * 0.54);
+    c.fill_circle(r2_c, check_r, Color::hex(0x0284C7));
+    c.line(Point::new(r2_c.x - check_r * 0.5, r2_c.y), Point::new(r2_c.x - check_r * 0.1, r2_c.y + check_r * 0.45), Color::white(1.0), 1.2);
+    c.line(Point::new(r2_c.x - check_r * 0.1, r2_c.y + check_r * 0.45), Point::new(r2_c.x + check_r * 0.55, r2_c.y - check_r * 0.4), Color::white(1.0), 1.2);
+    c.fill_rrect(Rect::new(cx + cw * 0.42, cy + ch * 0.51, cw * 0.38, 2.2), 1.0, Color::hex(0x94A3B8));
+
+    // Row 3: pending checkbox
+    let r3_c = Point::new(cx + cw * 0.25, cy + ch * 0.76);
+    c.stroke_circle(r3_c, check_r - 0.5, Color::hex(0xCBD5E1), 1.2);
+    c.fill_rrect(Rect::new(cx + cw * 0.42, cy + ch * 0.73, cw * 0.30, 2.2), 1.0, Color::hex(0xCBD5E1));
+}
+
+/// Draw the Focus Pomodoro timer icon: precision chronograph dial with focus session arc.
+fn draw_focus_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, _light: bool, is_hover: bool) {
+    c.fill_rrect(tile, tr, Color::hex(0xFF9F0A));
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.55, 0.34, 0.0);
+    c.fill_path_fade(&tile_segs, Color::black(1.0), tile.y + tile.h * 0.50, tile.bottom(), 0.0, 0.25);
+    let rim = if is_hover { Color::white(0.60) } else { Color::white(0.28) };
+    c.stroke_rrect(tile, tr, rim, 1.0);
+
+    let cpt = Point::new(tile.center().x, tile.center().y + tile.h * 0.04);
+    let dr = tile.w * 0.31;
+
+    let btn_w = dr * 0.32;
+    let btn_h = dr * 0.26;
+    let btn_r = Rect::new(cpt.x - btn_w * 0.5, cpt.y - dr - btn_h * 0.75, btn_w, btn_h);
+    c.fill_rrect(btn_r, 1.5, Color::hex(0xE2E8F0));
+    c.stroke_rrect(btn_r, 1.5, Color::hex(0x94A3B8), 0.8);
+
+    c.fill_circle(cpt, dr + 1.5, Color::hex(0xFDBA74));
+    c.fill_circle(cpt, dr, Color::hex(0x18181B));
+
+    for k in 0..8 {
+        let ang = (k as f32) * std::f32::consts::PI / 4.0;
+        let p1 = Point::new(cpt.x + ang.sin() * (dr * 0.76), cpt.y - ang.cos() * (dr * 0.76));
+        let p2 = Point::new(cpt.x + ang.sin() * (dr * 0.90), cpt.y - ang.cos() * (dr * 0.90));
+        c.line(p1, p2, Color::white(0.55), 1.0);
+    }
+
+    c.arc(cpt, dr * 0.65, -std::f32::consts::FRAC_PI_2, 2.8, Color::hex(0xFDE047), 2.2);
+
+    let needle_ang = -std::f32::consts::FRAC_PI_2 + 2.8;
+    let n_end = Point::new(cpt.x + needle_ang.cos() * (dr * 0.75), cpt.y + needle_ang.sin() * (dr * 0.75));
+    c.line(cpt, n_end, Color::hex(0xFF453A), 1.8);
+    c.fill_circle(cpt, 2.5, Color::white(0.96));
+}
+
+/// Draw the Dock Settings icon: dual intermeshing aluminum gears (macOS System Settings style).
+fn draw_settings_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, _light: bool, is_hover: bool) {
+    c.fill_rrect(tile, tr, Color::hex(0x64748B));
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(&tile_segs, Color::white(1.0), tile.y, tile.y + tile.h * 0.55, 0.35, 0.0);
+    c.fill_path_fade(&tile_segs, Color::black(1.0), tile.y + tile.h * 0.50, tile.bottom(), 0.0, 0.28);
+    let rim = if is_hover { Color::white(0.60) } else { Color::white(0.28) };
+    c.stroke_rrect(tile, tr, rim, 1.0);
+
+    let g1 = Point::new(tile.x + tile.w * 0.44, tile.y + tile.h * 0.54);
+    let r1 = tile.w * 0.24;
+
+    for i in 0..8 {
+        let ang = (i as f32) * std::f32::consts::PI / 4.0;
+        let tc = Point::new(g1.x + ang.cos() * r1, g1.y + ang.sin() * r1);
+        c.fill_circle(tc, r1 * 0.28, Color::hex(0xE2E8F0));
+    }
+    c.fill_circle(g1, r1, Color::hex(0xF1F5F9));
+    c.stroke_circle(g1, r1, Color::hex(0x94A3B8), 1.0);
+    c.stroke_circle(g1, r1 * 0.65, Color::hex(0xCBD5E1), 1.2);
+    c.fill_circle(g1, r1 * 0.36, Color::hex(0x334155));
+    c.fill_circle(g1, r1 * 0.16, Color::hex(0xE2E8F0));
+
+    let g2 = Point::new(tile.x + tile.w * 0.66, tile.y + tile.h * 0.34);
+    let r2 = tile.w * 0.16;
+
+    for i in 0..6 {
+        let ang = (i as f32) * std::f32::consts::PI / 3.0 + std::f32::consts::FRAC_PI_6;
+        let tc = Point::new(g2.x + ang.cos() * r2, g2.y + ang.sin() * r2);
+        c.fill_circle(tc, r2 * 0.30, Color::hex(0xCBD5E1));
+    }
+    c.fill_circle(g2, r2, Color::hex(0xE2E8F0));
+    c.stroke_circle(g2, r2, Color::hex(0x64748B), 1.0);
+    c.fill_circle(g2, r2 * 0.38, Color::hex(0x334155));
+    c.fill_circle(g2, r2 * 0.16, Color::hex(0xCBD5E1));
+}
+
 /// Draw a macOS-style top-right notification badge pill or minimalist dot based on [`DockBadgeMode`].
 fn draw_dock_badge(c: &mut Canvas<'_>, tile: Rect, count: u16, style: DockBadgeStyle, mode: DockBadgeMode) {
     if count == 0 || mode == DockBadgeMode::Hidden {
@@ -2554,12 +2761,12 @@ fn draw_downloads_stack_icon(
     c.stroke_rrect(tile, tr, tile_rim, 1.0);
 }
 
-/// Draw the macOS Trash / Recycle Bin squircle tile icon (`shell:RecycleBinFolder`).
+/// Draw the macOS Trash / Recycle Bin squircle tile icon: authentic wire-mesh ribbed desktop wastebasket with papers.
 fn draw_trash_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is_hover: bool) {
     let bg = if light {
-        Color::rgba(0.91, 0.93, 0.96, 0.92)
+        Color::rgba(0.92, 0.94, 0.97, 0.88)
     } else {
-        Color::hex(0x1E2633).with_alpha(0.92)
+        Color::hex(0x151C28).with_alpha(0.88)
     };
     c.fill_rrect(tile, tr, bg);
     let tile_segs = crate::pill::shape::segments(tile, tr);
@@ -2568,20 +2775,90 @@ fn draw_trash_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is
         Color::white(1.0),
         tile.y,
         tile.y + tile.h * 0.52,
-        if light { 0.34 } else { 0.18 },
+        if light { 0.30 } else { 0.16 },
         0.0,
     );
     let rim = if is_hover {
-        Color::hex(0x38BDF8).with_alpha(0.72)
+        Color::hex(0x38BDF8).with_alpha(0.70)
     } else if light {
-        Color::black(0.12)
+        Color::black(0.10)
     } else {
-        Color::white(0.22)
+        Color::white(0.20)
     };
     c.stroke_rrect(tile, tr, rim, 1.0);
-    let ic_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-    let ic_col = if light { Color::hex(0x334155) } else { Color::hex(0xCBD5E1) };
-    c.icon(Icon::Trash, ic_box, ic_col);
+
+    // Authentic wire-mesh / ribbed metallic desktop wastebasket
+    let cx = tile.center().x;
+    let cy = tile.center().y + tile.h * 0.04;
+    let rw = tile.w * 0.54;
+    let rh = tile.h * 0.14;
+    let bh = tile.h * 0.50;
+    let bw = tile.w * 0.40;
+    let bbh = tile.h * 0.10;
+
+    let top_y = cy - bh * 0.42;
+    let bot_y = cy + bh * 0.44;
+    let top_l = Point::new(cx - rw * 0.48, top_y);
+    let top_r = Point::new(cx + rw * 0.48, top_y);
+    let bot_l = Point::new(cx - bw * 0.48, bot_y);
+    let bot_r = Point::new(cx + bw * 0.48, bot_y);
+
+    // Crumpled papers peeking over the top rim
+    // Paper 1 (ivory note)
+    c.fill_rrect(Rect::new(cx - rw * 0.42, cy - bh * 0.60, rw * 0.38, bh * 0.32), 2.0, Color::white(0.96));
+    // Paper 2 (cyan blueprint note)
+    c.fill_rrect(Rect::new(cx - rw * 0.05, cy - bh * 0.52, rw * 0.36, bh * 0.28), 1.5, Color::hex(0x38BDF8).with_alpha(0.90));
+
+    // Canister mesh body
+    let body_col = if light {
+        Color::rgba(0.75, 0.82, 0.90, 0.45)
+    } else {
+        Color::rgba(0.25, 0.35, 0.50, 0.45)
+    };
+    let body_rect = Rect::new(cx - rw * 0.46, top_y, rw * 0.92, bh * 0.86);
+    c.fill_rrect(body_rect, 3.0, body_col);
+
+    // 5 vertical mesh bars
+    for step in 0..=4 {
+        let t = step as f32 / 4.0;
+        let px_top = top_l.x + (top_r.x - top_l.x) * t;
+        let px_bot = bot_l.x + (bot_r.x - bot_l.x) * t;
+        let bar_col = if light {
+            Color::rgba(0.40, 0.48, 0.58, 0.70)
+        } else {
+            Color::rgba(0.70, 0.80, 0.95, 0.65)
+        };
+        c.line(Point::new(px_top, top_y), Point::new(px_bot, bot_y), bar_col, 1.2);
+    }
+
+    // 2 horizontal reinforcement rings
+    for frac in [0.35, 0.70] {
+        let y_line = top_y + (bot_y - top_y) * frac;
+        let xl = top_l.x + (bot_l.x - top_l.x) * frac;
+        let xr = top_r.x + (bot_r.x - top_r.x) * frac;
+        let ring_col = if light {
+            Color::rgba(0.40, 0.48, 0.58, 0.75)
+        } else {
+            Color::rgba(0.70, 0.80, 0.95, 0.70)
+        };
+        c.line(Point::new(xl, y_line), Point::new(xr, y_line), ring_col, 1.3);
+    }
+
+    // Top metallic rim
+    let rim_col = if is_hover {
+        Color::hex(0x38BDF8)
+    } else if light {
+        Color::hex(0x64748B)
+    } else {
+        Color::hex(0xE2E8F0)
+    };
+    let rim_rect = Rect::new(cx - rw * 0.48, top_y - rh * 0.45, rw * 0.96, rh * 0.9);
+    c.fill_rrect(rim_rect, rh * 0.45, if light { Color::rgba(0.2, 0.25, 0.3, 0.15) } else { Color::rgba(0.0, 0.0, 0.0, 0.45) });
+    c.stroke_rrect(rim_rect, rh * 0.45, rim_col, 1.5);
+
+    // Bottom base foot
+    let bot_rect = Rect::new(cx - bw * 0.48, bot_y - bbh * 0.35, bw * 0.96, bbh * 0.7);
+    c.fill_rrect(bot_rect, bbh * 0.35, rim_col.with_alpha(0.75));
 }
 
 fn draw_poof_effects(c: &mut Canvas<'_>, poofs: &[PoofEffect], light: bool) {
@@ -2645,6 +2922,7 @@ fn draw_dock(
     sep3_x: Option<f32>,
     slot_rects: &[Rect],
     apps: &[RunningApp],
+    halo_icon: Option<&Image>,
     show_downloads: bool,
     badge_mode: DockBadgeMode,
     stack_open: bool,
@@ -2681,44 +2959,57 @@ fn draw_dock(
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
                     draw_squircle_shadow(c, tile, tr, light);
 
-                    if slot.action == SlotAction::Launchpad {
-                        draw_launchpad_icon(c, tile, tr, light, is_hover);
-                    } else {
-                        let slot_acc = if slot.action == SlotAction::ToggleIsland && look.accent.is_some() {
-                            theme_accent
-                        } else {
-                            slot.accent
-                        };
-                        let fill_a = if is_press { 0.96 } else if is_hover { 0.92 } else { 0.86 };
-                        c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
-                        // Top inner bevel sheen + subtle bottom depth (macOS Sequoia rich squircle tile)
-                        let tile_segs = crate::pill::shape::segments(tile, tr);
-                        c.fill_path_fade(
-                            &tile_segs,
-                            Color::white(1.0),
-                            tile.y,
-                            tile.y + tile.h * 0.55,
-                            0.34,
-                            0.0,
-                        );
-                        c.fill_path_fade(
-                            &tile_segs,
-                            Color::black(1.0),
-                            tile.y + tile.h * 0.52,
-                            tile.bottom(),
-                            0.0,
-                            0.26,
-                        );
-                        let tile_rim = if is_hover {
-                            Color::white(0.52)
-                        } else {
-                            Color::white(0.28)
-                        };
-                        c.stroke_rrect(tile, tr, tile_rim, 1.0);
+                    match slot.action {
+                        SlotAction::Launchpad => {
+                            draw_launchpad_icon(c, tile, tr, light, is_hover);
+                        }
+                        SlotAction::ToggleIsland => {
+                            draw_halo_island_slot_icon(c, tile, tr, light, is_hover, halo_icon);
+                        }
+                        SlotAction::Page(PageKind::Shelf) => {
+                            draw_shelf_slot_icon(c, tile, tr, light, is_hover);
+                        }
+                        SlotAction::Page(PageKind::Tasks) => {
+                            draw_tasks_slot_icon(c, tile, tr, light, is_hover);
+                        }
+                        SlotAction::Page(PageKind::Focus) => {
+                            draw_focus_slot_icon(c, tile, tr, light, is_hover);
+                        }
+                        SlotAction::Settings => {
+                            draw_settings_slot_icon(c, tile, tr, light, is_hover);
+                        }
+                        _ => {
+                            let slot_acc = slot.accent;
+                            let fill_a = if is_press { 0.96 } else if is_hover { 0.92 } else { 0.86 };
+                            c.fill_rrect(tile, tr, slot_acc.with_alpha(fill_a));
+                            let tile_segs = crate::pill::shape::segments(tile, tr);
+                            c.fill_path_fade(
+                                &tile_segs,
+                                Color::white(1.0),
+                                tile.y,
+                                tile.y + tile.h * 0.55,
+                                0.34,
+                                0.0,
+                            );
+                            c.fill_path_fade(
+                                &tile_segs,
+                                Color::black(1.0),
+                                tile.y + tile.h * 0.52,
+                                tile.bottom(),
+                                0.0,
+                                0.26,
+                            );
+                            let tile_rim = if is_hover {
+                                Color::white(0.52)
+                            } else {
+                                Color::white(0.28)
+                            };
+                            c.stroke_rrect(tile, tr, tile_rim, 1.0);
 
-                        let icon_box = tile.inset(tile.w * 0.22, tile.h * 0.22);
-                        c.icon(slot.icon, icon_box.offset(0.0, 1.0), Color::black(0.28));
-                        c.icon(slot.icon, icon_box, Color::white(0.97));
+                            let icon_box = tile.inset(tile.w * 0.22, tile.h * 0.22);
+                            c.icon(slot.icon, icon_box.offset(0.0, 1.0), Color::black(0.28));
+                            c.icon(slot.icon, icon_box, Color::white(0.97));
+                        }
                     }
 
                     match slot.action {
@@ -6861,5 +7152,13 @@ mod tests {
         let pt_outside = Point::new(50.0, 50.0);
         assert!(flyout_bounds.contains(pt_inside));
         assert!(!flyout_bounds.contains(pt_outside));
+
+        // Phase 6: Verify authentic anchor slot mapping & trash slot styling.
+        assert_eq!(ANCHOR_SLOTS.len(), 6);
+        assert_eq!(ANCHOR_SLOTS[1].action, SlotAction::ToggleIsland);
+        assert_eq!(ANCHOR_SLOTS[2].action, SlotAction::Page(PageKind::Shelf));
+        assert_eq!(ANCHOR_SLOTS[3].action, SlotAction::Page(PageKind::Tasks));
+        assert_eq!(ANCHOR_SLOTS[4].action, SlotAction::Page(PageKind::Focus));
+        assert_eq!(ANCHOR_SLOTS[5].action, SlotAction::Settings);
     }
 }
