@@ -124,3 +124,6 @@
 {"id": "dock-phase-11-liquid-glass-material-laun", "ev": "open", "title": "dock phase 11: liquid glass material, launch bounce, drag-drop files", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795663233}
 {"id": "dock-phase-11-liquid-glass-material-laun", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-11-liquid-glass-material-laun", "who": "ag", "ts": 1795663244}
 {"id": "dock-phase-11-liquid-glass-material-laun", "ev": "done", "owner": "ag", "who": "ag", "commit": "3062a05", "note": "Liquid glass shader parity + cursor specular boost, parabolic click/launch bounce, WM_DROPFILES app/shelf opening", "ts": 1795663616}
+{"id": "dock-phase-12-release-build-live-verific", "ev": "open", "title": "dock phase 12: release build, live verification, metrics", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795664017}
+{"id": "dock-phase-12-release-build-live-verific", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-12-release-build-live-verific", "who": "ag", "ts": 1795664017}
+{"id": "dock-phase-12-release-build-live-verific", "ev": "done", "owner": "ag", "who": "ag", "commit": "c37950e", "note": "Removed unused draw_minimized_window_tile; 14/14 dock tests & 121/121 selftest states passed; release halo.exe 9.66 MB, idle ~87 MB priv / ~49.5M cycles/s", "ts": 1795664328}
