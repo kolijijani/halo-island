@@ -14,8 +14,9 @@ use windows::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DwmSetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS, DWMWA_TRANSITIONS_FORCEDISABLED,
 };
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, SetStretchBltMode, StretchBlt, BI_RGB,
-    BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HALFTONE, HDC, HGDIOBJ, SRCCOPY,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetMonitorInfoW, MonitorFromWindow, SelectObject,
+    SetStretchBltMode, StretchBlt, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HALFTONE, HDC, HGDIOBJ,
+    MONITORINFO, MONITOR_DEFAULTTONEAREST, SRCCOPY,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -99,12 +100,14 @@ pub fn genie_slices(
     img_w: f32,
     img_h: f32,
 ) -> Vec<GenieSlice> {
-    let p = match dir {
-        GenieDir::Minimize => t.clamp(0.0, 1.0),
-        GenieDir::Restore => 1.0 - t.clamp(0.0, 1.0),
+    let t = t.clamp(0.0, 1.0);
+    let (bend, suck) = match dir {
+        GenieDir::Minimize => (smoothstep(0.0, 0.50, t), smoothstep(0.20, 1.0, t)),
+        GenieDir::Restore => {
+            let ease_out = 1.0 - (1.0 - t).powi(3);
+            (1.0 - smoothstep(0.10, 1.0, t), 1.0 - ease_out)
+        }
     };
-    let bend = smoothstep(0.0, 0.55, p);
-    let suck = smoothstep(0.26, 1.0, p);
 
     let y_top = lerp(src_win.y, dst_icon.y, suck.powf(1.18));
     let y_bot = lerp(src_win.bottom(), dst_icon.bottom(), suck.powf(0.62));
@@ -267,7 +270,9 @@ fn dib_info(w: i32, h: i32) -> BITMAPINFO {
     }
 }
 
-/// Query the restored (normal) screen bounds of `hwnd` even while it is minimized (`IsIconic`).
+/// Query the restored screen bounds of `hwnd` even while it is minimized (`IsIconic`).
+/// Handles maximized windows (`WPF_RESTORETOMAXIMIZED` -> monitor work area) and converts
+/// `rcNormalPosition` from workspace coordinates into screen pixels.
 pub fn restored_window_rect(hwnd: HWND) -> Option<RECT> {
     unsafe {
         if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
@@ -278,7 +283,29 @@ pub fn restored_window_rect(hwnd: HWND) -> Option<RECT> {
             ..Default::default()
         };
         GetWindowPlacement(hwnd, &mut wp).ok()?;
-        let rc = wp.rcNormalPosition;
+        let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        let has_mon = !hmon.is_invalid() && GetMonitorInfoW(hmon, &mut mi).as_bool();
+        let will_maximize = (wp.flags.0 & WPF_RESTORETOMAXIMIZED.0) != 0
+            || wp.showCmd == SW_SHOWMAXIMIZED.0 as u32;
+        if will_maximize && has_mon {
+            let rc = mi.rcWork;
+            if rc.right - rc.left >= 16 && rc.bottom - rc.top >= 16 {
+                return Some(rc);
+            }
+        }
+        let mut rc = wp.rcNormalPosition;
+        if has_mon {
+            let dx = mi.rcWork.left - mi.rcMonitor.left;
+            let dy = mi.rcWork.top - mi.rcMonitor.top;
+            rc.left += dx;
+            rc.right += dx;
+            rc.top += dy;
+            rc.bottom += dy;
+        }
         if rc.right - rc.left >= 16 && rc.bottom - rc.top >= 16 {
             Some(rc)
         } else {
@@ -287,55 +314,58 @@ pub fn restored_window_rect(hwnd: HWND) -> Option<RECT> {
     }
 }
 
-/// Minimize `hwnd` with Windows DWM's built-in transition disabled so only our Genie plays.
-pub fn minimize_window_no_dwm(hwnd: HWND) {
+/// Toggle DWM's per-window transition suppression (`DWMWA_TRANSITIONS_FORCEDISABLED`).
+pub fn set_dwm_transitions(hwnd: HWND, enabled: bool) {
     unsafe {
         if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
             return;
         }
-        let off: BOOL = BOOL(1);
+        let disabled = BOOL(if enabled { 0 } else { 1 });
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWA_TRANSITIONS_FORCEDISABLED,
-            &off as *const BOOL as *const _,
-            std::mem::size_of::<BOOL>() as u32,
-        );
-        let _ = ShowWindow(hwnd, SW_MINIMIZE);
-        let on: BOOL = BOOL(0);
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            &on as *const BOOL as *const _,
+            &disabled as *const BOOL as *const _,
             std::mem::size_of::<BOOL>() as u32,
         );
     }
 }
 
-/// Restore `hwnd` instantly at the end of a Genie restore animation without a second DWM animation.
-pub fn restore_window_no_dwm(hwnd: HWND) {
+/// Minimize `hwnd` with DWM transitions kept disabled until the caller re-enables them
+/// (on `DockGenie::drop`) so DWM never races a competing animation.
+pub fn minimize_window_begin_no_dwm(hwnd: HWND) {
     unsafe {
         if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
             return;
         }
-        let off: BOOL = BOOL(1);
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            &off as *const BOOL as *const _,
-            std::mem::size_of::<BOOL>() as u32,
-        );
+        set_dwm_transitions(hwnd, false);
+        let _ = ShowWindow(hwnd, SW_MINIMIZE);
+    }
+}
+
+/// Minimize `hwnd` with Windows DWM's built-in transition disabled so only our Genie plays.
+pub fn minimize_window_no_dwm(hwnd: HWND) {
+    minimize_window_begin_no_dwm(hwnd);
+    set_dwm_transitions(hwnd, true);
+}
+
+/// Restore `hwnd` with DWM transitions kept disabled until the Genie dissolve finishes.
+pub fn restore_window_begin_no_dwm(hwnd: HWND) {
+    unsafe {
+        if hwnd.is_invalid() || !IsWindow(hwnd).as_bool() {
+            return;
+        }
+        set_dwm_transitions(hwnd, false);
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
         let _ = SetForegroundWindow(hwnd);
-        let on: BOOL = BOOL(0);
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_TRANSITIONS_FORCEDISABLED,
-            &on as *const BOOL as *const _,
-            std::mem::size_of::<BOOL>() as u32,
-        );
     }
+}
+
+/// Restore `hwnd` instantly at the end of a Genie restore animation without a second DWM animation.
+pub fn restore_window_no_dwm(hwnd: HWND) {
+    restore_window_begin_no_dwm(hwnd);
+    set_dwm_transitions(hwnd, true);
 }
 
 pub struct DockGenie {
@@ -350,12 +380,16 @@ pub struct DockGenie {
     elapsed: f32,
     shown: bool,
     restore_target: Option<HWND>,
+    re_enable_dwm: Option<HWND>,
 }
 
 impl Drop for DockGenie {
     fn drop(&mut self) {
         if let Some(target) = self.restore_target.take() {
             restore_window_no_dwm(target);
+        }
+        if let Some(target) = self.re_enable_dwm.take() {
+            set_dwm_transitions(target, true);
         }
         self.gpu = None;
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
@@ -417,6 +451,7 @@ impl DockGenie {
                     elapsed: 0.0,
                     shown: true,
                     restore_target: None,
+                    re_enable_dwm: None,
                 });
             }
         }
@@ -460,6 +495,7 @@ impl DockGenie {
             elapsed: 0.0,
             shown: false,
             restore_target: None,
+            re_enable_dwm: None,
         })
     }
 
@@ -467,6 +503,12 @@ impl DockGenie {
     /// so the real window never appears underneath while the Genie is still expanding.
     pub fn with_restore_target(mut self, target: HWND) -> Self {
         self.restore_target = Some(target);
+        self
+    }
+
+    /// Re-enable DWM transitions on `target` when this Genie completes and drops.
+    pub fn with_dwm_reenable(mut self, target: HWND) -> Self {
+        self.re_enable_dwm = Some(target);
         self
     }
 
@@ -478,7 +520,8 @@ impl DockGenie {
                 crate::dock_genie_gpu::Step::Moving => true,
                 crate::dock_genie_gpu::Step::Landed => {
                     if let Some(target) = self.restore_target.take() {
-                        restore_window_no_dwm(target);
+                        restore_window_begin_no_dwm(target);
+                        self.re_enable_dwm = Some(target);
                     }
                     true
                 }

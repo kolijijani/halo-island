@@ -2236,10 +2236,12 @@ impl App {
                 // Finish any in-flight Genie transition before starting a new one so two Genies never overlap.
                 self.dock_genie = None;
                 if focused && !minimized {
-                    // Clicking the already-focused app minimizes it with Genie and caches its window thumbnail.
+                    // Clicking the already-focused app minimizes it with Genie and caches its window thumbnail + rect.
+                    services::dock_apps::suppress_minimize_genie(target);
+                    let mut started_genie = false;
                     if let Some((img, win_rc)) = crate::dock_genie::capture_window(target) {
                         if let Some(d) = self.dock.as_mut() {
-                            d.set_app_thumb(target, img.clone());
+                            d.set_app_thumb_with_rect(target, img.clone(), win_rc);
                         }
                         if !instant {
                             let shared = self.gfx.d3d_handles();
@@ -2251,17 +2253,26 @@ impl App {
                                 crate::dock_genie::GenieDir::Minimize,
                                 shared,
                             ) {
-                                self.dock_genie = Some(g);
+                                self.dock_genie = Some(g.with_dwm_reenable(target));
+                                started_genie = true;
                             }
                         }
                         self.request_frame();
                     }
-                    crate::dock_genie::minimize_window_no_dwm(target);
+                    if started_genie {
+                        crate::dock_genie::minimize_window_begin_no_dwm(target);
+                    } else {
+                        crate::dock_genie::minimize_window_no_dwm(target);
+                    }
                 } else if minimized {
-                    // Clicking a minimized app restores it with a single Genie (real window stays hidden
-                    // until the Genie expansion completes at t = 1.0, eliminating the double-genie artifact).
+                    // Clicking a minimized app restores it with a single continuous Genie (real window stays
+                    // hidden until the Genie expansion lands, then cross-dissolves seamlessly).
                     let cached_thumb = self.dock.as_ref().and_then(|d| d.app_thumb(target));
-                    let target_rc = crate::dock_genie::restored_window_rect(target);
+                    let target_rc = self
+                        .dock
+                        .as_ref()
+                        .and_then(|d| d.app_thumb_rect(target))
+                        .or_else(|| crate::dock_genie::restored_window_rect(target));
                     if !instant {
                         if let (Some(img), Some(win_rc)) = (cached_thumb, target_rc) {
                             let shared = self.gfx.d3d_handles();
@@ -3598,6 +3609,56 @@ impl App {
                     }
                     if changed {
                         self.request_frame();
+                    }
+                }
+            }
+            AppEvent::DockWindowMinimizing { hwnd: raw_hwnd, capture } => {
+                let instant = self.reduce_motion || self.st.power.saver;
+                if !self.locked && !self.display_off && !self.fullscreen_hidden && self.dock.is_some() {
+                    let target = HWND(raw_hwnd as *mut _);
+                    let mut icon_rect = self.dock.as_ref().and_then(|d| d.icon_screen_rect_for_hwnd(target));
+                    if icon_rect.is_none() {
+                        if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
+                            let apps = w.refresh_with_pinned_and_recent(
+                                &self.st.settings.dock_pinned,
+                                &mut self.st.settings.dock_recent,
+                            );
+                            d.set_apps(apps);
+                            icon_rect = d.icon_screen_rect_for_hwnd(target);
+                        }
+                    }
+                    if let Some(icon_rect) = icon_rect {
+                        let cap = capture
+                            .map(|(img, r)| (img, RECT { left: r[0], top: r[1], right: r[2], bottom: r[3] }))
+                            .or_else(|| {
+                                let img = self.dock.as_ref().and_then(|d| d.app_thumb(target))?;
+                                let rc = self
+                                    .dock
+                                    .as_ref()
+                                    .and_then(|d| d.app_thumb_rect(target))
+                                    .or_else(|| crate::dock_genie::restored_window_rect(target))?;
+                                Some((img, rc))
+                            });
+                        if let Some((img, win_rc)) = cap {
+                            if let Some(d) = self.dock.as_mut() {
+                                d.set_app_thumb_with_rect(target, img.clone(), win_rc);
+                            }
+                            if !instant {
+                                self.dock_genie = None;
+                                let shared = self.gfx.d3d_handles();
+                                if let Ok(g) = crate::dock_genie::DockGenie::start(
+                                    &self.monitor,
+                                    img,
+                                    win_rc,
+                                    icon_rect,
+                                    crate::dock_genie::GenieDir::Minimize,
+                                    shared,
+                                ) {
+                                    self.dock_genie = Some(g);
+                                }
+                            }
+                            self.request_frame();
+                        }
                     }
                 }
             }

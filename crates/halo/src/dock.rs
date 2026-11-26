@@ -708,6 +708,7 @@ pub struct Dock {
     tucked: bool,
     tuck: Spring,
     apps: Vec<RunningApp>,
+    thumbs: std::collections::HashMap<isize, (Image, Option<RECT>)>,
     scales: Vec<Spring>,
     bounces: Vec<f32>,
     tracking: bool,
@@ -797,6 +798,7 @@ impl Dock {
             tucked: false,
             tuck: Spring::smooth(0.0),
             apps: Vec::new(),
+            thumbs: std::collections::HashMap::new(),
             scales: (0..ANCHOR_SLOTS.len() + 2).map(|_| mag_spring(1.0)).collect(),
             bounces: vec![0.0; ANCHOR_SLOTS.len() + 2],
             tracking: false,
@@ -1019,9 +1021,17 @@ impl Dock {
     /// Replace the running-apps slice; returns `true` only if the dock changed visually.
     /// Preserves any captured window thumbnail while an app remains minimized.
     pub fn set_apps(&mut self, mut apps: Vec<RunningApp>) -> bool {
+        // Prune thumbnails for windows that are no longer open.
+        self.thumbs.retain(|&raw, _| {
+            apps.iter().any(|a| {
+                a.hwnd.0 as isize == raw || a.windows.iter().any(|(w, _)| w.0 as isize == raw)
+            })
+        });
         for next in &mut apps {
             if next.minimized && next.thumb.is_none() {
-                if let Some(prev) = self.apps.iter().find(|a| a.hwnd == next.hwnd) {
+                if let Some((img, _)) = self.thumbs.get(&(next.hwnd.0 as isize)) {
+                    next.thumb = Some(img.clone());
+                } else if let Some(prev) = self.apps.iter().find(|a| a.hwnd == next.hwnd) {
                     next.thumb = prev.thumb.clone();
                 }
             }
@@ -1044,9 +1054,20 @@ impl Dock {
         true
     }
 
-    /// Attach a captured window thumbnail to the slot for `hwnd` when minimizing into the dock.
-    pub fn set_app_thumb(&mut self, hwnd: HWND, thumb: Image) {
-        if let Some(app) = self.apps.iter_mut().find(|a| a.hwnd == hwnd) {
+    /// Attach a captured window thumbnail together with its exact pre-minimize screen `RECT`
+    /// so restoring a normal or maximized window lands at the exact pixel frame without jumping.
+    pub fn set_app_thumb_with_rect(&mut self, hwnd: HWND, thumb: Image, rect: RECT) {
+        if self.thumbs.len() >= 24 && !self.thumbs.contains_key(&(hwnd.0 as isize)) {
+            if let Some(&old) = self.thumbs.keys().next() {
+                self.thumbs.remove(&old);
+            }
+        }
+        self.thumbs.insert(hwnd.0 as isize, (thumb.clone(), Some(rect)));
+        if let Some(app) = self
+            .apps
+            .iter_mut()
+            .find(|a| a.hwnd == hwnd || a.windows.iter().any(|(w, _)| *w == hwnd))
+        {
             app.thumb = Some(thumb);
             self.dirty = true;
         }
@@ -1054,7 +1075,24 @@ impl Dock {
 
     /// Return the cached window thumbnail for `hwnd`, if captured when minimized.
     pub fn app_thumb(&self, hwnd: HWND) -> Option<Image> {
-        self.apps.iter().find(|a| a.hwnd == hwnd).and_then(|a| a.thumb.clone())
+        self.thumbs
+            .get(&(hwnd.0 as isize))
+            .map(|(img, _)| img.clone())
+            .or_else(|| self.apps.iter().find(|a| a.hwnd == hwnd).and_then(|a| a.thumb.clone()))
+    }
+
+    /// Return the exact pre-minimize screen `RECT` cached for `hwnd`, if known.
+    pub fn app_thumb_rect(&self, hwnd: HWND) -> Option<RECT> {
+        self.thumbs.get(&(hwnd.0 as isize)).and_then(|(_, rc)| *rc)
+    }
+
+    /// Return the screen-pixel icon rect for the dock slot owning `hwnd`, if present on the dock.
+    pub fn icon_screen_rect_for_hwnd(&self, hwnd: HWND) -> Option<Rect> {
+        let idx = self
+            .visible_apps()
+            .iter()
+            .position(|a| a.hwnd == hwnd || a.windows.iter().any(|(w, _)| *w == hwnd))?;
+        Some(self.slot_screen_rect(ANCHOR_SLOTS.len() + idx))
     }
 
     fn current_scales(&self) -> Vec<f32> {

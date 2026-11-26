@@ -12,13 +12,15 @@ use std::ffi::{c_void, OsString};
 use std::os::windows::ffi::OsStringExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use windows::core::{Interface, BSTR, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{BOOL, CloseHandle, HMODULE, HWND, LPARAM, SIZE, WPARAM};
-use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+use windows::Win32::Foundation::{BOOL, CloseHandle, HMODULE, HWND, LPARAM, POINT, RECT, SIZE, WPARAM};
+use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetObjectW, SelectObject, BI_RGB, BITMAP,
-    BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetObjectW, MonitorFromWindow, SelectObject, BI_RGB,
+    BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HGDIOBJ, MONITOR_DEFAULTTONEAREST,
 };
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::Storage::EnhancedStorage::{
     PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand, PKEY_Link_TargetParsingPath,
 };
@@ -127,13 +129,33 @@ impl RunningApp {
     }
 }
 
+struct PreCapture {
+    hwnd: HWND,
+    img: Image,
+    rect: RECT,
+    at: Instant,
+}
+
 struct HookState {
     sink: EventSink,
     pending: Cell<bool>,
+    self_pid: u32,
+    pre_capture: RefCell<Option<PreCapture>>,
+    suppress_minimize: Cell<Option<(HWND, Instant)>>,
 }
 
 thread_local! {
     static HOOK: RefCell<Option<HookState>> = const { RefCell::new(None) };
+}
+
+/// Suppress the next native `EVENT_SYSTEM_MINIMIZESTART` Genie trigger for `hwnd`
+/// when Halo itself minimized it from a Dock click (prevents double-Genie).
+pub fn suppress_minimize_genie(hwnd: HWND) {
+    HOOK.with(|h| {
+        if let Some(st) = h.borrow().as_ref() {
+            st.suppress_minimize.set(Some((hwnd, Instant::now())));
+        }
+    });
 }
 
 #[derive(Clone)]
@@ -157,11 +179,19 @@ pub struct DockAppsWatcher {
 impl DockAppsWatcher {
     /// Start watching top-level window lifecycle and foreground changes on the UI thread.
     pub fn start(sink: EventSink) -> Self {
+        let self_pid = unsafe { GetCurrentProcessId() };
         HOOK.with(|h| {
-            *h.borrow_mut() = Some(HookState { sink, pending: Cell::new(false) });
+            *h.borrow_mut() = Some(HookState {
+                sink,
+                pending: Cell::new(false),
+                self_pid,
+                pre_capture: RefCell::new(None),
+                suppress_minimize: Cell::new(None),
+            });
         });
         let ranges = [
             (EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND),
+            (EVENT_SYSTEM_CAPTURESTART, EVENT_SYSTEM_CAPTURESTART),
             (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
             (EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE),
         ];
@@ -180,7 +210,7 @@ impl DockAppsWatcher {
             pinned_cache: HashMap::new(),
             procs: HashMap::new(),
             order: Vec::new(),
-            self_pid: unsafe { GetCurrentProcessId() },
+            self_pid,
         }
     }
 
@@ -513,6 +543,44 @@ impl Drop for DockAppsWatcher {
     }
 }
 
+/// True when screen point `pt` falls inside the top-right caption button strip (`_ □ ×`)
+/// of a window with extended frame bounds `rc` at DPI `scale`. Fast-rejects 99% of clicks.
+fn in_caption_buttons_zone(pt: POINT, rc: RECT, scale: f32) -> bool {
+    let strip_h = (56.0 * scale.max(1.0)).ceil() as i32;
+    let strip_w = (240.0 * scale.max(1.0)).ceil() as i32;
+    pt.y >= rc.top - 4 && pt.y <= rc.top + strip_h && pt.x >= rc.right - strip_w && pt.x <= rc.right + 4
+}
+
+fn window_dpi_scale(hwnd: HWND) -> f32 {
+    unsafe {
+        let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if !hmon.is_invalid() {
+            let (mut dx, mut dy) = (96u32, 96u32);
+            if GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy).is_ok() && dx >= 96 {
+                return dx as f32 / 96.0;
+            }
+        }
+        1.0
+    }
+}
+
+fn window_frame_rect(hwnd: HWND) -> Option<RECT> {
+    unsafe {
+        let mut rc = RECT::default();
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rc as *mut RECT as *mut _,
+            std::mem::size_of::<RECT>() as u32,
+        )
+        .is_err()
+        {
+            GetWindowRect(hwnd, &mut rc).ok()?;
+        }
+        Some(rc)
+    }
+}
+
 unsafe extern "system" fn on_win_event(
     _hook: HWINEVENTHOOK,
     event: u32,
@@ -524,6 +592,102 @@ unsafe extern "system" fn on_win_event(
 ) {
     if hwnd.is_invalid() {
         return;
+    }
+    if event == EVENT_SYSTEM_CAPTURESTART {
+        // Pre-capture only when mouse-down hits a window's top-right titlebar buttons (`_ □ ×`).
+        // Fast-rejects all regular app clicks in < 2 microseconds so idle/active cost stays zero.
+        let root = unsafe {
+            let r = GetAncestor(hwnd, GA_ROOT);
+            if r.is_invalid() { hwnd } else { r }
+        };
+        if unsafe { !IsWindow(root).as_bool() || !IsWindowVisible(root).as_bool() || IsIconic(root).as_bool() } {
+            return;
+        }
+        let mut pid = 0u32;
+        unsafe {
+            let _ = GetWindowThreadProcessId(root, Some(&mut pid));
+        }
+        let is_self = HOOK.with(|h| h.borrow().as_ref().is_some_and(|st| st.self_pid == pid));
+        if is_self {
+            return;
+        }
+        let mut pt = POINT::default();
+        if unsafe { GetCursorPos(&mut pt).is_err() } {
+            return;
+        }
+        let Some(rc) = window_frame_rect(root) else {
+            return;
+        };
+        if !in_caption_buttons_zone(pt, rc, window_dpi_scale(root)) {
+            return;
+        }
+        if let Some((img, cap_rc)) = crate::dock_genie::capture_window(root) {
+            HOOK.with(|h| {
+                if let Some(st) = h.borrow().as_ref() {
+                    *st.pre_capture.borrow_mut() = Some(PreCapture {
+                        hwnd: root,
+                        img,
+                        rect: cap_rc,
+                        at: Instant::now(),
+                    });
+                }
+            });
+        }
+        return;
+    }
+    if event == EVENT_SYSTEM_MINIMIZESTART {
+        let root = unsafe {
+            let r = GetAncestor(hwnd, GA_ROOT);
+            if r.is_invalid() { hwnd } else { r }
+        };
+        let mut pid = 0u32;
+        unsafe {
+            let _ = GetWindowThreadProcessId(root, Some(&mut pid));
+        }
+        HOOK.with(|h| {
+            if let Some(st) = h.borrow().as_ref() {
+                if st.self_pid != pid {
+                    let suppressed = match st.suppress_minimize.get() {
+                        Some((h_sup, at)) if h_sup == root && at.elapsed() < Duration::from_millis(600) => {
+                            st.suppress_minimize.set(None);
+                            true
+                        }
+                        _ => false,
+                    };
+                    if !suppressed {
+                        let cached = {
+                            let mut slot = st.pre_capture.borrow_mut();
+                            match slot.take() {
+                                Some(pc) if pc.hwnd == root && pc.at.elapsed() < Duration::from_secs(3) => {
+                                    Some((pc.img, pc.rect))
+                                }
+                                _ => None,
+                            }
+                        };
+                        let cap = cached.or_else(|| crate::dock_genie::capture_window(root));
+                        st.sink.send(AppEvent::DockWindowMinimizing {
+                            hwnd: root.0 as isize,
+                            capture: cap.map(|(img, r)| (img, [r.left, r.top, r.right, r.bottom])),
+                        });
+                    }
+                }
+                if !st.pending.replace(true) {
+                    st.sink.send(AppEvent::DockAppsChanged);
+                }
+            }
+        });
+        return;
+    }
+    if event == EVENT_SYSTEM_FOREGROUND {
+        // Release any stale titlebar pre-capture (e.g. if user clicked maximize/close instead of minimize).
+        HOOK.with(|h| {
+            if let Some(st) = h.borrow().as_ref() {
+                let mut slot = st.pre_capture.borrow_mut();
+                if slot.as_ref().is_some_and(|pc| pc.at.elapsed() >= Duration::from_secs(3)) {
+                    *slot = None;
+                }
+            }
+        });
     }
     let is_obj = matches!(
         event,

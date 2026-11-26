@@ -135,6 +135,9 @@ pub enum AppEvent {
     Foreground,
     /// Running top-level windows changed (`services::dock_apps`, only active while Bottom Dock is on).
     DockAppsChanged,
+    /// A top-level window was minimized natively (e.g. titlebar `_` button or `Win+Down`).
+    /// Carries an optional pre-captured `(Image, [left, top, right, bottom])` taken before it went iconic.
+    DockWindowMinimizing { hwnd: isize, capture: Option<(Image, [i32; 4])> },
     /// Step aside: the app windows at the top edge of the island's monitor
     /// changed (a browser maximized or restored, a window snapped or dragged
     /// to the top). Screen pixels (left, top, right, bottom), each clipped

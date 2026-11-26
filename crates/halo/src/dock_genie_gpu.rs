@@ -29,12 +29,13 @@ pub const ROWS: usize = 128;
 const FMT: DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
 const SAMPLES: u32 = 4;
 const CLASS: PCWSTR = w!("Halo.DockGenieGpu");
-/// MacDock's defaults (and the mockup's 34 frames at 60 Hz).
-pub const MINIMIZE_SECS: f64 = 0.56;
-pub const RESTORE_SECS: f64 = 0.50;
-/// After a restore lands: frames for the real window to paint, then the snapshot dissolves into it.
-const RESTORE_PAINT: f64 = 0.05;
-const RESTORE_FADE: f64 = 0.12;
+/// Snappy macOS-paced durations (driven at full display refresh rate, e.g. 120/144/240 Hz).
+pub const MINIMIZE_SECS: f64 = 0.42;
+pub const RESTORE_SECS: f64 = 0.36;
+/// After a restore lands: ~1-2 frames for DWM to composite the live window behind the overlay,
+/// then a crisp cross-dissolve so handoff feels instantaneous with zero pause or pop.
+const RESTORE_PAINT: f64 = 0.016;
+const RESTORE_FADE: f64 = 0.045;
 /// Windows 11's window corner radius and (roughly) its active-window shadow, at 100% scale.
 const CORNER: f32 = 8.0;
 const SHADOW_SIGMA: f32 = 10.0;
@@ -136,10 +137,10 @@ fn rounded_corners() -> bool {
 fn look_of(win: R, mon: &MonitorInfo) -> Look {
     let s = mon.scale().max(1.0);
     let wk = mon.work;
-    let maxed = win.x <= wk.left as f64 + 1.0
-        && win.y <= wk.top as f64 + 1.0
-        && win.right() >= wk.right as f64 - 1.0
-        && win.bottom() >= wk.bottom as f64 - 1.0;
+    let maxed = win.x <= wk.left as f64 + 4.0
+        && win.y <= wk.top as f64 + 4.0
+        && win.right() >= wk.right as f64 - 4.0
+        && win.bottom() >= wk.bottom as f64 - 4.0;
     if maxed {
         return Look { w: win.w as f32, h: win.h as f32, margin: 0.0, radius: 0.0, sigma: 1.0, shadow: 0.0, drop: 0.0 };
     }
@@ -170,8 +171,30 @@ fn smoother(x: f64) -> f64 {
 /// up at the icon's bottom edge (slide). p = 0 is the window, p = 1 is fully inside the icon.
 /// Returns (left, right, y) per row edge, screen pixels.
 pub fn shape(win: R, icon: R, p: f64) -> Vec<(f64, f64, f64)> {
-    let squeeze = smooth(p / 0.45);
-    let slide = smoother((p - 0.22) / 0.78);
+    let squeeze = smooth(p / 0.42);
+    let slide = smoother((p - 0.16) / 0.84);
+    shape_with(win, icon, squeeze, slide)
+}
+
+/// Direction-aware genie mesh at normalized time `t` (`0.0..=1.0`).
+///
+/// Minimize bends into a funnel then sucks down into the icon.
+/// Restore uses a continuous cubic ease-out so vertical emergence and horizontal
+/// widening finish together at `t = 1.0` with zero mid-air stall.
+pub fn shape_for(win: R, icon: R, t: f64, dir: GenieDir) -> Vec<(f64, f64, f64)> {
+    let t = t.clamp(0.0, 1.0);
+    match dir {
+        GenieDir::Minimize => shape(win, icon, t),
+        GenieDir::Restore => {
+            let ease_out = 1.0 - (1.0 - t).powi(3);
+            let slide = 1.0 - ease_out;
+            let squeeze = 1.0 - smooth((t - 0.10) / 0.90);
+            shape_with(win, icon, squeeze, slide)
+        }
+    }
+}
+
+fn shape_with(win: R, icon: R, squeeze: f64, slide: f64) -> Vec<(f64, f64, f64)> {
     let travel = icon.bottom() - win.y;
     let funnel = (icon.y - win.y).max(1.0);
     (0..=ROWS)
@@ -395,7 +418,7 @@ impl GenieGpu {
             Format: FMT,
             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            BufferCount: 2,
+            BufferCount: 3,
             Scaling: DXGI_SCALING_STRETCH,
             SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
             AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
@@ -595,8 +618,7 @@ impl GenieGpu {
             return if self.draw(&rows, alpha as f32).is_ok() { Step::Moving } else { Step::Done };
         }
         let t = (self.elapsed() / self.duration).min(1.0);
-        let p = if self.dir == GenieDir::Restore { 1.0 - t } else { t };
-        let rows = shape(self.win.grow(self.look.margin as f64), self.icon, p);
+        let rows = shape_for(self.win.grow(self.look.margin as f64), self.icon, t, self.dir);
         if self.draw(&rows, 1.0).is_err() {
             return Step::Done;
         }
@@ -706,5 +728,26 @@ mod tests {
         assert!(end.iter().all(|&(l, r, y)| (y - icon.bottom()).abs() < 1e-6
             && l >= icon.x - 1e-6
             && r <= icon.right() + 1e-6));
+    }
+
+    #[test]
+    fn restore_shape_moves_continuously_without_late_stall() {
+        let win = R { x: 0.0, y: 0.0, w: 1920.0, h: 1040.0 };
+        let icon = R { x: 936.0, y: 1020.0, w: 48.0, h: 48.0 };
+        let mut prev_top = f64::INFINITY;
+        for step in 0..=20 {
+            let t = step as f64 / 20.0;
+            let rows = shape_for(win, icon, t, GenieDir::Restore);
+            let top_y = rows[0].2;
+            assert!(top_y <= prev_top + 1e-9, "restore top edge must move upward monotonically at t={t}");
+            if step > 0 {
+                assert!(top_y < prev_top, "restore must keep moving (no flat stall) at t={t}");
+            }
+            prev_top = top_y;
+        }
+        let landed = shape_for(win, icon, 1.0, GenieDir::Restore);
+        assert!((landed[0].2 - win.y).abs() < 1e-6);
+        assert!((landed[0].0 - win.x).abs() < 1e-6);
+        assert!((landed[0].1 - win.right()).abs() < 1e-6);
     }
 }
