@@ -179,6 +179,9 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     if let Err(e) = crate::dock::register_flyout(dock_flyout_wndproc) {
         pwarn!("dock flyout window: class not registered ({e})");
     }
+    if let Err(e) = crate::dock::register_launchpad(dock_launchpad_wndproc) {
+        pwarn!("dock launchpad window: class not registered ({e})");
+    }
     if let Err(e) = crate::dock_genie::register() {
         pwarn!("dock genie window: class not registered ({e})");
     }
@@ -388,6 +391,19 @@ unsafe extern "system" fn dock_flyout_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, 
     }
 }
 
+/// The bottom dock's transient Launchpad overlay messages (`dock`).
+unsafe extern "system" fn dock_launchpad_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let mut deferred = Vec::new();
+    let res = with_app(|app| app.handle_dock_launchpad_window(hwnd, msg, wp, lp, &mut deferred));
+    for d in deferred {
+        run_deferred(d);
+    }
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 fn run_deferred(d: Deferred) {
     match d {
         Deferred::DragOut(paths) => {
@@ -473,6 +489,8 @@ pub struct App {
     dock_stack: Option<crate::dock::DockStack>,
     /// Transient System Tray Control Center flyout, alive only while open.
     dock_flyout: Option<crate::dock::DockControlCenter>,
+    /// Transient Launchpad searchable AppsFolder overlay, alive only while open.
+    dock_launchpad: Option<crate::dock::DockLaunchpad>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
     wifi_connected: Option<bool>,
@@ -795,6 +813,7 @@ impl App {
             dock_apps: None,
             dock_stack: None,
             dock_flyout: None,
+            dock_launchpad: None,
             dock_genie: None,
             wifi_connected: None,
             wifi_ssid: String::new(),
@@ -1938,6 +1957,7 @@ impl App {
             self.dock_apps = None;
             self.dock_stack = None;
             self.dock_flyout = None;
+            self.dock_launchpad = None;
             self.dock_genie = None;
             if self.dock.take().is_some() {
                 pinfo!("dock: disabled");
@@ -2046,6 +2066,10 @@ impl App {
             changed |= f.set_extra(extra);
             changed |= f.set_look(look);
         }
+        if let Some(lp) = self.dock_launchpad.as_mut() {
+            changed |= lp.set_look(look);
+            changed |= lp.set_pinned(self.st.settings.dock_pinned.clone());
+        }
         if changed {
             self.request_frame();
         }
@@ -2069,15 +2093,23 @@ impl App {
         }
     }
 
+    fn close_dock_launchpad(&mut self) {
+        if self.dock_launchpad.take().is_some() {
+            self.request_frame();
+        }
+    }
+
     fn close_dock_popovers(&mut self) {
         self.close_dock_stack();
         self.close_dock_flyout();
+        self.close_dock_launchpad();
     }
 
     fn dock_moving(&self) -> bool {
         self.dock.as_ref().is_some_and(|d| d.needs_frame())
             || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
             || self.dock_flyout.as_ref().is_some_and(|f| f.needs_frame())
+            || self.dock_launchpad.as_ref().is_some_and(|lp| lp.needs_frame())
             || self.dock_genie.is_some()
     }
 
@@ -2090,6 +2122,9 @@ impl App {
             && !self.fullscreen_hidden;
         if let Some(d) = self.dock.as_mut() {
             d.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
+        }
+        if let Some(lp) = self.dock_launchpad.as_mut() {
+            lp.sync_catalog();
         }
         if !self.dock_moving() {
             return;
@@ -2110,6 +2145,11 @@ impl App {
                 f.paint(shared.clone());
             }
         }
+        if let Some(lp) = self.dock_launchpad.as_mut() {
+            if lp.needs_frame() {
+                lp.paint(shared.clone());
+            }
+        }
         if let Some(g) = self.dock_genie.as_mut() {
             if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
                 self.dock_genie = None;
@@ -2124,24 +2164,21 @@ impl App {
             crate::dock::DockAction::None => {}
             crate::dock::DockAction::RequestFrame => self.request_frame(),
             crate::dock::DockAction::OpenLaunchpad => {
-                self.close_dock_popovers();
-                unsafe {
-                    use windows::Win32::UI::Input::KeyboardAndMouse::{
-                        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN,
-                    };
-                    let inputs = [
-                        INPUT {
-                            r#type: INPUT_KEYBOARD,
-                            Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_LWIN, ..Default::default() } },
-                        },
-                        INPUT {
-                            r#type: INPUT_KEYBOARD,
-                            Anonymous: INPUT_0 {
-                                ki: KEYBDINPUT { wVk: VK_LWIN, dwFlags: KEYEVENTF_KEYUP, ..Default::default() },
-                            },
-                        },
-                    ];
-                    let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                self.close_dock_stack();
+                self.close_dock_flyout();
+                if self.dock_launchpad.is_some() {
+                    self.close_dock_launchpad();
+                } else {
+                    let look = self.dock_look();
+                    let shared = self.gfx.d3d_handles();
+                    let pinned = self.st.settings.dock_pinned.clone();
+                    match crate::dock::DockLaunchpad::open(&self.monitor, pinned, look, shared) {
+                        Ok(lp) => {
+                            self.dock_launchpad = Some(lp);
+                            self.request_frame();
+                        }
+                        Err(e) => pwarn!("dock launchpad: couldn't open ({e})"),
+                    }
                 }
             }
             crate::dock::DockAction::ToggleIsland => {
@@ -2223,6 +2260,7 @@ impl App {
             }
             crate::dock::DockAction::ToggleDownloadsStack(icon_rect) => {
                 self.close_dock_flyout();
+                self.close_dock_launchpad();
                 if self.dock_stack.is_some() {
                     self.close_dock_stack();
                 } else {
@@ -2246,6 +2284,7 @@ impl App {
             }
             crate::dock::DockAction::ToggleControlCenter(anchor_rect) => {
                 self.close_dock_stack();
+                self.close_dock_launchpad();
                 if self.dock_flyout.is_some() {
                     self.close_dock_flyout();
                 } else {
@@ -2399,6 +2438,50 @@ impl App {
                 self.request_frame();
             }
             crate::dock::FlyoutAction::Close => self.close_dock_flyout(),
+        }
+        res
+    }
+
+    fn handle_dock_launchpad_window(
+        &mut self,
+        hwnd: HWND,
+        msg: u32,
+        wp: WPARAM,
+        lp: LPARAM,
+        deferred: &mut Vec<Deferred>,
+    ) -> Option<LRESULT> {
+        let (res, act) = self.dock_launchpad.as_mut()?.handle_message(hwnd, msg, wp, lp);
+        match act {
+            crate::dock::LaunchpadAction::None => {}
+            crate::dock::LaunchpadAction::RequestFrame => self.request_frame(),
+            crate::dock::LaunchpadAction::LaunchApp(spec) => {
+                self.close_dock_launchpad();
+                crate::shell::open_dock_spec(&spec);
+            }
+            crate::dock::LaunchpadAction::TogglePin(spec) => {
+                let before = self.st.settings.clone();
+                if self.st.settings.dock_pinned.iter().any(|p| p.eq_ignore_ascii_case(&spec)) {
+                    self.st.settings.dock_pinned.retain(|p| !p.eq_ignore_ascii_case(&spec));
+                } else {
+                    self.st.settings.dock_pinned.push(spec);
+                }
+                self.settings_changed(&before);
+                self.save_settings();
+                if let Some(lp) = self.dock_launchpad.as_mut() {
+                    lp.set_pinned(self.st.settings.dock_pinned.clone());
+                }
+                if let Some(w) = self.settings_win.as_mut() {
+                    w.view.dirty = true;
+                    self.paint_settings(deferred);
+                }
+                self.request_frame();
+            }
+            crate::dock::LaunchpadAction::OpenSettings => {
+                self.close_dock_launchpad();
+                self.collapse();
+                self.open_settings_window(Some(Section::Dock), deferred);
+            }
+            crate::dock::LaunchpadAction::Close => self.close_dock_launchpad(),
         }
         res
     }

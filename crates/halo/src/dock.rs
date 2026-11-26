@@ -3041,6 +3041,757 @@ impl DockStack {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Launchpad Overlay Window (searchable paged AppsFolder grid)
+// ---------------------------------------------------------------------------
+
+const LAUNCHPAD_CLASS: PCWSTR = w!("Halo.DockLaunchpad");
+const LP_W: f32 = 920.0;
+const LP_H: f32 = 590.0;
+const LP_R: f32 = 28.0;
+const LP_PAD_X: f32 = 34.0;
+pub const LP_COLS: usize = 7;
+pub const LP_ROWS: usize = 5;
+pub const LP_PER_PAGE: usize = LP_COLS * LP_ROWS;
+const LP_SEARCH_W: f32 = 280.0;
+const LP_SEARCH_H: f32 = 34.0;
+const LP_SEARCH_Y: f32 = 22.0;
+const LP_GRID_TOP: f32 = 74.0;
+const LP_GRID_H: f32 = 460.0;
+const LP_DOTS_Y: f32 = 556.0;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LaunchpadAction {
+    None,
+    RequestFrame,
+    LaunchApp(String),
+    TogglePin(String),
+    OpenSettings,
+    Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LaunchpadZone {
+    Search,
+    SettingsBtn,
+    Cell(usize),
+    Dot(usize),
+}
+
+pub fn register_launchpad(
+    wndproc: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
+) -> Result<()> {
+    unsafe {
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            hInstance: GetModuleHandleW(None)?.into(),
+            hCursor: LoadCursorW(None, IDC_ARROW)?,
+            lpszClassName: LAUNCHPAD_CLASS,
+            ..Default::default()
+        };
+        let _ = RegisterClassExW(&wc);
+        Ok(())
+    }
+}
+
+pub fn launchpad_surface_rect(mon: &MonitorInfo) -> (i32, i32, i32, i32) {
+    let scale = mon.scale();
+    let w = (LP_W * scale).ceil() as i32;
+    let h = (LP_H * scale).ceil() as i32;
+    let mon_w = (mon.rect.right - mon.rect.left).max(w);
+    let mon_h = (mon.rect.bottom - mon.rect.top).max(h);
+    let x = mon.rect.left + (mon_w - w) / 2;
+    let y = (mon.work.bottom - h - (84.0 * scale).round() as i32)
+        .clamp(mon.rect.top + (32.0 * scale) as i32, mon.rect.top + (mon_h - h) / 2);
+    (x, y, w, h)
+}
+
+pub fn launchpad_search_rect(card: Rect) -> Rect {
+    Rect::new(card.x + (card.w - LP_SEARCH_W) * 0.5, card.y + LP_SEARCH_Y, LP_SEARCH_W, LP_SEARCH_H)
+}
+
+pub fn launchpad_settings_btn_rect(card: Rect) -> Rect {
+    Rect::new(card.right() - LP_PAD_X - 32.0, card.y + LP_SEARCH_Y + 1.0, 32.0, 32.0)
+}
+
+pub fn launchpad_cell_rect(card: Rect, cell: usize) -> Rect {
+    let gw = card.w - LP_PAD_X * 2.0;
+    let cell_w = gw / LP_COLS as f32;
+    let cell_h = LP_GRID_H / LP_ROWS as f32;
+    let r = cell / LP_COLS;
+    let c = cell % LP_COLS;
+    Rect::new(
+        card.x + LP_PAD_X + c as f32 * cell_w,
+        card.y + LP_GRID_TOP + r as f32 * cell_h,
+        cell_w,
+        cell_h,
+    )
+}
+
+pub fn launchpad_dot_rect(card: Rect, dot: usize, total_pages: usize) -> Rect {
+    let gap = 18.0;
+    let total_w = gap * total_pages.saturating_sub(1) as f32;
+    let x0 = card.x + (card.w - total_w) * 0.5;
+    let cx = x0 + dot as f32 * gap;
+    let cy = card.y + LP_DOTS_Y;
+    Rect::new(cx - 8.0, cy - 8.0, 16.0, 16.0)
+}
+
+pub struct DockLaunchpad {
+    gfx: Option<Gfx>,
+    hwnd: HWND,
+    at: (i32, i32, i32, i32),
+    dpi: u32,
+    light: bool,
+    look: &'static Look,
+    apps: Vec<crate::services::dock_apps::LaunchpadApp>,
+    pinned: Vec<String>,
+    query: String,
+    shown_indices: Vec<usize>,
+    page: usize,
+    sel: usize,
+    hovered: Option<LaunchpadZone>,
+    pressed: Option<LaunchpadZone>,
+    tracking: bool,
+    shown: bool,
+    dirty: bool,
+}
+
+impl Drop for DockLaunchpad {
+    fn drop(&mut self) {
+        self.gfx.take();
+        if !self.hwnd.is_invalid() {
+            unsafe {
+                let _ = DestroyWindow(self.hwnd);
+            }
+        }
+    }
+}
+
+impl DockLaunchpad {
+    pub fn open(
+        mon: &MonitorInfo,
+        pinned: Vec<String>,
+        look: &'static Look,
+        shared: Option<SharedD3d>,
+    ) -> Result<Self> {
+        let (x, y, w, h) = launchpad_surface_rect(mon);
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+                LAUNCHPAD_CLASS,
+                w!("Halo Launchpad"),
+                WS_POPUP,
+                x,
+                y,
+                w,
+                h,
+                None,
+                None,
+                GetModuleHandleW(None)?,
+                None,
+            )?
+        };
+        let mut gfx = match Gfx::new(mon.dpi as f32, hwnd) {
+            Ok(g) => g.secondary(),
+            Err(e) => {
+                unsafe {
+                    let _ = DestroyWindow(hwnd);
+                }
+                return Err(e);
+            }
+        };
+        gfx.set_shared_d3d(shared);
+        let _ = gfx.set_surface(w, h);
+        let apps = crate::services::dock_apps::launchpad_snapshot();
+        crate::services::dock_apps::refresh_launchpad_async(hwnd);
+        let mut lp = Self {
+            gfx: Some(gfx),
+            hwnd,
+            at: (x, y, w, h),
+            dpi: mon.dpi,
+            light: look.light,
+            look,
+            apps,
+            pinned,
+            query: String::new(),
+            shown_indices: Vec::new(),
+            page: 0,
+            sel: 0,
+            hovered: None,
+            pressed: None,
+            tracking: false,
+            shown: false,
+            dirty: true,
+        };
+        lp.refilter();
+        Ok(lp)
+    }
+
+    pub fn needs_frame(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn set_look(&mut self, look: &'static Look) -> bool {
+        if std::ptr::eq(self.look, look) && self.light == look.light {
+            return false;
+        }
+        self.look = look;
+        self.light = look.light;
+        self.dirty = true;
+        true
+    }
+
+    pub fn set_pinned(&mut self, pinned: Vec<String>) -> bool {
+        if self.pinned == pinned {
+            return false;
+        }
+        self.pinned = pinned;
+        self.dirty = true;
+        true
+    }
+
+    pub fn sync_catalog(&mut self) -> bool {
+        if !crate::services::dock_apps::take_launchpad_dirty() {
+            return false;
+        }
+        let next = crate::services::dock_apps::launchpad_snapshot();
+        if self.apps == next {
+            return false;
+        }
+        self.apps = next;
+        self.refilter();
+        self.dirty = true;
+        true
+    }
+
+    pub fn set_apps_for_test(&mut self, apps: Vec<crate::services::dock_apps::LaunchpadApp>) {
+        self.apps = apps;
+        self.refilter();
+        self.dirty = true;
+    }
+
+    pub fn pages(&self) -> usize {
+        self.shown_indices.len().div_ceil(LP_PER_PAGE).max(1)
+    }
+
+    pub fn page(&self) -> usize {
+        self.page
+    }
+
+    pub fn shown_len(&self) -> usize {
+        self.shown_indices.len()
+    }
+
+    fn refilter(&mut self) {
+        let q = self.query.trim().to_ascii_lowercase();
+        if q.is_empty() {
+            self.shown_indices = (0..self.apps.len()).collect();
+        } else {
+            let mut hits: Vec<(u8, usize)> = self
+                .apps
+                .iter()
+                .enumerate()
+                .filter_map(|(i, a)| {
+                    crate::services::dock_apps::launchpad_rank(&a.name.to_ascii_lowercase(), &q).map(|r| (r, i))
+                })
+                .collect();
+            hits.sort();
+            self.shown_indices = hits.into_iter().map(|(_, i)| i).collect();
+        }
+        let pages = self.pages();
+        self.page = self.page.min(pages.saturating_sub(1));
+        self.sel = self.sel.min(self.shown_indices.len().saturating_sub(1));
+    }
+
+    pub fn set_query(&mut self, q: String) {
+        if self.query == q {
+            return;
+        }
+        self.query = q;
+        self.page = 0;
+        self.sel = 0;
+        self.refilter();
+        self.dirty = true;
+    }
+
+    pub fn step_page(&mut self, delta: i32) {
+        let next = (self.page as i32 + delta).clamp(0, self.pages() as i32 - 1) as usize;
+        if next != self.page {
+            self.page = next;
+            self.sel = next * LP_PER_PAGE;
+            self.dirty = true;
+        }
+    }
+
+    pub fn move_selection(&mut self, delta: i32) {
+        if self.shown_indices.is_empty() {
+            return;
+        }
+        let next = (self.sel as i32 + delta).clamp(0, self.shown_indices.len() as i32 - 1) as usize;
+        self.sel = next;
+        self.page = next / LP_PER_PAGE;
+        self.dirty = true;
+    }
+
+    fn scale(&self) -> f32 {
+        (self.dpi.max(96) as f32) / 96.0
+    }
+
+    fn card_dip(&self) -> Rect {
+        Rect::new(0.0, 0.0, LP_W, LP_H)
+    }
+
+    fn app_at_cell(&self, cell: usize) -> Option<&crate::services::dock_apps::LaunchpadApp> {
+        if cell >= LP_PER_PAGE {
+            return None;
+        }
+        let idx = *self.shown_indices.get(self.page * LP_PER_PAGE + cell)?;
+        self.apps.get(idx)
+    }
+
+    fn hit_test(&self, p: Point) -> Option<LaunchpadZone> {
+        let card = self.card_dip();
+        if !card.contains(p) {
+            return None;
+        }
+        if launchpad_search_rect(card).contains(p) {
+            return Some(LaunchpadZone::Search);
+        }
+        if launchpad_settings_btn_rect(card).contains(p) {
+            return Some(LaunchpadZone::SettingsBtn);
+        }
+        let pages = self.pages();
+        if pages > 1 {
+            for d in 0..pages {
+                if launchpad_dot_rect(card, d, pages).contains(p) {
+                    return Some(LaunchpadZone::Dot(d));
+                }
+            }
+        }
+        for cell in 0..LP_PER_PAGE {
+            if self.app_at_cell(cell).is_some() && launchpad_cell_rect(card, cell).contains(p) {
+                return Some(LaunchpadZone::Cell(cell));
+            }
+        }
+        None
+    }
+
+    pub fn handle_message(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, LaunchpadAction) {
+        if hwnd != self.hwnd {
+            return (None, LaunchpadAction::None);
+        }
+        let to_dip = |lp: LPARAM, scale: f32| {
+            let x = (lp.0 & 0xffff) as u16 as i16 as f32;
+            let y = ((lp.0 >> 16) & 0xffff) as u16 as i16 as f32;
+            Point::new(x / scale, y / scale)
+        };
+        match msg {
+            crate::events::WM_APP_EVENT => {
+                if self.sync_catalog() {
+                    return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_KILLFOCUS => (Some(LRESULT(0)), LaunchpadAction::Close),
+            WM_ACTIVATE if (wp.0 & 0xffff) == 0 => (Some(LRESULT(0)), LaunchpadAction::Close),
+            WM_MOUSEWHEEL => {
+                let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
+                if delta != 0 {
+                    self.step_page(if delta < 0 { 1 } else { -1 });
+                    return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_KEYDOWN => {
+                let vk = wp.0 as u32;
+                match vk {
+                    0x1B => {
+                        // Escape clears search first; if empty, closes Launchpad.
+                        if !self.query.is_empty() {
+                            self.set_query(String::new());
+                            return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                        }
+                        return (Some(LRESULT(0)), LaunchpadAction::Close);
+                    }
+                    0x0D => {
+                        // Enter launches the currently selected app.
+                        if let Some(&idx) = self.shown_indices.get(self.sel) {
+                            if let Some(app) = self.apps.get(idx) {
+                                return (Some(LRESULT(0)), LaunchpadAction::LaunchApp(app.spec.clone()));
+                            }
+                        }
+                    }
+                    0x25 => {
+                        self.move_selection(-1);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    0x27 => {
+                        self.move_selection(1);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    0x26 => {
+                        self.move_selection(-(LP_COLS as i32));
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    0x28 => {
+                        self.move_selection(LP_COLS as i32);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    0x21 => {
+                        self.step_page(-1);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    0x22 => {
+                        self.step_page(1);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                    _ => {}
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_CHAR => {
+                let ch = char::from_u32(wp.0 as u32).unwrap_or('\0');
+                if ch == '\u{8}' {
+                    if !self.query.is_empty() {
+                        let mut q = self.query.clone();
+                        q.pop();
+                        self.set_query(q);
+                        return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                    }
+                } else if !ch.is_control() && self.query.chars().count() < 36 {
+                    let mut q = self.query.clone();
+                    q.push(ch);
+                    self.set_query(q);
+                    return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_MOUSEMOVE => {
+                if !self.tracking {
+                    self.tracking = true;
+                    unsafe {
+                        let mut tme = TRACKMOUSEEVENT {
+                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: self.hwnd,
+                            dwHoverTime: 0,
+                        };
+                        let _ = TrackMouseEvent(&mut tme);
+                    }
+                }
+                let p = to_dip(lp, self.scale());
+                let next = self.hit_test(p);
+                if next != self.hovered {
+                    self.hovered = next;
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_MOUSELEAVE => {
+                self.tracking = false;
+                if self.hovered.take().is_some() || self.pressed.take().is_some() {
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), LaunchpadAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), LaunchpadAction::None)
+            }
+            WM_LBUTTONDOWN => {
+                let p = to_dip(lp, self.scale());
+                self.pressed = self.hit_test(p);
+                self.dirty = true;
+                (Some(LRESULT(0)), LaunchpadAction::RequestFrame)
+            }
+            WM_LBUTTONUP => {
+                let p = to_dip(lp, self.scale());
+                let hit = self.hit_test(p);
+                let prev = self.pressed.take();
+                self.dirty = true;
+                match (prev, hit) {
+                    (_, Some(LaunchpadZone::SettingsBtn)) => (Some(LRESULT(0)), LaunchpadAction::OpenSettings),
+                    (_, Some(LaunchpadZone::Dot(d))) => {
+                        if d < self.pages() && d != self.page {
+                            self.page = d;
+                            self.sel = d * LP_PER_PAGE;
+                        }
+                        (Some(LRESULT(0)), LaunchpadAction::RequestFrame)
+                    }
+                    (_, Some(LaunchpadZone::Cell(cell))) => {
+                        if let Some(app) = self.app_at_cell(cell) {
+                            return (Some(LRESULT(0)), LaunchpadAction::LaunchApp(app.spec.clone()));
+                        }
+                        (Some(LRESULT(0)), LaunchpadAction::RequestFrame)
+                    }
+                    (_, Some(LaunchpadZone::Search)) => (Some(LRESULT(0)), LaunchpadAction::RequestFrame),
+                    (None, None) => (Some(LRESULT(0)), LaunchpadAction::Close),
+                    _ => (Some(LRESULT(0)), LaunchpadAction::RequestFrame),
+                }
+            }
+            WM_RBUTTONUP => {
+                let p = to_dip(lp, self.scale());
+                if let Some(LaunchpadZone::Cell(cell)) = self.hit_test(p) {
+                    if let Some(app) = self.app_at_cell(cell) {
+                        return (Some(LRESULT(0)), LaunchpadAction::TogglePin(app.spec.clone()));
+                    }
+                }
+                (Some(LRESULT(0)), LaunchpadAction::Close)
+            }
+            _ => (None, LaunchpadAction::None),
+        }
+    }
+
+    pub fn paint(&mut self, shared: Option<SharedD3d>) {
+        if !self.dirty {
+            return;
+        }
+        let card = self.card_dip();
+        let (x, y, w, h) = self.at;
+        let scale = self.scale();
+        let light = self.light;
+        let look = self.look;
+        let hovered = self.hovered;
+        let pressed = self.pressed;
+        let page = self.page;
+        let pages = self.pages();
+        let sel = self.sel;
+        let query = self.query.clone();
+        let apps = self.apps.clone();
+        let shown_indices = self.shown_indices.clone();
+        let pinned = self.pinned.clone();
+
+        let Some(gfx) = self.gfx.as_mut() else {
+            return;
+        };
+        if !gfx.has_gpu() && shared.is_some() {
+            gfx.set_shared_d3d(shared);
+        }
+        if gfx.set_surface(w, h).is_err() {
+            return;
+        }
+        gfx.set_look(look);
+        let full = RECT { left: 0, top: 0, right: w, bottom: h };
+        let body = card.inset(1.0, 1.0);
+        let glass_params = if look.material == look::Material::Glass {
+            let gp = dock_glass_params(body, LP_R, look, scale);
+            gfx.prepare_glass(&gp, full);
+            Some(gp)
+        } else {
+            None
+        };
+
+        let ink = look.ink;
+        let sub = ink.with_alpha(if light { 0.58 } else { 0.68 });
+        let accent = look.accent.unwrap_or(Color::hex(0x0A84FF));
+        let card_fill = if light { Color::white(0.55) } else { Color::white(0.08) };
+        let card_rim = if light { Color::black(0.08) } else { Color::white(0.14) };
+
+        if let Ok(mut c) = gfx.begin(full) {
+            c.unthemed(|c| {
+                // 1. Liquid Glass Launchpad container
+                if let Some(gp) = glass_params.as_ref() {
+                    c.glass(gp, card);
+                } else {
+                    crate::pill::shape::draw_body(c, body, LP_R, look.ground, Some(look.border));
+                }
+
+                // 2. Top Search Pill
+                let sr = launchpad_search_rect(card);
+                let sr_hov = hovered == Some(LaunchpadZone::Search);
+                c.fill_rrect(
+                    sr,
+                    sr.h * 0.5,
+                    if !query.is_empty() || sr_hov {
+                        if light { Color::white(0.78) } else { Color::white(0.14) }
+                    } else {
+                        card_fill
+                    },
+                );
+                c.stroke_rrect(
+                    sr,
+                    sr.h * 0.5,
+                    if !query.is_empty() { accent.with_alpha(0.65) } else { card_rim },
+                    1.0,
+                );
+                if query.is_empty() {
+                    let ph_st = TextStyle {
+                        size: 13.0,
+                        ..TextStyle::body().weight(Weight::Medium).center().color(sub)
+                    };
+                    c.text("🔍  Search Apps", Rect::new(sr.x + 12.0, sr.y + 7.0, sr.w - 24.0, 20.0), &ph_st);
+                } else {
+                    let q_st = TextStyle {
+                        size: 13.0,
+                        ..TextStyle::body().weight(Weight::Semibold).color(ink)
+                    };
+                    c.text(
+                        &format!("🔍  {query}"),
+                        Rect::new(sr.x + 14.0, sr.y + 7.0, sr.w - 28.0, 20.0),
+                        &q_st,
+                    );
+                }
+
+                // 3. Top-right Dock Settings button + hint
+                let hint_st = TextStyle {
+                    size: 11.0,
+                    ..TextStyle::caption().weight(Weight::Medium).color(sub)
+                };
+                c.text(
+                    "Right-click app to pin/unpin",
+                    Rect::new(card.x + LP_PAD_X, card.y + LP_SEARCH_Y + 9.0, 210.0, 16.0),
+                    &hint_st,
+                );
+                let sb = launchpad_settings_btn_rect(card);
+                let sb_hov = hovered == Some(LaunchpadZone::SettingsBtn);
+                c.fill_rrect(
+                    sb,
+                    sb.h * 0.5,
+                    if sb_hov { accent.with_alpha(0.22) } else { card_fill },
+                );
+                c.stroke_rrect(sb, sb.h * 0.5, if sb_hov { accent.with_alpha(0.55) } else { card_rim }, 1.0);
+                c.icon(
+                    Icon::Gear,
+                    Rect::new(sb.x + 8.0, sb.y + 8.0, 16.0, 16.0),
+                    if sb_hov { accent } else { ink },
+                );
+
+                // 4. App Grid (7 x 5 = 35 per page)
+                if shown_indices.is_empty() {
+                    let msg = if apps.is_empty() {
+                        "Loading apps from Windows Start menu…"
+                    } else {
+                        "No matching apps"
+                    };
+                    let empty_st = TextStyle {
+                        size: 16.0,
+                        ..TextStyle::body().weight(Weight::Medium).center().color(sub)
+                    };
+                    c.text(
+                        msg,
+                        Rect::new(card.x + 60.0, card.y + LP_GRID_TOP + LP_GRID_H * 0.44, card.w - 120.0, 28.0),
+                        &empty_st,
+                    );
+                } else {
+                    let start = page * LP_PER_PAGE;
+                    for cell in 0..LP_PER_PAGE {
+                        let Some(&ai) = shown_indices.get(start + cell) else {
+                            break;
+                        };
+                        let Some(app) = apps.get(ai) else {
+                            continue;
+                        };
+                        let cr = launchpad_cell_rect(card, cell);
+                        let is_hov = hovered == Some(LaunchpadZone::Cell(cell));
+                        let is_press = pressed == Some(LaunchpadZone::Cell(cell));
+                        let is_sel = !query.is_empty() && (start + cell) == sel;
+                        let is_pin = pinned.iter().any(|p| p.eq_ignore_ascii_case(&app.spec));
+
+                        let tile = Rect::new(cr.x + 6.0, cr.y + 3.0, cr.w - 12.0, cr.h - 6.0);
+                        if is_hov || is_sel {
+                            let bg = if is_press {
+                                accent.with_alpha(0.26)
+                            } else if is_hov {
+                                if light { Color::black(0.07) } else { Color::white(0.11) }
+                            } else {
+                                accent.with_alpha(0.16)
+                            };
+                            c.fill_rrect(tile, 14.0, bg);
+                            c.stroke_rrect(
+                                tile,
+                                14.0,
+                                if is_sel { accent.with_alpha(0.55) } else { card_rim },
+                                1.0,
+                            );
+                        }
+
+                        let icon_sz = if is_press { 44.0 } else if is_hov { 50.0 } else { 48.0 };
+                        let icon_r = Rect::new(
+                            cr.x + (cr.w - icon_sz) * 0.5,
+                            cr.y + 8.0 + (48.0 - icon_sz) * 0.5,
+                            icon_sz,
+                            icon_sz,
+                        );
+                        if let Some(img) = app.icon.as_ref() {
+                            c.image(img, icon_r, icon_sz * 0.22);
+                        } else {
+                            c.fill_rrect(icon_r, icon_sz * 0.22, accent.with_alpha(0.22));
+                            c.stroke_rrect(icon_r, icon_sz * 0.22, accent.with_alpha(0.48), 1.0);
+                            let ch = app.name.chars().next().unwrap_or('A').to_ascii_uppercase();
+                            let l_st = TextStyle {
+                                size: 20.0,
+                                ..TextStyle::body().weight(Weight::Bold).center().color(ink)
+                            };
+                            c.text(
+                                &ch.to_string(),
+                                Rect::new(icon_r.x, icon_r.y + 11.0, icon_r.w, 26.0),
+                                &l_st,
+                            );
+                        }
+
+                        // Pinned indicator badge in top-right of icon when kept in dock
+                        if is_pin {
+                            let pin_c = Point::new(icon_r.right() - 3.0, icon_r.y + 3.0);
+                            c.fill_circle(pin_c, 4.5, accent);
+                        }
+
+                        let mut lbl = app.name.clone();
+                        if lbl.chars().count() > 16 {
+                            lbl = lbl.chars().take(15).collect::<String>() + "…";
+                        }
+                        let lbl_st = TextStyle {
+                            size: 11.5,
+                            ..TextStyle::caption()
+                                .weight(if is_hov || is_sel { Weight::Semibold } else { Weight::Medium })
+                                .center()
+                                .color(ink)
+                        };
+                        c.text(
+                            &lbl,
+                            Rect::new(cr.x + 4.0, cr.y + 60.0, cr.w - 8.0, 18.0),
+                            &lbl_st,
+                        );
+                    }
+                }
+
+                // 5. Page Dots at bottom
+                if pages > 1 {
+                    for d in 0..pages {
+                        let dr = launchpad_dot_rect(card, d, pages);
+                        let center = Point::new(dr.x + dr.w * 0.5, dr.y + dr.h * 0.5);
+                        let is_cur = d == page;
+                        let is_h = hovered == Some(LaunchpadZone::Dot(d));
+                        let col = if is_cur {
+                            accent
+                        } else if is_h {
+                            ink.with_alpha(0.65)
+                        } else {
+                            sub.with_alpha(0.45)
+                        };
+                        c.fill_circle(center, if is_cur { 4.5 } else { 3.5 }, col);
+                    }
+                }
+            });
+            let _ = gfx.end();
+        }
+        let _ = gfx.present(x, y);
+        if gfx.needs_hit_mask() {
+            let mask = HitMask { rect: None, notch: None, pill: Some((card, LP_R)) };
+            let _ = gfx.push_hit_mask(x, y, &mask, None);
+        }
+        if !self.shown {
+            self.shown = true;
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOW);
+                let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                let _ = SetForegroundWindow(self.hwnd);
+            }
+            gfx.set_shown(true);
+        }
+        self.dirty = false;
+    }
+}
+
 // ============================================================================
 // POPOVER 2: SYSTEM TRAY CONTROL CENTER (`#trayFlyout` in full_ecosystem.html)
 // ============================================================================
@@ -4676,5 +5427,42 @@ mod tests {
         assert_eq!(rects.len(), 11);
         assert!(rects[10].x > rects[9].right(), "Trash slot must sit to the right of Downloads stack");
         assert!(rects[10].right() <= shelf.right() - SHELF_PAD_X + 0.5);
+    }
+
+    #[test]
+    fn launchpad_search_ranking_junk_filter_and_paging_work() {
+        use crate::services::dock_apps::{is_launchpad_junk, launchpad_rank, LaunchpadApp};
+
+        assert!(is_launchpad_junk("Uninstall Zoom", "Zoom.Uninstall"));
+        assert!(is_launchpad_junk("Release Notes", "app.html"));
+        assert!(!is_launchpad_junk("Visual Studio Code", "Microsoft.VisualStudioCode"));
+
+        // Prefix match (0) outranks word-boundary match (1) and substring match (2).
+        assert_eq!(launchpad_rank("code", "co"), Some(0));
+        assert_eq!(launchpad_rank("visual studio code", "co"), Some(1));
+        assert_eq!(launchpad_rank("discord", "co"), Some(2));
+        assert_eq!(launchpad_rank("notepad", "co"), None);
+
+        unsafe extern "system" fn test_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+            unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+        }
+        let _ = register_launchpad(test_proc);
+        let m = crate::window::pick_monitor(halo_core::settings::MonitorChoice::Primary);
+        let mut lp = DockLaunchpad::open(&m, Vec::new(), &halo_core::look::CLASSIC, None).expect("open launchpad");
+        let sample: Vec<LaunchpadApp> = (0..40)
+            .map(|i| LaunchpadApp {
+                name: format!("App {i:02}"),
+                spec: format!("shell:AppsFolder\\App.{i:02}"),
+                icon: None,
+            })
+            .collect();
+        lp.set_apps_for_test(sample);
+        assert_eq!(lp.pages(), 2);
+        assert_eq!(lp.page(), 0);
+        lp.step_page(1);
+        assert_eq!(lp.page(), 1);
+        lp.set_query("App 1".into());
+        assert_eq!(lp.shown_len(), 10);
+        assert_eq!(lp.pages(), 1);
     }
 }

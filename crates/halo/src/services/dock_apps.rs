@@ -10,6 +10,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::{c_void, OsString};
 use std::os::windows::ffi::OsStringExt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use windows::core::{Interface, BSTR, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{BOOL, CloseHandle, HMODULE, HWND, LPARAM, SIZE, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
@@ -21,7 +23,7 @@ use windows::Win32::Storage::EnhancedStorage::{
     PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand, PKEY_Link_TargetParsingPath,
 };
 use windows::Win32::Storage::Packaging::Appx::GetApplicationUserModelId;
-use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoTaskMemFree};
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
     PROCESS_QUERY_LIMITED_INFORMATION,
@@ -31,8 +33,9 @@ use windows::Win32::UI::Shell::PropertiesSystem::{
     IPropertyStore, SHGetPropertyStoreForWindow, SHGetPropertyStoreFromParsingName, GPS_DEFAULT, PROPERTYKEY,
 };
 use windows::Win32::UI::Shell::{
-    IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON,
-    SHGFI_LARGEICON, SIGDN_NORMALDISPLAY, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+    BHID_EnumItems, IEnumShellItems, IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHGetFileInfoW,
+    SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SIGDN, SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
+    SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -1250,4 +1253,185 @@ pub fn badge_from_title(title: &str) -> u16 {
         return 0;
     }
     digits.parse::<u16>().unwrap_or(0)
+}
+
+/// An installed application from `shell:AppsFolder` shown inside the Dock Launchpad overlay.
+#[derive(Clone, Debug)]
+pub struct LaunchpadApp {
+    pub name: String,
+    /// `shell:AppsFolder\<id>` launch & pin specification.
+    pub spec: String,
+    pub icon: Option<Image>,
+}
+
+impl PartialEq for LaunchpadApp {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.spec == other.spec
+            && self.icon.is_some() == other.icon.is_some()
+    }
+}
+
+static LAUNCHPAD_CATALOG: OnceLock<Mutex<Vec<LaunchpadApp>>> = OnceLock::new();
+static LAUNCHPAD_LOADING: AtomicBool = AtomicBool::new(false);
+static LAUNCHPAD_DIRTY: AtomicBool = AtomicBool::new(false);
+
+fn launchpad_catalog() -> &'static Mutex<Vec<LaunchpadApp>> {
+    LAUNCHPAD_CATALOG.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Returns true if a background Launchpad catalog/icon update arrived since last check.
+pub fn take_launchpad_dirty() -> bool {
+    LAUNCHPAD_DIRTY.swap(false, Ordering::AcqRel)
+}
+
+/// Snapshot the cached Launchpad catalog (`0` RAM at rest until Launchpad is first opened).
+pub fn launchpad_snapshot() -> Vec<LaunchpadApp> {
+    launchpad_catalog().lock().map(|c| c.clone()).unwrap_or_default()
+}
+
+/// True if an entry in `shell:AppsFolder` is an uninstaller, readme, or doc link rather than an app.
+pub fn is_launchpad_junk(name: &str, id: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    let id = id.to_ascii_lowercase();
+    const WORDS: [&str; 9] = [
+        "uninstall",
+        "readme",
+        "read me",
+        "release notes",
+        "documentation",
+        "help file",
+        "website",
+        "license",
+        "changelog",
+    ];
+    WORDS.iter().any(|w| n.contains(w))
+        || id.starts_with("http:")
+        || id.starts_with("https:")
+        || id.ends_with(".url")
+        || id.ends_with(".txt")
+        || id.ends_with(".pdf")
+        || id.ends_with(".chm")
+        || id.ends_with(".html")
+}
+
+/// Score how well an app name (lowercase) matches a search query (lowercase):
+/// `0` = starts with query, `1` = any word starts with query, `2` = contains query anywhere.
+pub fn launchpad_rank(name_lower: &str, query_lower: &str) -> Option<u8> {
+    if name_lower.starts_with(query_lower) {
+        Some(0)
+    } else if name_lower.split([' ', '-', '.', '_']).any(|w| w.starts_with(query_lower)) {
+        Some(1)
+    } else if name_lower.contains(query_lower) {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+unsafe fn shell_item_name(it: &IShellItem, kind: SIGDN) -> Option<String> {
+    let p = unsafe { it.GetDisplayName(kind).ok()? };
+    let s = unsafe { p.to_string().ok() };
+    unsafe { CoTaskMemFree(Some(p.0 as *const _)) };
+    s.filter(|s| !s.trim().is_empty())
+}
+
+fn enumerate_apps_folder() -> Vec<(String, String)> {
+    use std::os::windows::ffi::OsStrExt;
+    let mut out = Vec::new();
+    let folder_w: Vec<u16> = std::ffi::OsStr::new("shell:AppsFolder")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let Ok(folder) = SHCreateItemFromParsingName::<_, _, IShellItem>(PCWSTR(folder_w.as_ptr()), None) else {
+            return out;
+        };
+        let Ok(en) = folder.BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems) else {
+            return out;
+        };
+        loop {
+            let mut one = [None];
+            let mut n = 0u32;
+            if en.Next(&mut one, Some(&mut n)).is_err() || n == 0 {
+                break;
+            }
+            let Some(it) = one[0].take() else { break };
+            let (Some(name), Some(id)) = (
+                shell_item_name(&it, SIGDN_NORMALDISPLAY),
+                shell_item_name(&it, SIGDN_PARENTRELATIVEPARSING),
+            ) else {
+                continue;
+            };
+            if !is_launchpad_junk(&name, &id) {
+                out.push((name, format!("shell:AppsFolder\\{id}")));
+            }
+        }
+    }
+    out.sort_by_key(|a| a.0.to_ascii_lowercase());
+    out.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0));
+    out
+}
+
+/// Asynchronously populate/refresh the `shell:AppsFolder` catalog and 64px icons on a short-lived worker thread.
+pub fn refresh_launchpad_async(notify_hwnd: HWND) {
+    if LAUNCHPAD_LOADING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let hwnd_raw = notify_hwnd.0 as isize;
+    let ok = std::thread::Builder::new().name("halo-launchpad".into()).spawn(move || {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        let notify = || {
+            LAUNCHPAD_DIRTY.store(true, Ordering::Release);
+            if hwnd_raw != 0 {
+                unsafe {
+                    let _ = PostMessageW(
+                        HWND(hwnd_raw as *mut _),
+                        crate::events::WM_APP_EVENT,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                }
+            }
+        };
+        let list = enumerate_apps_folder();
+        {
+            let mut cat = launchpad_catalog().lock().unwrap_or_else(|e| e.into_inner());
+            let old: HashMap<String, Option<Image>> = cat.drain(..).map(|a| (a.spec, a.icon)).collect();
+            *cat = list
+                .into_iter()
+                .map(|(name, spec)| LaunchpadApp {
+                    icon: old.get(&spec).cloned().flatten(),
+                    name,
+                    spec,
+                })
+                .collect();
+        }
+        notify();
+        let todo: Vec<String> = launchpad_catalog()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter(|a| a.icon.is_none())
+            .map(|a| a.spec.clone())
+            .collect();
+        for (i, spec) in todo.iter().enumerate() {
+            if let Some(img) = shell_parsing_icon(&spec, 64) {
+                let mut cat = launchpad_catalog().lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(a) = cat.iter_mut().find(|a| a.spec == *spec) {
+                    a.icon = Some(img);
+                }
+            }
+            if i % 14 == 13 {
+                notify();
+            }
+        }
+        notify();
+        LAUNCHPAD_LOADING.store(false, Ordering::Release);
+    });
+    if ok.is_err() {
+        LAUNCHPAD_LOADING.store(false, Ordering::Release);
+    }
 }

@@ -139,3 +139,5 @@
 {"id": "dock-phase-16-control-center-display-bri", "ev": "open", "title": "Dock Phase 16: Control Center Display Brightness slider & sub-flyouts", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795668009}
 {"id": "dock-phase-16-control-center-display-bri", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-16-control-center-display-bri", "who": "ag", "ts": 1795668009}
 {"id": "dock-phase-16-control-center-display-bri", "ev": "done", "owner": "ag", "who": "ag", "commit": "aac2da3", "note": "Display Brightness slider (\\\\.\\LCD IOCTL + WM_POWERBROADCAST sync) and Control Center sub-flyouts (Wi-Fi, Battery, Calendar, AI Usage)", "ts": 1795668761}
+{"id": "dock-phase-17-full-launchpad-searchable-", "ev": "open", "title": "Dock Phase 17: Full Launchpad searchable AppsFolder grid overlay", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795675895}
+{"id": "dock-phase-17-full-launchpad-searchable-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-17-full-launchpad-searchable-", "who": "ag", "ts": 1795675895}
