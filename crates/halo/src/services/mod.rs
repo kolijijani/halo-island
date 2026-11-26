@@ -10,6 +10,8 @@ pub mod backdrop;
 pub mod bluetooth;
 pub mod clipboard;
 pub mod dock_apps;
+#[cfg(windows)]
+pub mod tray_host;
 pub mod frames;
 pub mod fullscreen;
 pub mod cities;

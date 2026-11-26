@@ -142,3 +142,6 @@
 {"id": "dock-phase-17-full-launchpad-searchable-", "ev": "open", "title": "Dock Phase 17: Full Launchpad searchable AppsFolder grid overlay", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795675895}
 {"id": "dock-phase-17-full-launchpad-searchable-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-17-full-launchpad-searchable-", "who": "ag", "ts": 1795675895}
 {"id": "dock-phase-17-full-launchpad-searchable-", "ev": "done", "owner": "ag", "who": "ag", "commit": "4e95ae9", "note": "Full Launchpad searchable 7x5 paged AppsFolder grid overlay with async icon catalog and pin toggle", "ts": 1795676625}
+{"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "open", "title": "Dock Phase 18: System Tray Host Shell_TrayWnd proxy when taskbar hidden", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795676851}
+{"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-18-system-tray-host-shell-tra", "who": "ag", "ts": 1795676851}
+{"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "done", "owner": "ag", "who": "ag", "commit": "6ef55e1", "note": "Added Shell_TrayWnd proxy tray_host service, dock ^ chevron pill, CcView::Tray 5x4 notification icon grid, WM_COPYDATA NIM_ADD/MODIFY/DELETE/SETVERSION + GetRect, and mouse/context-menu forwarding", "ts": 1795677437}

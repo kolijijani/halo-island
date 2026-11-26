@@ -256,15 +256,26 @@ impl DockTrayState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DockTrayZone {
     Weather,
+    Chevron,
     Status,
     Clock,
 }
 
+const TRAY_CHEVRON_W: f32 = 24.0;
+
 pub fn tray_capsule_width(tray: &DockTrayState) -> f32 {
     let weather_w = if tray.weather_temp_c.is_some() { 70.0 } else { 0.0 };
-    let status_w = if tray.has_battery { 120.0 } else { 76.0 };
+    let status_w = (if tray.has_battery { 120.0 } else { 76.0 }) + TRAY_CHEVRON_W + 4.0;
     let clock_w = if tray.day > 0 && tray.month > 0 { 72.0 } else { 52.0 };
     weather_w + status_w + clock_w + if weather_w > 0.0 { 8.0 } else { 4.0 }
+}
+
+fn tray_chevron_and_status_rects(status_r: Rect) -> (Rect, Rect) {
+    let cw = TRAY_CHEVRON_W.min((status_r.w * 0.32).max(18.0));
+    let chev = Rect::new(status_r.x, status_r.y, cw, status_r.h);
+    let sx = (chev.right() + 4.0).min(status_r.right());
+    let stat = Rect::new(sx, status_r.y, (status_r.right() - sx).max(16.0), status_r.h);
+    (chev, stat)
 }
 
 fn tray_zone_rects(tray_rect: Rect, tray: &DockTrayState) -> (Option<Rect>, Rect, Rect) {
@@ -323,6 +334,7 @@ pub enum DockAction {
     ToggleDownloadsStack(Rect),
     OpenRecycleBin,
     ToggleControlCenter(Rect),
+    ToggleTray(Rect),
     ShowMenu(POINT, bool, DockMenuTarget),
     DropToShelf(Vec<String>),
     DropToRecycleBin(Vec<String>),
@@ -396,6 +408,9 @@ pub fn set_system_taskbar_hidden(hide: bool) {
                 break;
             }
             after = bar;
+            if crate::services::tray_host::owns_window(bar) {
+                continue;
+            }
             unsafe {
                 let _ = ShowWindow(bar, cmd);
             }
@@ -1274,7 +1289,12 @@ impl Dock {
         if clock_r.inset(-2.0, -4.0).contains(p) {
             Some(DockTrayZone::Clock)
         } else if status_r.inset(-2.0, -4.0).contains(p) {
-            Some(DockTrayZone::Status)
+            let (chev_r, _) = tray_chevron_and_status_rects(status_r);
+            if chev_r.inset(-2.0, -4.0).contains(p) {
+                Some(DockTrayZone::Chevron)
+            } else {
+                Some(DockTrayZone::Status)
+            }
         } else {
             Some(DockTrayZone::Status)
         }
@@ -1465,6 +1485,7 @@ impl Dock {
                 if let Some(z) = down_tray.filter(|&z| Some(z) == self.tray_zone_at(p)) {
                     let act = match z {
                         DockTrayZone::Weather | DockTrayZone::Clock => DockAction::OpenPage(PageKind::Today),
+                        DockTrayZone::Chevron => DockAction::ToggleTray(self.tray_status_screen_rect()),
                         DockTrayZone::Status => DockAction::ToggleControlCenter(self.tray_status_screen_rect()),
                     };
                     return (Some(LRESULT(0)), act);
@@ -2300,12 +2321,14 @@ fn draw_dock(
                     c.fill_rrect(well, well_r, well_bg);
                     c.stroke_rrect(well, well_r, well_rim, 1.0);
 
-                    let (weather_r, status_r, clock_r) = tray_zone_rects(tr, tray);
+                    let (weather_r, full_status_r, clock_r) = tray_zone_rects(tr, tray);
+                    let (chev_r, status_r) = tray_chevron_and_status_rects(full_status_r);
                     let ink = theme_ink;
                     let dim = theme_ink.with_alpha(if light { 0.56 } else { 0.64 });
 
                     let zones = [
                         weather_r.map(|r| (DockTrayZone::Weather, r)),
+                        Some((DockTrayZone::Chevron, chev_r)),
                         Some((DockTrayZone::Status, status_r)),
                         Some((DockTrayZone::Clock, clock_r)),
                     ];
@@ -2347,6 +2370,19 @@ fn draw_dock(
                         let tw = (wr.right() - tx - 4.0).max(16.0);
                         c.text(&format!("{temp_c}°C"), Rect::new(tx, wr.y + 3.0, tw, 13.0), &temp_st);
                         c.text(tray.weather_short(), Rect::new(tx, wr.y + 15.0, tw, 11.0), &cond_st);
+                    }
+
+                    // System Tray ^ Chevron button (Background Apps host flyout).
+                    {
+                        let cx = chev_r.x + chev_r.w * 0.5;
+                        let cy = chev_r.y + chev_r.h * 0.5;
+                        let chev_col = if hovered_tray == Some(DockTrayZone::Chevron) { ink } else { dim };
+                        let segs = [
+                            Seg::MoveTo(cx - 4.2, cy + 1.8),
+                            Seg::LineTo(cx, cy - 2.4),
+                            Seg::LineTo(cx + 4.2, cy + 1.8),
+                        ];
+                        c.path(&segs, None, Some((chev_col, 1.6)));
                     }
 
                     // Status cluster: Wi-Fi (+ green dot), Volume + %, and Battery capsule + %.
@@ -2442,9 +2478,11 @@ fn draw_dock(
                     };
                     label.zip(slot_rects.get(i).map(|sr| Rect::new(dx - sr.w * 0.5, sr.y - if drag_out { 28.0 } else { 4.0 }, sr.w, sr.h)))
                 } else if let (Some(z), Some(tr)) = (hovered_tray, tray_rect) {
-                    let (weather_r, status_r, clock_r) = tray_zone_rects(tr, tray);
+                    let (weather_r, full_status_r, clock_r) = tray_zone_rects(tr, tray);
+                    let (chev_r, status_r) = tray_chevron_and_status_rects(full_status_r);
                     match z {
                         DockTrayZone::Weather => weather_r.map(|r| ("Weather", r)),
+                        DockTrayZone::Chevron => Some(("Background Apps", chev_r)),
                         DockTrayZone::Status => Some(("System Status", status_r)),
                         DockTrayZone::Clock => Some(("Today", clock_r)),
                     }
@@ -3809,6 +3847,7 @@ pub enum CcView {
     Battery,
     Calendar,
     Ai,
+    Tray,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3854,6 +3893,7 @@ pub enum FlyoutZone {
     SubBattery,
     SubCalendar,
     SubAi,
+    SubTray,
     FooterSystem,
     SubBack,
     SubAction1,
@@ -3861,6 +3901,7 @@ pub enum FlyoutZone {
     CalPrev,
     CalNext,
     CalToday,
+    TrayCell(usize),
 }
 
 /// Physical pixel bounds `(x, y, w, h)` for the Control Center flyout anchored above `anchor_screen`.
@@ -3926,12 +3967,32 @@ pub fn flyout_volume_icon_rect(card: Rect) -> Rect {
     Rect::new(sc.x + 8.0, sc.y + 5.0, 28.0, 22.0)
 }
 
-/// Quick sub-flyout pill button (`idx` in `0..4`: Wi-Fi, Battery, Calendar, AI Usage).
+/// Quick sub-flyout pill button (`idx` in `0..5`: Wi-Fi, Battery, Calendar, AI, Tray ^).
 pub fn flyout_sub_pill_rect(card: Rect, idx: usize) -> Rect {
-    let gap = 6.0;
+    let gap = 5.0;
     let inner_w = (card.w - 2.0 * FLYOUT_PAD).max(120.0);
-    let w = (inner_w - 3.0 * gap) * 0.25;
+    let w = (inner_w - 4.0 * gap) * 0.20;
     Rect::new(FLYOUT_PAD + idx as f32 * (w + gap), 350.0, w, 24.0)
+}
+
+pub const CC_TRAY_COLS: usize = 5;
+pub const CC_TRAY_ROWS: usize = 4;
+pub const CC_TRAY_MAX: usize = CC_TRAY_COLS * CC_TRAY_ROWS;
+
+/// Cell rectangle inside the `CcView::Tray` 5×4 notification area grid (`idx` in `0..20`).
+pub fn cc_tray_cell_rect(card: Rect, idx: usize) -> Rect {
+    let gap = 8.0;
+    let inner_w = (card.w - 2.0 * FLYOUT_PAD).max(150.0);
+    let cell_w = (inner_w - (CC_TRAY_COLS as f32 - 1.0) * gap) / (CC_TRAY_COLS as f32);
+    let cell_h = 46.0;
+    let col = (idx % CC_TRAY_COLS) as f32;
+    let row = (idx / CC_TRAY_COLS) as f32;
+    Rect::new(
+        FLYOUT_PAD + col * (cell_w + gap),
+        90.0 + row * (cell_h + gap),
+        cell_w,
+        cell_h,
+    )
 }
 
 /// Footer status row rectangle (`.cc-foot`).
@@ -3989,6 +4050,10 @@ pub struct DockControlCenter {
     pub extra: DockCcExtra,
     pub cal_year: i32,
     pub cal_month: u8,
+    tray_hosted: bool,
+    tray_opened_at: std::time::Instant,
+    tray_shown: Vec<(u32, u32)>,
+    tray_hot: Option<usize>,
     hovered: Option<FlyoutZone>,
     dragging_vol: bool,
     dragging_bright: bool,
@@ -3999,6 +4064,7 @@ pub struct DockControlCenter {
 
 impl Drop for DockControlCenter {
     fn drop(&mut self) {
+        self.stop_tray_host();
         let visual = self.gfx.as_ref().and_then(|g| g.visual_hwnd());
         self.gfx = None;
         unsafe {
@@ -4063,6 +4129,10 @@ impl DockControlCenter {
             extra: DockCcExtra::default(),
             cal_year,
             cal_month,
+            tray_hosted: false,
+            tray_opened_at: std::time::Instant::now(),
+            tray_shown: Vec::new(),
+            tray_hot: None,
             hovered: None,
             dragging_vol: false,
             dragging_bright: false,
@@ -4070,6 +4140,67 @@ impl DockControlCenter {
             shown: false,
             dirty: true,
         })
+    }
+
+    fn with_tray_icon(&self, cell: usize, f: impl FnOnce(&crate::services::tray_host::TrayIcon)) {
+        let Some(&(h, u)) = self.tray_shown.get(cell) else { return };
+        crate::services::tray_host::with_icons(|icons| {
+            if let Some(ic) = icons.and_then(|v| v.iter().find(|i| i.hwnd == h && i.uid == u)) {
+                f(ic);
+            }
+        });
+    }
+
+    fn update_tray_hover(&mut self, next: Option<usize>) {
+        if next == self.tray_hot {
+            return;
+        }
+        if let Some(old) = self.tray_hot.take() {
+            self.with_tray_icon(old, |ic| {
+                if ic.version >= 4 {
+                    crate::services::tray_host::send_mouse(ic, crate::services::tray_host::NIN_POPUPCLOSE_MSG);
+                }
+            });
+        }
+        self.tray_hot = next;
+        if let Some(new_cell) = next {
+            self.with_tray_icon(new_cell, |ic| {
+                crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_MOUSEMOVE_MSG);
+                if ic.version >= 4 {
+                    crate::services::tray_host::send_mouse(ic, crate::services::tray_host::NIN_POPUPOPEN_MSG);
+                }
+            });
+        }
+    }
+
+    fn stop_tray_host(&mut self) {
+        self.update_tray_hover(None);
+        if self.tray_hosted || crate::services::tray_host::running() {
+            unsafe {
+                let _ = KillTimer(self.hwnd, 77);
+            }
+            crate::services::tray_host::stop();
+            self.tray_hosted = false;
+        }
+    }
+
+    pub fn set_view(&mut self, view: CcView) {
+        if self.view == view {
+            return;
+        }
+        if self.view == CcView::Tray && view != CcView::Tray {
+            self.stop_tray_host();
+        }
+        self.view = view;
+        self.hovered = None;
+        if view == CcView::Tray {
+            self.tray_opened_at = std::time::Instant::now();
+            self.tray_hosted = crate::services::tray_host::start(self.hwnd);
+            unsafe {
+                let _ = SetTimer(self.hwnd, 77, 500, None);
+            }
+        }
+        self.dirty = true;
     }
 
     pub fn set_brightness_pct(&mut self, pct: u8) -> bool {
@@ -4157,6 +4288,13 @@ impl DockControlCenter {
                     return Some(FlyoutZone::CalToday);
                 }
             }
+            if self.view == CcView::Tray {
+                for cell in 0..self.tray_shown.len().min(CC_TRAY_MAX) {
+                    if cc_tray_cell_rect(card, cell).contains(p) {
+                        return Some(FlyoutZone::TrayCell(cell));
+                    }
+                }
+            }
             if cc_sub_action_rect(card, 0).contains(p) {
                 return Some(FlyoutZone::SubAction1);
             }
@@ -4195,6 +4333,7 @@ impl DockControlCenter {
             FlyoutZone::SubBattery,
             FlyoutZone::SubCalendar,
             FlyoutZone::SubAi,
+            FlyoutZone::SubTray,
         ]
         .into_iter()
         .enumerate()
@@ -4235,6 +4374,20 @@ impl DockControlCenter {
         };
         match msg {
             WM_MOUSEACTIVATE => (Some(LRESULT(MA_NOACTIVATE as isize)), FlyoutAction::None),
+            m if m == crate::services::tray_host::WM_TRAY_HOST_DATA => {
+                if self.view == CcView::Tray {
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
+            WM_TIMER => {
+                if self.view == CcView::Tray {
+                    self.dirty = true;
+                    return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
+                }
+                (Some(LRESULT(0)), FlyoutAction::None)
+            }
             WM_MOUSEWHEEL if self.view == CcView::Calendar => {
                 let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
                 if delta != 0 {
@@ -4277,6 +4430,13 @@ impl DockControlCenter {
                     return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
                 }
                 let next = self.hit_test(p);
+                if self.view == CcView::Tray {
+                    let cell = match next {
+                        Some(FlyoutZone::TrayCell(i)) => Some(i),
+                        _ => None,
+                    };
+                    self.update_tray_hover(cell);
+                }
                 if next != self.hovered {
                     self.hovered = next;
                     self.dirty = true;
@@ -4286,6 +4446,9 @@ impl DockControlCenter {
             }
             WM_MOUSELEAVE => {
                 self.tracking = false;
+                if self.view == CcView::Tray {
+                    self.update_tray_hover(None);
+                }
                 if !self.dragging_vol && !self.dragging_bright && self.hovered.take().is_some() {
                     self.dirty = true;
                     return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
@@ -4318,6 +4481,11 @@ impl DockControlCenter {
                         self.dirty = true;
                         return (Some(LRESULT(0)), FlyoutAction::SetVolume(v));
                     }
+                    Some(FlyoutZone::TrayCell(cell)) => {
+                        self.with_tray_icon(cell, |ic| {
+                            crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_LBUTTONDOWN_MSG);
+                        });
+                    }
                     _ => {}
                 }
                 (Some(LRESULT(0)), FlyoutAction::None)
@@ -4346,37 +4514,40 @@ impl DockControlCenter {
                 let act = match self.hit_test(p) {
                     Some(FlyoutZone::TileWifi) => FlyoutAction::OpenUri("ms-availablenetworks:"),
                     Some(FlyoutZone::NetworkBox) | Some(FlyoutZone::SubWifi) => {
-                        self.view = CcView::Wifi;
-                        self.hovered = None;
-                        self.dirty = true;
+                        self.set_view(CcView::Wifi);
                         FlyoutAction::RequestFrame
                     }
                     Some(FlyoutZone::SubBattery) => {
-                        self.view = CcView::Battery;
-                        self.hovered = None;
-                        self.dirty = true;
+                        self.set_view(CcView::Battery);
                         FlyoutAction::RequestFrame
                     }
                     Some(FlyoutZone::SubCalendar) => {
                         let (y, m, _) = cc_today_ymd();
                         self.cal_year = y;
                         self.cal_month = m;
-                        self.view = CcView::Calendar;
-                        self.hovered = None;
-                        self.dirty = true;
+                        self.set_view(CcView::Calendar);
                         FlyoutAction::RequestFrame
                     }
                     Some(FlyoutZone::SubAi) => {
-                        self.view = CcView::Ai;
-                        self.hovered = None;
-                        self.dirty = true;
+                        self.set_view(CcView::Ai);
+                        FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::SubTray) => {
+                        self.set_view(CcView::Tray);
                         FlyoutAction::RequestFrame
                     }
                     Some(FlyoutZone::SubBack) => {
-                        self.view = CcView::Main;
-                        self.hovered = None;
-                        self.dirty = true;
+                        self.set_view(CcView::Main);
                         FlyoutAction::RequestFrame
+                    }
+                    Some(FlyoutZone::TrayCell(cell)) => {
+                        self.with_tray_icon(cell, |ic| {
+                            crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_LBUTTONUP_MSG);
+                            if ic.version >= 3 {
+                                crate::services::tray_host::send_mouse(ic, crate::services::tray_host::NIN_SELECT_MSG);
+                            }
+                        });
+                        FlyoutAction::Close
                     }
                     Some(FlyoutZone::CalPrev) => {
                         self.step_calendar_month(-1);
@@ -4398,6 +4569,13 @@ impl DockControlCenter {
                         CcView::Battery => FlyoutAction::OpenUri("ms-settings:powersleep"),
                         CcView::Calendar => FlyoutAction::OpenUri("ms-actioncenter:"),
                         CcView::Ai => FlyoutAction::OpenAiPage,
+                        CcView::Tray => {
+                            self.stop_tray_host();
+                            self.tray_opened_at = std::time::Instant::now();
+                            self.tray_hosted = crate::services::tray_host::start(self.hwnd);
+                            self.dirty = true;
+                            FlyoutAction::RequestFrame
+                        }
                         CcView::Main => FlyoutAction::None,
                     },
                     Some(FlyoutZone::SubAction2) => match self.view {
@@ -4405,6 +4583,7 @@ impl DockControlCenter {
                         CcView::Battery => FlyoutAction::OpenSystemPage,
                         CcView::Calendar => FlyoutAction::OpenUri("ms-settings:dateandtime"),
                         CcView::Ai => FlyoutAction::OpenAiPage,
+                        CcView::Tray => FlyoutAction::OpenUri("ms-settings:taskbar"),
                         CcView::Main => FlyoutAction::None,
                     },
                     Some(FlyoutZone::TileBluetooth) => FlyoutAction::OpenUri("ms-settings:bluetooth"),
@@ -4429,10 +4608,21 @@ impl DockControlCenter {
                 (Some(LRESULT(0)), FlyoutAction::None)
             }
             WM_RBUTTONUP => {
+                if self.view == CcView::Tray {
+                    let p = to_dip(lp, self.scale());
+                    if let Some(FlyoutZone::TrayCell(cell)) = self.hit_test(p) {
+                        self.with_tray_icon(cell, |ic| {
+                            crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_RBUTTONDOWN_MSG);
+                            crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_RBUTTONUP_MSG);
+                            if ic.version >= 3 {
+                                crate::services::tray_host::send_mouse(ic, crate::services::tray_host::WM_CONTEXTMENU_MSG);
+                            }
+                        });
+                        return (Some(LRESULT(0)), FlyoutAction::None);
+                    }
+                }
                 if self.view != CcView::Main {
-                    self.view = CcView::Main;
-                    self.hovered = None;
-                    self.dirty = true;
+                    self.set_view(CcView::Main);
                     return (Some(LRESULT(0)), FlyoutAction::RequestFrame);
                 }
                 (Some(LRESULT(0)), FlyoutAction::Close)
@@ -4471,6 +4661,40 @@ impl DockControlCenter {
         let cal_year = self.cal_year;
         let cal_month = self.cal_month.clamp(1, 12);
         let hovered = self.hovered;
+        let tray_hosted = self.tray_hosted;
+        let tray_elapsed = self.tray_opened_at.elapsed().as_secs_f32();
+        let tray_hot = self.tray_hot;
+        let tray_icons: Vec<crate::services::tray_host::TrayIcon> = if view == CcView::Tray {
+            let mut shown = Vec::new();
+            let list = crate::services::tray_host::with_icons(|icons| {
+                let Some(icons) = icons else { return Vec::new() };
+                let mut out = Vec::new();
+                for ic in icons.iter_mut() {
+                    if ic.image.is_none() || ic.hidden {
+                        continue;
+                    }
+                    let idx = out.len();
+                    if idx < CC_TRAY_MAX {
+                        let cr = cc_tray_cell_rect(card, idx);
+                        let l = x + (cr.x * scale).round() as i32;
+                        let t = y + (cr.y * scale).round() as i32;
+                        ic.place = RECT {
+                            left: l,
+                            top: t,
+                            right: l + (cr.w * scale).round() as i32,
+                            bottom: t + (cr.h * scale).round() as i32,
+                        };
+                    }
+                    shown.push((ic.hwnd, ic.uid));
+                    out.push(ic.clone());
+                }
+                out
+            });
+            self.tray_shown = shown;
+            list
+        } else {
+            Vec::new()
+        };
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
             gfx.set_shared_d3d(shared);
@@ -4530,6 +4754,7 @@ impl DockControlCenter {
                         CcView::Battery => "BATTERY & POWER",
                         CcView::Calendar => "CALENDAR",
                         CcView::Ai => "AI QUOTA & USAGE",
+                        CcView::Tray => "BACKGROUND APPS (^)",
                         CcView::Main => "",
                     };
                     let vt_st = TextStyle {
@@ -4779,6 +5004,97 @@ impl DockControlCenter {
                                 }
                             }
                         }
+                        CcView::Tray => {
+                            let n = tray_icons.len();
+                            let hot_tip = tray_hot
+                                .and_then(|idx| tray_icons.get(idx))
+                                .and_then(|ic| {
+                                    ic.tip
+                                        .lines()
+                                        .next()
+                                        .map(str::trim)
+                                        .filter(|t| !t.is_empty())
+                                        .map(str::to_string)
+                                        .or_else(|| (!ic.name.is_empty()).then(|| ic.name.clone()))
+                                });
+                            let hdr_title = hot_tip.unwrap_or_else(|| "System Tray · Background Apps".to_string());
+                            let hdr_st = TextStyle {
+                                size: 12.5,
+                                ..TextStyle::caption().weight(Weight::Semibold).color(ink)
+                            };
+                            c.text(
+                                &hdr_title,
+                                Rect::new(FLYOUT_PAD, 58.0, card.w - 2.0 * FLYOUT_PAD - 44.0, 18.0),
+                                &hdr_st,
+                            );
+                            if n > 0 {
+                                let cnt_st = TextStyle {
+                                    size: 11.5,
+                                    ..TextStyle::caption().weight(Weight::Bold).right().color(accent)
+                                };
+                                c.text(
+                                    &format!("{n}"),
+                                    Rect::new(card.w - FLYOUT_PAD - 40.0, 58.0, 40.0, 18.0),
+                                    &cnt_st,
+                                );
+                            }
+                            if n == 0 {
+                                let empty_r = Rect::new(FLYOUT_PAD, 92.0, card.w - 2.0 * FLYOUT_PAD, 140.0);
+                                c.fill_rrect(empty_r, 14.0, if light { Color::black(0.05) } else { Color::white(0.06) });
+                                let msg = if !tray_hosted {
+                                    "The notification area could not be hosted."
+                                } else if tray_elapsed < 1.4 {
+                                    "Loading background apps…"
+                                } else {
+                                    "Nothing running in the background."
+                                };
+                                let m_st = TextStyle {
+                                    size: 12.5,
+                                    ..TextStyle::caption().weight(Weight::Semibold).center().color(ink)
+                                };
+                                let s_st = TextStyle {
+                                    size: 11.0,
+                                    ..TextStyle::caption().center().color(sub)
+                                };
+                                c.text(msg, Rect::new(empty_r.x + 12.0, empty_r.y + 44.0, empty_r.w - 24.0, 20.0), &m_st);
+                                c.text(
+                                    "Left-click an icon to open, or right-click for its tray menu.",
+                                    Rect::new(empty_r.x + 16.0, empty_r.y + 68.0, empty_r.w - 32.0, 28.0),
+                                    &s_st,
+                                );
+                            } else {
+                                for (idx, ic) in tray_icons.iter().take(CC_TRAY_MAX).enumerate() {
+                                    let cr = cc_tray_cell_rect(card, idx);
+                                    let is_h = hovered == Some(FlyoutZone::TrayCell(idx));
+                                    let cell_bg = if is_h {
+                                        accent.with_alpha(if light { 0.18 } else { 0.28 })
+                                    } else if light {
+                                        Color::black(0.05)
+                                    } else {
+                                        Color::white(0.07)
+                                    };
+                                    let cell_rim = if is_h {
+                                        accent.with_alpha(0.55)
+                                    } else if light {
+                                        Color::black(0.08)
+                                    } else {
+                                        Color::white(0.09)
+                                    };
+                                    c.fill_rrect(cr, 11.0, cell_bg);
+                                    c.stroke_rrect(cr, 11.0, cell_rim, 1.0);
+                                    if let Some(img) = ic.image.as_ref() {
+                                        let sz = if is_h { 24.0 } else { 22.0 };
+                                        let ir = Rect::new(
+                                            cr.x + (cr.w - sz) * 0.5,
+                                            cr.y + (cr.h - sz) * 0.5,
+                                            sz,
+                                            sz,
+                                        );
+                                        c.image(img, ir, 4.0);
+                                    }
+                                }
+                            }
+                        }
                         CcView::Main => {}
                     }
 
@@ -4787,6 +5103,7 @@ impl DockControlCenter {
                         CcView::Battery => [("Power & Battery Settings…", FlyoutZone::SubAction1), ("Open System Monitor →", FlyoutZone::SubAction2)],
                         CcView::Calendar => [("Notifications Center", FlyoutZone::SubAction1), ("Date & Time Settings…", FlyoutZone::SubAction2)],
                         CcView::Ai => [("Open AI Usage Tab →", FlyoutZone::SubAction1), ("Configure Providers…", FlyoutZone::SubAction2)],
+                        CcView::Tray => [("Refresh Tray Icons", FlyoutZone::SubAction1), ("Taskbar & Notification Settings…", FlyoutZone::SubAction2)],
                         CcView::Main => [("", FlyoutZone::SubAction1), ("", FlyoutZone::SubAction2)],
                     };
                     for (idx, (lbl, z)) in actions.into_iter().enumerate() {
@@ -5009,12 +5326,13 @@ impl DockControlCenter {
                     if light { Color::white(0.92) } else { Color::hex(0x0F172A).with_alpha(0.28) },
                 );
 
-                // 5. Sub-flyout Quick Pills (Wi-Fi, Battery, Calendar, AI Usage)
+                // 5. Sub-flyout Quick Pills (Wi-Fi, Battery, Calendar, AI, Tray ^)
                 let sub_pills = [
                     (FlyoutZone::SubWifi, "Wi-Fi"),
                     (FlyoutZone::SubBattery, "Battery"),
                     (FlyoutZone::SubCalendar, "Calendar"),
-                    (FlyoutZone::SubAi, "AI Usage"),
+                    (FlyoutZone::SubAi, "AI"),
+                    (FlyoutZone::SubTray, "Tray ^"),
                 ];
                 for (idx, (z, lbl)) in sub_pills.into_iter().enumerate() {
                     let pr = flyout_sub_pill_rect(card, idx);
@@ -5464,5 +5782,62 @@ mod tests {
         lp.set_query("App 1".into());
         assert_eq!(lp.shown_len(), 10);
         assert_eq!(lp.pages(), 1);
+    }
+
+    #[test]
+    fn tray_host_notify_protocol_and_grid_layout_work() {
+        use crate::services::tray_host::{on_identify_slice, on_notify_slice, TrayIcon};
+
+        let mut icons: Vec<TrayIcon> = Vec::new();
+        // Build a synthetic SHELLTRAYDATA (8-byte header + NOTIFYICONDATA32) for NIM_ADD (msg = 0).
+        let mut buf = vec![0u8; 960];
+        buf[4..8].copy_from_slice(&0u32.to_le_bytes()); // NIM_ADD
+        let n = &mut buf[8..];
+        n[4..8].copy_from_slice(&0x1234u32.to_le_bytes()); // hwnd
+        n[8..12].copy_from_slice(&7u32.to_le_bytes()); // uid
+        // flags: NIF_MESSAGE (1) | NIF_TIP (4) | NIF_STATE (8)
+        n[12..16].copy_from_slice(&(1u32 | 4 | 8).to_le_bytes());
+        n[16..20].copy_from_slice(&0x8001u32.to_le_bytes()); // callback
+        for (i, u) in "Discord\0".encode_utf16().enumerate() {
+            let off = 24 + i * 2;
+            n[off..off + 2].copy_from_slice(&u.to_le_bytes());
+        }
+        assert!(on_notify_slice(&mut icons, &buf, false));
+        assert_eq!(icons.len(), 1);
+        assert_eq!(icons[0].hwnd, 0x1234);
+        assert_eq!(icons[0].uid, 7);
+        assert_eq!(icons[0].callback, 0x8001);
+        assert_eq!(icons[0].tip, "Discord");
+        assert!(!icons[0].hidden);
+
+        // NIM_SETVERSION (msg = 4) -> version 4 at offset 800
+        buf[4..8].copy_from_slice(&4u32.to_le_bytes());
+        buf[8 + 800..8 + 804].copy_from_slice(&4u32.to_le_bytes());
+        assert!(on_notify_slice(&mut icons, &buf, false));
+        assert_eq!(icons[0].version, 4);
+
+        // Shell_NotifyIconGetRect (dwData = 3) returns packed screen rect coordinates.
+        icons[0].place = RECT { left: 100, top: 200, right: 148, bottom: 246 };
+        let mut id_buf = vec![0u8; 48];
+        id_buf[4..8].copy_from_slice(&1u32.to_le_bytes()); // msg 1 -> (left, top)
+        id_buf[16..20].copy_from_slice(&0x1234u32.to_le_bytes());
+        id_buf[20..24].copy_from_slice(&7u32.to_le_bytes());
+        let packed_lt = on_identify_slice(&icons, &id_buf);
+        assert_eq!(packed_lt & 0xFFFF, 100);
+        assert_eq!((packed_lt >> 16) & 0xFFFF, 200);
+
+        // NIM_DELETE (msg = 2) removes the icon.
+        buf[4..8].copy_from_slice(&2u32.to_le_bytes());
+        assert!(on_notify_slice(&mut icons, &buf, false));
+        assert!(icons.is_empty());
+
+        // Verify 5x4 tray grid cells fit cleanly inside Control Center flyout card.
+        let card = Rect::new(0.0, 0.0, FLYOUT_W, FLYOUT_H);
+        let c0 = cc_tray_cell_rect(card, 0);
+        let c4 = cc_tray_cell_rect(card, 4);
+        let c19 = cc_tray_cell_rect(card, 19);
+        assert!(c4.right() <= card.w - FLYOUT_PAD + 0.5);
+        assert!(c19.bottom() <= cc_sub_action_rect(card, 0).y);
+        assert!(c0.w >= 48.0 && c0.h >= 40.0);
     }
 }

@@ -2285,8 +2285,13 @@ impl App {
             crate::dock::DockAction::ToggleControlCenter(anchor_rect) => {
                 self.close_dock_stack();
                 self.close_dock_launchpad();
-                if self.dock_flyout.is_some() {
-                    self.close_dock_flyout();
+                if let Some(f) = self.dock_flyout.as_mut() {
+                    if f.view == crate::dock::CcView::Main {
+                        self.close_dock_flyout();
+                    } else {
+                        f.set_view(crate::dock::CcView::Main);
+                        self.request_frame();
+                    }
                 } else {
                     let look = self.dock_look();
                     let tray = self.dock_tray_state();
@@ -2302,6 +2307,35 @@ impl App {
                             self.request_frame();
                         }
                         Err(e) => pwarn!("dock control center: couldn't open ({e})"),
+                    }
+                }
+            }
+            crate::dock::DockAction::ToggleTray(anchor_rect) => {
+                self.close_dock_stack();
+                self.close_dock_launchpad();
+                if let Some(f) = self.dock_flyout.as_mut() {
+                    if f.view == crate::dock::CcView::Tray {
+                        self.close_dock_flyout();
+                    } else {
+                        f.set_view(crate::dock::CcView::Tray);
+                        self.request_frame();
+                    }
+                } else {
+                    let look = self.dock_look();
+                    let tray = self.dock_tray_state();
+                    let live = self.dock_live_state();
+                    let shared = self.gfx.d3d_handles();
+                    match crate::dock::DockControlCenter::open(&self.monitor, anchor_rect, tray, live, look, shared) {
+                        Ok(mut f) => {
+                            let _ = f.set_extra(self.dock_cc_extra());
+                            f.set_view(crate::dock::CcView::Tray);
+                            self.dock_flyout = Some(f);
+                            if let Some(d) = self.dock.as_mut() {
+                                d.set_ctrl_open(true);
+                            }
+                            self.request_frame();
+                        }
+                        Err(e) => pwarn!("dock tray host flyout: couldn't open ({e})"),
                     }
                 }
             }
