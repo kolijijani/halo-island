@@ -19,6 +19,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT};
+use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, DragQueryPoint, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const CLASS: PCWSTR = w!("Halo.Dock");
@@ -53,6 +54,20 @@ pub const MAG_RADIUS_SLOTS: f32 = 2.6;
 const MASK_INTERVAL: f64 = 1.0 / 30.0;
 const TUCK_EPS: f32 = 0.004;
 const MAG_EPS: f32 = 0.004;
+/// Duration (seconds) and peak amplitude (DIPs) of the macOS parabolic launch/click bounce.
+pub const BOUNCE_DURATION: f32 = 0.72;
+pub const BOUNCE_PEAK_Y: f32 = 25.0;
+
+/// Parabolic 2-hop damped bounce offset (`<= 0.0`, upward in DIPs) for normalized `progress` (`0.0..1.0`).
+/// Matches `full_ecosystem.html` (`-27 * |sin(p * 2π)| * exp(-1.9 * p)`) and returns `0.0` at rest.
+pub fn bounce_offset_y(progress: f32) -> f32 {
+    if !(0.0001..0.9999).contains(&progress) {
+        return 0.0;
+    }
+    let hops = (progress * std::f32::consts::TAU).sin().abs();
+    let decay = (-1.9 * progress).exp();
+    -BOUNCE_PEAK_Y * hops * decay
+}
 
 /// Downward drop (DIPs) and multi-stop Gaussian contact + ambient shadow ramp
 /// around the floating shelf capsule, matching the macOS Sequoia liquid glass mockup.
@@ -117,9 +132,9 @@ pub fn dock_glass_params(body: Rect, radius: f32, look: &Look, scale: f32) -> Gl
         tint_light: 0.42,
         ground_dark,
         ground_light,
-        rim: 0.86 + 0.12 * mix,
-        glow: 0.11 + 0.02 * mix,
-        light_dir: (-0.45, -0.89),
+        rim: 0.80 + 0.15 * mix,
+        glow: 0.09 + 0.01 * mix,
+        light_dir: (-0.6, -0.8),
         shadow_alpha: halo_core::glass::shadow_alpha(0.38, th.t),
         shadow_reach: th.shadow_reach,
         shadow_drop: th.shadow_drop,
@@ -295,7 +310,7 @@ pub enum DockCmd {
     DisableDock,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DockAction {
     None,
     RequestFrame,
@@ -307,6 +322,8 @@ pub enum DockAction {
     ToggleDownloadsStack(Rect),
     ToggleControlCenter(Rect),
     ShowMenu(POINT, bool),
+    DropToShelf(Vec<String>),
+    OpenFilesWithApp { hwnd: HWND, exe: Option<String>, files: Vec<String> },
 }
 
 #[derive(Clone, Copy)]
@@ -669,6 +686,7 @@ pub struct Dock {
     tuck: Spring,
     apps: Vec<RunningApp>,
     scales: Vec<Spring>,
+    bounces: Vec<f32>,
     tracking: bool,
     mouse: Option<Point>,
     hovered: Option<usize>,
@@ -732,6 +750,9 @@ impl Dock {
         };
         gfx.set_shared_d3d(shared);
         let _ = gfx.set_surface(w, h);
+        unsafe {
+            DragAcceptFiles(hwnd, true);
+        }
         Ok(Self {
             gfx: Some(gfx),
             hwnd,
@@ -745,6 +766,7 @@ impl Dock {
             tuck: Spring::smooth(0.0),
             apps: Vec::new(),
             scales: (0..ANCHOR_SLOTS.len() + 1).map(|_| mag_spring(1.0)).collect(),
+            bounces: vec![0.0; ANCHOR_SLOTS.len() + 1],
             tracking: false,
             mouse: None,
             hovered: None,
@@ -808,6 +830,7 @@ impl Dock {
         self.set_bottom_most(mon, cfg.bottom_most);
         let total = self.total_slots();
         self.scales.resize_with(total, || mag_spring(1.0));
+        self.bounces.resize(total, 0.0);
         if !cfg.magnification {
             self.reset_mag_targets(true);
         }
@@ -841,13 +864,25 @@ impl Dock {
         self.at.2 as f32 / self.scale().max(1.0)
     }
 
-    /// True only while a visual change, tuck, or magnification spring needs vblank frames;
+    /// True only while a visual change, tuck, magnification spring, or launch bounce needs vblank frames;
     /// false at rest so `FrameClock` parks at 0% CPU.
     pub fn needs_frame(&self) -> bool {
         !self.fs_hidden
             && (self.dirty
                 || !self.tuck.is_settled_eps(TUCK_EPS)
-                || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS)))
+                || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS))
+                || self.bounces.iter().any(|&b| b > 0.0))
+    }
+
+    pub fn trigger_bounce(&mut self, index: usize, instant: bool) {
+        let total = self.total_slots();
+        self.bounces.resize(total, 0.0);
+        if !instant {
+            if let Some(b) = self.bounces.get_mut(index) {
+                *b = 0.001;
+                self.dirty = true;
+            }
+        }
     }
 
     fn visible_apps(&self) -> &[RunningApp] {
@@ -915,6 +950,7 @@ impl Dock {
         self.apps = apps;
         let total = self.total_slots();
         self.scales.resize_with(total, || mag_spring(1.0));
+        self.bounces.resize(total, 0.0);
         if self.hovered.is_some_and(|i| i >= total) {
             self.hovered = None;
         }
@@ -1272,6 +1308,7 @@ impl Dock {
                     return (Some(LRESULT(0)), act);
                 }
                 if let Some(i) = down.filter(|&i| Some(i) == self.slot_at(p)) {
+                    self.trigger_bounce(i, instant);
                     if i < ANCHOR_SLOTS.len() {
                         let act = match ANCHOR_SLOTS[i].action {
                             SlotAction::Launchpad => DockAction::OpenLaunchpad,
@@ -1300,6 +1337,48 @@ impl Dock {
                     }
                 }
                 (Some(LRESULT(0)), DockAction::RequestFrame)
+            }
+            WM_DROPFILES => {
+                let hdrop = HDROP(_wp.0 as *mut core::ffi::c_void);
+                let mut pt = POINT::default();
+                let mut files = Vec::new();
+                unsafe {
+                    let _ = DragQueryPoint(hdrop, &mut pt);
+                    let count = DragQueryFileW(hdrop, u32::MAX, None);
+                    for idx in 0..count {
+                        let len = DragQueryFileW(hdrop, idx, None) as usize;
+                        if len == 0 {
+                            continue;
+                        }
+                        let mut buf = vec![0u16; len + 1];
+                        let n = DragQueryFileW(hdrop, idx, Some(&mut buf)) as usize;
+                        if n > 0 {
+                            files.push(String::from_utf16_lossy(&buf[..n.min(len)]));
+                        }
+                    }
+                    DragFinish(hdrop);
+                }
+                if files.is_empty() {
+                    return (Some(LRESULT(0)), DockAction::None);
+                }
+                let scale = self.scale().max(1.0);
+                let p = Point::new(pt.x as f32 / scale, pt.y as f32 / scale);
+                if let Some(i) = self.slot_at(p) {
+                    self.trigger_bounce(i, instant);
+                    let vis_apps = self.visible_apps();
+                    if i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + vis_apps.len() {
+                        let app = &vis_apps[i - ANCHOR_SLOTS.len()];
+                        return (
+                            Some(LRESULT(0)),
+                            DockAction::OpenFilesWithApp {
+                                hwnd: app.hwnd,
+                                exe: app.exe.clone(),
+                                files,
+                            },
+                        );
+                    }
+                }
+                (Some(LRESULT(0)), DockAction::DropToShelf(files))
             }
             WM_RBUTTONUP => {
                 let mut pt = POINT {
@@ -1343,10 +1422,19 @@ impl Dock {
             for s in &mut self.scales {
                 s.snap(s.target);
             }
+            self.bounces.fill(0.0);
         } else {
             self.tuck.step_eps(dt, TUCK_EPS);
             for s in &mut self.scales {
                 s.step_eps(dt, MAG_EPS);
+            }
+            for b in &mut self.bounces {
+                if *b > 0.0 {
+                    *b += dt / BOUNCE_DURATION;
+                    if *b >= 1.0 {
+                        *b = 0.0;
+                    }
+                }
             }
         }
         let (x, y, w, h) = self.at;
@@ -1364,7 +1452,7 @@ impl Dock {
         let scales = self.current_scales();
         let vis_apps_len = self.visible_apps().len();
         let stack_n = self.stack_count();
-        let (shelf, sep_x, sep2_x, sep3_x, slot_rects, tray_rect) = layout_slots_configured(
+        let (shelf, sep_x, sep2_x, sep3_x, mut slot_rects, tray_rect) = layout_slots_configured(
             surf_w,
             ANCHOR_SLOTS.len(),
             vis_apps_len,
@@ -1375,6 +1463,12 @@ impl Dock {
             self.cfg.slot_max(),
             self.cfg.shelf_h(),
         );
+        for (i, r) in slot_rects.iter_mut().enumerate() {
+            let dy = self.bounces.get(i).copied().map_or(0.0, bounce_offset_y);
+            if dy != 0.0 {
+                r.y += dy;
+            }
+        }
         let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
         let stack_open = self.stack_open;
         let ctrl_open = self.ctrl_open;
@@ -1446,7 +1540,8 @@ impl Dock {
         if gfx.needs_hit_mask() {
             let mask = hit_mask_for_shelf(surf_w, shelf, max_lift, self.tucked, tuck_t);
             let settled = self.tuck.is_settled_eps(TUCK_EPS)
-                && self.scales.iter().all(|s| s.is_settled_eps(MAG_EPS));
+                && self.scales.iter().all(|s| s.is_settled_eps(MAG_EPS))
+                && self.bounces.iter().all(|&b| b <= 0.0);
             let due = match &self.mask {
                 None => true,
                 Some((m, at)) => *m != mask && (settled || now - at >= MASK_INTERVAL),
@@ -1502,13 +1597,22 @@ fn draw_liquid_glass_shelf(c: &mut Canvas<'_>, surf_w: f32, shelf: Rect, r: f32,
         }
 
         // Theme-tinted translucent frosted glass body (#dockShelf base).
+        // When the GPU Liquid Glass shader draws (or in Glass theme), use a light
+        // 3-stop macOS Sequoia sheen so the island's glass shader matches the island body.
         let is_halo_cream = look.ground == look::HALO.ground;
+        let is_glass = look.material == look::Material::Glass;
         let base = if is_halo_cream {
-            look.ground.with_alpha(0.56)
+            look.ground.with_alpha(0.52)
+        } else if is_glass {
+            if light {
+                Color::rgba(0.96, 0.97, 0.99, 0.22)
+            } else {
+                Color::rgba(0.08, 0.11, 0.17, 0.28)
+            }
         } else if light {
-            Color::lerp(Color::rgba(0.95, 0.96, 0.99, 1.0), look.ground, 0.45).with_alpha(0.54)
+            Color::lerp(Color::rgba(0.95, 0.96, 0.99, 1.0), look.ground, 0.45).with_alpha(0.46)
         } else {
-            Color::lerp(Color::rgba(0.07, 0.09, 0.14, 1.0), look.ground, 0.35).with_alpha(0.58)
+            Color::lerp(Color::rgba(0.07, 0.09, 0.14, 1.0), look.ground, 0.35).with_alpha(0.50)
         };
         c.fill_rrect(shelf, r, base);
     }
@@ -1518,21 +1622,24 @@ fn draw_liquid_glass_shelf(c: &mut Canvas<'_>, surf_w: f32, shelf: Rect, r: f32,
     c.push_outline_mask(&segs);
 
     // 1. Top-to-mid liquid glass reflection (linear-gradient 180deg, rgba(255,255,255,0.17) 0% -> 38%).
-    let top_sheen_a = if light { 0.38 } else { 0.19 };
-    c.fill_path_fade(&segs, Color::white(1.0), shelf.y, shelf.y + shelf.h * 0.44, top_sheen_a, 0.0);
+    let top_sheen_a = if light { 0.36 } else { 0.18 };
+    c.fill_path_fade(&segs, Color::white(1.0), shelf.y, shelf.y + shelf.h * 0.42, top_sheen_a, 0.0);
 
-    // 2. Mid-to-bottom deep glass grounding (38% -> 100%).
-    let depth_col = if light { look.ink } else { Color::hex(0x050811) };
-    let depth_a = if light { 0.06 } else { 0.34 };
-    c.fill_path_fade(&segs, depth_col, shelf.y + shelf.h * 0.36, shelf.bottom(), 0.0, depth_a);
+    // 2. Mid-to-bottom deep glass grounding (rgba(32,40,58,0.44) 38% -> rgba(12,16,26,0.64) 100%).
+    let depth_col = if light { look.ink } else { Color::hex(0x0C101A) };
+    let depth_a = if light { 0.06 } else { 0.32 };
+    c.fill_path_fade(&segs, depth_col, shelf.y + shelf.h * 0.38, shelf.bottom(), 0.0, depth_a);
 
     // 3. #dockSpecular: radial-gradient(250px 62px at var(--spec-x, 50%) 0%, rgba(255,255,255,0.26), transparent 72%).
+    // Brightens to 0.88 opacity while hovering the dock, resting at 0.52 when idle.
+    let spec_boost = if spec_x.is_some() { 1.32 } else { 0.78 };
     let sx = spec_x.unwrap_or(shelf.center().x).clamp(shelf.x + r, (shelf.right() - r).max(shelf.x + r));
     let spec_col = look.accent.unwrap_or(Color::white(1.0));
     let glow_tint = Color::lerp(Color::white(1.0), spec_col, if look.accent.is_some() { 0.22 } else { 0.0 });
-    for (gw, gh, ga) in [(240.0f32, 52.0f32, 0.042f32), (164.0, 36.0, 0.055), (104.0, 22.0, 0.068), (56.0, 12.0, 0.075)] {
-        let gr = Rect::new(sx - gw * 0.5, shelf.y - gh * 0.42, gw, gh);
-        c.fill_rrect(gr, gh * 0.5, glow_tint.with_alpha(if light { ga * 1.15 } else { ga }));
+    for (gw, gh, ga) in [(250.0f32, 62.0f32, 0.044f32), (170.0, 40.0, 0.058), (108.0, 24.0, 0.072), (58.0, 13.0, 0.082)] {
+        let gr = Rect::new(sx - gw * 0.5, shelf.y - gh * 0.44, gw, gh);
+        let a = ga * spec_boost * if light { 1.15 } else { 1.0 };
+        c.fill_rrect(gr, gh * 0.5, glow_tint.with_alpha(a));
     }
 
     // 4. Crisp top specular highlight rim (inset 0 1px 0 rgba(255,255,255,0.46)).
@@ -2643,11 +2750,17 @@ impl DockStack {
                         c.glass(gp, card);
                     }
                     let bg = if look.ground == look::HALO.ground {
-                        look.ground.with_alpha(0.68)
+                        look.ground.with_alpha(0.64)
+                    } else if look.material == look::Material::Glass {
+                        if light {
+                            Color::rgba(0.96, 0.97, 0.99, 0.34)
+                        } else {
+                            Color::rgba(0.08, 0.11, 0.17, 0.42)
+                        }
                     } else if light {
-                        Color::rgba(0.96, 0.97, 0.99, 0.64)
+                        Color::rgba(0.96, 0.97, 0.99, 0.56)
                     } else {
-                        Color::rgba(0.08, 0.10, 0.15, 0.68)
+                        Color::rgba(0.08, 0.10, 0.15, 0.60)
                     };
                     c.fill_rrect(body, STACK_R, bg);
                     let segs = crate::pill::shape::segments(body, STACK_R);
@@ -3165,11 +3278,17 @@ impl DockControlCenter {
                         c.glass(gp, card);
                     }
                     let bg = if look.ground == look::HALO.ground {
-                        look.ground.with_alpha(0.72)
+                        look.ground.with_alpha(0.68)
+                    } else if look.material == look::Material::Glass {
+                        if light {
+                            Color::rgba(0.95, 0.96, 0.99, 0.38)
+                        } else {
+                            Color::rgba(0.06, 0.09, 0.15, 0.46)
+                        }
                     } else if light {
-                        Color::rgba(0.95, 0.96, 0.99, 0.72)
+                        Color::rgba(0.95, 0.96, 0.99, 0.64)
                     } else {
-                        Color::rgba(0.06, 0.08, 0.13, 0.76)
+                        Color::rgba(0.06, 0.08, 0.13, 0.68)
                     };
                     c.fill_rrect(body, FLYOUT_R, bg);
                     let segs = crate::pill::shape::segments(body, FLYOUT_R);
@@ -3580,10 +3699,22 @@ mod tests {
         assert!(gp_dark.shoulder < 0.0, "dock glass must use floating capsule SDF (shoulder < 0)");
         assert_eq!(gp_dark.light_mix, 0.0);
         assert_eq!(gp_dark.ground_dark, look::GLASS_DARK.ground);
+        assert_eq!(gp_dark.rim, 0.80);
+        assert_eq!(gp_dark.glow, 0.09);
+        assert_eq!(gp_dark.light_dir, (-0.6, -0.8));
 
         let gp_halo = dock_glass_params(shelf, SHELF_R, &look::HALO, 1.0);
         assert_eq!(gp_halo.light_mix, 1.0);
         assert_eq!(gp_halo.ground_light, look::HALO.ground);
+        assert!((gp_halo.rim - 0.95).abs() < 1e-4);
+
+        // Parabolic launch/click bounce curve: 0 at rest/end, negative upward lift during hops, decaying amplitude.
+        assert_eq!(bounce_offset_y(0.0), 0.0);
+        assert_eq!(bounce_offset_y(1.0), 0.0);
+        let hop1 = bounce_offset_y(0.25);
+        let hop2 = bounce_offset_y(0.75);
+        assert!(hop1 < -10.0, "first bounce hop must lift icon upward: {hop1}");
+        assert!(hop2 < -3.0 && hop2 > hop1, "second bounce hop must decay: {hop2} vs {hop1}");
     }
 
     #[test]

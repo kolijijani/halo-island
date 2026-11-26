@@ -2200,6 +2200,24 @@ impl App {
                 self.close_dock_popovers();
                 deferred.push(Deferred::DockMenu(pt, tucked));
             }
+            crate::dock::DockAction::DropToShelf(paths) => {
+                self.close_dock_popovers();
+                let n = self.st.store.shelf.add_paths(&paths, self.st.unix);
+                for p in &paths {
+                    self.st.cmds.push(Command::LoadThumb(p.clone()));
+                }
+                self.st.save();
+                self.st.page = PageKind::Shelf;
+                self.expand();
+                self.sync_dock_tray();
+                self.request_frame();
+                pinfo!("dock shelf drop: {n} new item(s)");
+            }
+            crate::dock::DockAction::OpenFilesWithApp { hwnd: target, exe, files } => {
+                self.close_dock_popovers();
+                crate::shell::open_with_exe(exe.as_deref(), &files);
+                services::dock_apps::focus_window(target);
+            }
         }
         res
     }

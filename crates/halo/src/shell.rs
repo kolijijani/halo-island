@@ -59,6 +59,48 @@ pub fn open(target: &str) {
     });
 }
 
+/// Open dropped `files` with a running desktop app (`exe`), or fall back to each
+/// file's default handler if `exe` is unavailable or inside `WindowsApps`.
+pub fn open_with_exe(exe: Option<&str>, files: &[String]) {
+    let clean: Vec<String> = files
+        .iter()
+        .filter(|f| matches!(classify(f), Ok(Target::Path)))
+        .cloned()
+        .collect();
+    if clean.is_empty() {
+        return;
+    }
+    let exe = exe
+        .filter(|e| matches!(classify(e), Ok(Target::Path)) && !e.to_ascii_lowercase().contains(r"\windowsapps\"))
+        .map(str::to_string);
+    let Some(exe) = exe else {
+        for f in &clean {
+            open(f);
+        }
+        return;
+    };
+    run("open_with", move || {
+        if std::fs::metadata(&exe).is_err() {
+            return;
+        }
+        let args = clean
+            .iter()
+            .filter(|f| std::fs::metadata(f).is_ok())
+            .map(|f| format!("\"{f}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        if args.is_empty() {
+            return;
+        }
+        let exe_h = HSTRING::from(exe.as_str());
+        let args_h = HSTRING::from(args.as_str());
+        let r = unsafe { ShellExecuteW(None, w!("open"), &exe_h, &args_h, None, SW_SHOWNORMAL) };
+        if (r.0 as isize) <= 32 {
+            crate::pwarn!("open_with failed ({}): {}", r.0 as isize, for_log(&exe));
+        }
+    });
+}
+
 /// Open one of Halo Island Recorder's action links (asynchronously). Only
 /// the shape `halo_core::recorder` builds reaches the shell.
 pub fn open_recorder_link(link: &str) {

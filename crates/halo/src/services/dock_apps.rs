@@ -47,6 +47,7 @@ const MAX_APPS: usize = 24;
 pub struct RunningApp {
     pub key: String,
     pub name: String,
+    pub exe: Option<String>,
     pub hwnd: HWND,
     pub minimized: bool,
     pub focused: bool,
@@ -60,6 +61,7 @@ impl RunningApp {
     pub fn visual_eq(&self, other: &Self) -> bool {
         self.key == other.key
             && self.name == other.name
+            && self.exe == other.exe
             && self.hwnd == other.hwnd
             && self.minimized == other.minimized
             && self.focused == other.focused
@@ -172,6 +174,7 @@ impl DockAppsWatcher {
                 RunningApp {
                     key,
                     name,
+                    exe: exe_path,
                     hwnd,
                     minimized,
                     focused: is_fg,
