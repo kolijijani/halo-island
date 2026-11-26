@@ -100,6 +100,15 @@ pub enum DockThemeMode {
     Classic,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockIconSize {
+    Compact,
+    #[default]
+    Default,
+    Large,
+}
+
 impl NotchTheme {
     pub fn free(self) -> bool {
         matches!(self, NotchTheme::Classic | NotchTheme::Halo)
@@ -167,9 +176,25 @@ pub struct Settings {
     /// Floating bottom dock shelf (Windows only; off by default so idle cost is zero).
     pub dock_enabled: bool,
     pub dock_theme: DockThemeMode,
+    pub dock_icon_size: DockIconSize,
+    /// Parabolic hover magnification on dock icons.
+    #[serde(default = "bool_true")]
+    pub dock_magnification: bool,
     /// Hide the Windows system taskbar while the bottom dock is active, restoring it on disable/exit.
     #[serde(default = "bool_true")]
     pub dock_hide_taskbar: bool,
+    /// Anchor the dock flush to the physical bottom edge of the monitor.
+    #[serde(default = "bool_true")]
+    pub dock_bottom_most: bool,
+    /// Show running/minimized Windows apps in the dock.
+    #[serde(default = "bool_true")]
+    pub dock_show_apps: bool,
+    /// Show the Downloads stack fan-out popover slot in the dock.
+    #[serde(default = "bool_true")]
+    pub dock_show_downloads: bool,
+    /// Show the System Tray & Control Center capsule on the right side of the dock.
+    #[serde(default = "bool_true")]
+    pub dock_show_tray: bool,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -438,7 +463,13 @@ impl Default for Settings {
             step_aside: true,
             dock_enabled: false,
             dock_theme: DockThemeMode::FollowIsland,
+            dock_icon_size: DockIconSize::Default,
+            dock_magnification: true,
             dock_hide_taskbar: true,
+            dock_bottom_most: true,
+            dock_show_apps: true,
+            dock_show_downloads: true,
+            dock_show_tray: true,
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

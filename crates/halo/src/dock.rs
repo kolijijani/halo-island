@@ -11,7 +11,7 @@ use crate::services::dock_apps::RunningApp;
 use crate::window::MonitorInfo;
 use halo_core::geom::{Color, Point, Rect};
 use halo_core::look::{self, Look};
-use halo_core::settings::{NotchTheme, NotchType};
+use halo_core::settings::{DockIconSize, NotchTheme, NotchType};
 use halo_core::spring::Spring;
 use halo_core::svgpath::Seg;
 use windows::core::{w, Result, PCWSTR};
@@ -136,6 +136,48 @@ pub fn dock_glass_params(body: Rect, radius: f32, look: &Look, scale: f32) -> Gl
 /// Whether the bottom dock should be active (Halo Pro required, disabled in selftest).
 pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
     enabled && pro && !in_selftest
+}
+
+/// User-configurable Dock preferences synced from `Settings`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DockConfig {
+    pub icon_size: DockIconSize,
+    pub magnification: bool,
+    pub bottom_most: bool,
+    pub show_apps: bool,
+    pub show_downloads: bool,
+    pub show_tray: bool,
+}
+
+impl Default for DockConfig {
+    fn default() -> Self {
+        Self {
+            icon_size: DockIconSize::Default,
+            magnification: true,
+            bottom_most: true,
+            show_apps: true,
+            show_downloads: true,
+            show_tray: true,
+        }
+    }
+}
+
+impl DockConfig {
+    pub fn slot_max(self) -> f32 {
+        match self.icon_size {
+            DockIconSize::Compact => 36.0,
+            DockIconSize::Default => SLOT_MAX,
+            DockIconSize::Large => 52.0,
+        }
+    }
+
+    pub fn shelf_h(self) -> f32 {
+        match self.icon_size {
+            DockIconSize::Compact => 50.0,
+            DockIconSize::Default => SHELF_H,
+            DockIconSize::Large => 66.0,
+        }
+    }
 }
 
 /// Snapshot of system status shown in the dock's right-side System Tray Capsule.
@@ -400,19 +442,23 @@ fn slot_metrics_with_seps(surf_w: f32, count: usize, sep_count: usize) -> (f32, 
     slot_metrics_with_seps_and_tray(surf_w, count, sep_count, 0.0)
 }
 
-fn slot_metrics_with_seps_and_tray(surf_w: f32, count: usize, sep_count: usize, tray_w: f32) -> (f32, f32) {
+fn slot_metrics_with_seps_and_tray_max(surf_w: f32, count: usize, sep_count: usize, tray_w: f32, slot_max: f32) -> (f32, f32) {
     let n = count.max(1) as f32;
     let sep = sep_count as f32 * SEP_W;
     let avail = (surf_w - 2.0 * SHELF_PAD_X - 16.0 - sep - tray_w).max(64.0);
-    let natural = n * SLOT_MAX + (n - 1.0) * SLOT_GAP;
+    let natural = n * slot_max + (n - 1.0) * SLOT_GAP;
     if natural <= avail {
-        (SLOT_MAX, SLOT_GAP)
+        (slot_max, SLOT_GAP)
     } else {
-        let ratio = (avail / natural).clamp(SLOT_MIN / SLOT_MAX, 1.0);
+        let ratio = (avail / natural).clamp(SLOT_MIN / slot_max.max(1.0), 1.0);
         let gap = (SLOT_GAP * ratio).max(4.0);
-        let size = ((avail - (n - 1.0) * gap) / n).clamp(SLOT_MIN * 0.75, SLOT_MAX);
+        let size = ((avail - (n - 1.0) * gap) / n).clamp(SLOT_MIN * 0.75, slot_max);
         (size, gap)
     }
+}
+
+fn slot_metrics_with_seps_and_tray(surf_w: f32, count: usize, sep_count: usize, tray_w: f32) -> (f32, f32) {
+    slot_metrics_with_seps_and_tray_max(surf_w, count, sep_count, tray_w, SLOT_MAX)
 }
 
 /// Floating shelf rectangle in surface DIPs (`tuck_t`: `0.0` shown, `1.0` tucked).
@@ -466,6 +512,21 @@ pub fn layout_slots_full(
     scales: &[f32],
     tuck_t: f32,
 ) -> (Rect, Option<f32>, Option<f32>, Option<f32>, Vec<Rect>, Option<Rect>) {
+    layout_slots_configured(surf_w, anchor_count, app_count, stack_count, tray_w, scales, tuck_t, SLOT_MAX, SHELF_H)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn layout_slots_configured(
+    surf_w: f32,
+    anchor_count: usize,
+    app_count: usize,
+    stack_count: usize,
+    tray_w: f32,
+    scales: &[f32],
+    tuck_t: f32,
+    slot_max: f32,
+    max_shelf_h: f32,
+) -> (Rect, Option<f32>, Option<f32>, Option<f32>, Vec<Rect>, Option<Rect>) {
     let total = anchor_count + app_count + stack_count;
     let has_sep1 = anchor_count > 0 && app_count > 0;
     let has_sep2 = stack_count > 0 && (anchor_count + app_count) > 0;
@@ -473,7 +534,7 @@ pub fn layout_slots_full(
     let eff_tray_w = if has_tray { tray_w } else { 0.0 };
     let has_sep3 = has_tray && total > 0;
     let sep_count = usize::from(has_sep1) + usize::from(has_sep2) + usize::from(has_sep3);
-    let (base_slot, base_gap) = slot_metrics_with_seps_and_tray(surf_w, total, sep_count, eff_tray_w);
+    let (base_slot, base_gap) = slot_metrics_with_seps_and_tray_max(surf_w, total, sep_count, eff_tray_w, slot_max);
     let sep_w = sep_count as f32 * SEP_W;
     let slot_seps = usize::from(has_sep1) + usize::from(has_sep2);
     let gap_count = total.saturating_sub(1).saturating_sub(slot_seps) as f32;
@@ -492,7 +553,7 @@ pub fn layout_slots_full(
         1.0
     };
 
-    let shelf_h = (base_slot + 14.0).clamp(42.0, SHELF_H);
+    let shelf_h = (base_slot + 14.0).clamp(42.0, max_shelf_h);
     let shelf_w = (base_w + raw_extra * damp).min(max_shelf_w);
     let x0 = (surf_w - shelf_w) * 0.5;
     let base_y = SURF_H - FLOAT_GAP - shelf_h;
@@ -609,6 +670,7 @@ pub struct Dock {
     stack_open: bool,
     ctrl_open: bool,
     bottom_most: bool,
+    cfg: DockConfig,
     dirty: bool,
     mask: Option<(HitMask, f64)>,
 }
@@ -684,6 +746,7 @@ impl Dock {
             stack_open: false,
             ctrl_open: false,
             bottom_most: true,
+            cfg: DockConfig::default(),
             dirty: true,
             mask: None,
         })
@@ -716,6 +779,7 @@ impl Dock {
 
     pub fn set_bottom_most(&mut self, mon: &MonitorInfo, bottom_most: bool) {
         self.bottom_most = bottom_most;
+        self.cfg.bottom_most = bottom_most;
         let next = surface_rect_for(mon, bottom_most);
         if next != self.at {
             self.at = next;
@@ -725,6 +789,29 @@ impl Dock {
                 let _ = g.set_surface(next.2, next.3);
             }
         }
+    }
+
+    pub fn set_config(&mut self, mon: &MonitorInfo, cfg: DockConfig) -> bool {
+        if self.cfg == cfg && self.bottom_most == cfg.bottom_most {
+            return false;
+        }
+        self.cfg = cfg;
+        self.set_bottom_most(mon, cfg.bottom_most);
+        let total = self.total_slots();
+        self.scales.resize_with(total, || mag_spring(1.0));
+        if !cfg.magnification {
+            self.reset_mag_targets(true);
+        }
+        if self.hovered.is_some_and(|i| i >= total) {
+            self.hovered = None;
+        }
+        if !cfg.show_tray {
+            self.hovered_tray = None;
+            self.pressed_tray = None;
+        }
+        self.mask = None;
+        self.dirty = true;
+        true
     }
 
     /// Update the right-side System Tray Capsule snapshot; returns `true` only if it changed.
@@ -754,16 +841,45 @@ impl Dock {
                 || self.scales.iter().any(|s| !s.is_settled_eps(MAG_EPS)))
     }
 
+    fn visible_apps(&self) -> &[RunningApp] {
+        if self.cfg.show_apps {
+            &self.apps
+        } else {
+            &[]
+        }
+    }
+
+    fn stack_count(&self) -> usize {
+        usize::from(self.cfg.show_downloads)
+    }
+
+    fn effective_tray_w(&self) -> f32 {
+        if self.cfg.show_tray {
+            tray_capsule_width(&self.tray)
+        } else {
+            0.0
+        }
+    }
+
     pub fn total_slots(&self) -> usize {
-        ANCHOR_SLOTS.len() + self.apps.len() + 1
+        ANCHOR_SLOTS.len() + self.visible_apps().len() + self.stack_count()
     }
 
     fn slot_screen_rect(&self, index: usize) -> Rect {
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let tray_w = tray_capsule_width(&self.tray);
-        let (_, _, _, _, rects, _) =
-            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tray_w = self.effective_tray_w();
+        let (_, _, _, _, rects, _) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            self.visible_apps().len(),
+            self.stack_count(),
+            tray_w,
+            &scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         let r = rects.get(index).copied().unwrap_or(Rect::new(sw * 0.5 - 22.0, SURF_H - 58.0, 44.0, 44.0));
         let sc = self.scale().max(1.0);
         Rect::new(
@@ -831,7 +947,7 @@ impl Dock {
     fn update_mag_targets(&mut self, instant: bool) {
         let total = self.total_slots();
         self.scales.resize_with(total, || mag_spring(1.0));
-        if self.tucked || self.tuck.value >= 0.25 || self.fs_hidden {
+        if !self.cfg.magnification || self.tucked || self.tuck.value >= 0.25 || self.fs_hidden {
             self.reset_mag_targets(instant);
             return;
         }
@@ -841,9 +957,20 @@ impl Dock {
         };
         let sw = self.surf_w_dip();
         let rest_scales = vec![1.0f32; total];
-        let tray_w = tray_capsule_width(&self.tray);
-        let (rest_shelf, _, _, sep3_x, rest_rects, _) =
-            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &rest_scales, self.tuck.value);
+        let tray_w = self.effective_tray_w();
+        let app_len = self.visible_apps().len();
+        let stack_n = self.stack_count();
+        let (rest_shelf, _, _, sep3_x, rest_rects, _) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            app_len,
+            stack_n,
+            tray_w,
+            &rest_scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         let icons_right = sep3_x.unwrap_or_else(|| rest_shelf.right());
         let active_band = Rect::new(
             rest_shelf.x - 16.0,
@@ -855,9 +982,9 @@ impl Dock {
             self.reset_mag_targets(instant);
             return;
         }
-        let sep_count = usize::from(!self.apps.is_empty()) + 1 + usize::from(sep3_x.is_some());
+        let sep_count = usize::from(app_len > 0) + stack_n + usize::from(sep3_x.is_some());
         let eff_tray = if sep3_x.is_some() { tray_w } else { 0.0 };
-        let (base_slot, base_gap) = slot_metrics_with_seps_and_tray(sw, total, sep_count, eff_tray);
+        let (base_slot, base_gap) = slot_metrics_with_seps_and_tray_max(sw, total, sep_count, eff_tray, self.cfg.slot_max());
         let step = base_slot + base_gap;
         for (i, r) in rest_rects.iter().enumerate() {
             let target = mag_scale(p.x - (r.x + r.w * 0.5), step);
@@ -872,9 +999,18 @@ impl Dock {
     fn tray_status_screen_rect(&self) -> Rect {
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let tray_w = tray_capsule_width(&self.tray);
-        let (_, _, _, _, _, tray_rect) =
-            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tray_w = self.effective_tray_w();
+        let (_, _, _, _, _, tray_rect) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            self.visible_apps().len(),
+            self.stack_count(),
+            tray_w,
+            &scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         let tr = tray_rect.unwrap_or(Rect::new(sw - 220.0, SURF_H - 52.0, 180.0, 38.0));
         let (_, status_r, _) = tray_zone_rects(tr, &self.tray);
         let sc = self.scale().max(1.0);
@@ -976,21 +1112,39 @@ impl Dock {
         }
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let tray_w = tray_capsule_width(&self.tray);
-        let (_, _, _, _, rects, _) =
-            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tray_w = self.effective_tray_w();
+        let (_, _, _, _, rects, _) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            self.visible_apps().len(),
+            self.stack_count(),
+            tray_w,
+            &scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         rects.iter().position(|r| r.inset(-3.0, -6.0).contains(p))
     }
 
     fn tray_zone_at(&self, p: Point) -> Option<DockTrayZone> {
-        if self.tucked && self.tuck.value >= 0.5 {
+        if !self.cfg.show_tray || (self.tucked && self.tuck.value >= 0.5) {
             return None;
         }
         let sw = self.surf_w_dip();
         let scales = self.current_scales();
-        let tray_w = tray_capsule_width(&self.tray);
-        let (_, _, _, _, _, tray_rect) =
-            layout_slots_full(sw, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, self.tuck.value);
+        let tray_w = self.effective_tray_w();
+        let (_, _, _, _, _, tray_rect) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            self.visible_apps().len(),
+            self.stack_count(),
+            tray_w,
+            &scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         let tr = tray_rect?;
         if !tr.inset(-2.0, -4.0).contains(p) {
             return None;
@@ -1118,7 +1272,8 @@ impl Dock {
                         };
                         return (Some(LRESULT(0)), act);
                     }
-                    if let Some(app) = self.apps.get(i - ANCHOR_SLOTS.len()) {
+                    let vis_apps = self.visible_apps();
+                    if let Some(app) = vis_apps.get(i - ANCHOR_SLOTS.len()) {
                         let icon_rect = self.slot_screen_rect(i);
                         return (
                             Some(LRESULT(0)),
@@ -1130,7 +1285,7 @@ impl Dock {
                             },
                         );
                     }
-                    if i == ANCHOR_SLOTS.len() + self.apps.len() {
+                    if self.cfg.show_downloads && i == ANCHOR_SLOTS.len() + vis_apps.len() {
                         let icon_rect = self.slot_screen_rect(i);
                         return (Some(LRESULT(0)), DockAction::ToggleDownloadsStack(icon_rect));
                     }
@@ -1196,13 +1351,25 @@ impl Dock {
         let hovered_tray = self.hovered_tray;
         let pressed_tray = self.pressed_tray;
         let tray = self.tray;
-        let tray_w = tray_capsule_width(&tray);
+        let tray_w = self.effective_tray_w();
         let scales = self.current_scales();
-        let (shelf, sep_x, sep2_x, sep3_x, slot_rects, tray_rect) =
-            layout_slots_full(surf_w, ANCHOR_SLOTS.len(), self.apps.len(), 1, tray_w, &scales, tuck_t);
+        let vis_apps_len = self.visible_apps().len();
+        let stack_n = self.stack_count();
+        let (shelf, sep_x, sep2_x, sep3_x, slot_rects, tray_rect) = layout_slots_configured(
+            surf_w,
+            ANCHOR_SLOTS.len(),
+            vis_apps_len,
+            stack_n,
+            tray_w,
+            &scales,
+            tuck_t,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
+        );
         let max_lift = slot_rects.iter().fold(0.0f32, |m, r| m.max((shelf.y - r.y).max(0.0)));
         let stack_open = self.stack_open;
         let ctrl_open = self.ctrl_open;
+        let show_apps = self.cfg.show_apps;
 
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -1222,6 +1389,7 @@ impl Dock {
         } else {
             None
         };
+        let apps_slice: &[RunningApp] = if show_apps { &self.apps } else { &[] };
         match gfx.begin(full) {
             Ok(mut c) => {
                 draw_dock(
@@ -1236,7 +1404,7 @@ impl Dock {
                     sep2_x,
                     sep3_x,
                     &slot_rects,
-                    &self.apps,
+                    apps_slice,
                     stack_open,
                     ctrl_open,
                     hovered,

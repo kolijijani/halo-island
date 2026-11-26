@@ -30,7 +30,7 @@ use crate::ui::{wid, wid_n, CursorKind, Hit, Input, MouseButton, PillStyle, Ui, 
 use crate::version::VERSION;
 use halo_core::caffeine;
 use halo_core::geom::{palette, Color, Point, Rect};
-use halo_core::settings::{DockThemeMode, IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
+use halo_core::settings::{DockIconSize, DockThemeMode, IdleStyle, MonitorChoice, NotchTheme, NotchType, PrayerFollow, PrayerSound};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -152,6 +152,7 @@ pub enum Section {
     General,
     Appearance,
     Island,
+    Dock,
     Music,
     Popups,
     Tabs,
@@ -166,10 +167,11 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 13] = [
+    pub const ALL: [Section; 14] = [
         Section::General,
         Section::Appearance,
         Section::Island,
+        Section::Dock,
         Section::Music,
         Section::Popups,
         Section::Tabs,
@@ -187,6 +189,7 @@ impl Section {
             Section::General => "General",
             Section::Appearance => "Appearance",
             Section::Island => "Island",
+            Section::Dock => "Dock",
             Section::Music => "Music and lyrics",
             Section::Popups => "Pop-ups",
             Section::Tabs => "Tabs",
@@ -206,6 +209,7 @@ impl Section {
             Section::General => "general",
             Section::Appearance => "appearance",
             Section::Island => "island",
+            Section::Dock => "dock",
             Section::Music => "music",
             Section::Popups => "popups",
             Section::Tabs => "tabs",
@@ -224,6 +228,7 @@ impl Section {
             Section::General => Icon::Gear,
             Section::Appearance => Icon::Eye,
             Section::Island => Icon::AppWindow,
+            Section::Dock => Icon::Tray,
             Section::Music => Icon::Music,
             Section::Popups => Icon::Volume,
             Section::Tabs => Icon::App,
@@ -243,6 +248,7 @@ impl Section {
             Section::General => Color::hex(0x8E8E93),
             Section::Appearance => Color::hex(0x5E5CE6),
             Section::Island => palette::BLUE,
+            Section::Dock => Color::hex(0x38BDF8),
             Section::Music => palette::PINK,
             Section::Popups => palette::CYAN,
             Section::Tabs => palette::GREEN,
@@ -257,9 +263,10 @@ impl Section {
     }
 
     /// Prayer times and Caffeine have a section only while their add-ons are
-    /// on, AI usage only with Studio Pro.
+    /// on, AI usage only with Studio Pro, and Dock on Windows.
     pub fn shown(self, st: &AppState) -> bool {
         match self {
+            Section::Dock => cfg!(windows),
             Section::Prayer => st.prayer_on(),
             Section::Caffeine => st.caffeine_on(),
             Section::Ai => st.ai_usage_on(),
@@ -344,6 +351,13 @@ pub enum Key {
     LyricsCredit,
     DockEnabled,
     DockTheme,
+    DockIconSize,
+    DockMagnification,
+    DockHideTaskbar,
+    DockBottomMost,
+    DockShowApps,
+    DockShowDownloads,
+    DockShowTray,
 }
 
 /// A row's control, at its right end.
@@ -596,7 +610,7 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                 shows.push(switch(Key::GameStats, stats, Some("Keeps the island on top of full-screen apps"), s.game_stats));
                 shows.push(switch(Key::GamePeek, "Only for a few seconds", Some("Then the island hides and adds no delay to the game"), s.game_peek));
             }
-            let mut out = vec![
+            vec![
                 Block::Group(
                     Some("Opening and closing"),
                     vec![
@@ -610,28 +624,90 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                     Some("Over maximized windows"),
                     vec![switch(Key::StepAside, "Mini handle", Some("Halo shrinks to a small handle at the top edge"), s.step_aside)],
                 ),
+            ]
+        }
+        Section::Dock => {
+            const DOCK_THEMES: [(DockThemeMode, &str); 3] = [
+                (DockThemeMode::FollowIsland, "Follow island"),
+                (DockThemeMode::LiquidGlass, "Liquid Glass"),
+                (DockThemeMode::Classic, "Classic"),
             ];
-            if cfg!(windows) {
-                let dock_sub = if s.pro {
-                    "Floating app shelf at the bottom edge of the screen"
-                } else {
-                    "Floating app shelf at the bottom edge of the screen (Halo Pro)"
-                };
-                let mut dock_rows = vec![switch(Key::DockEnabled, "Enable Bottom Dock", Some(dock_sub), s.dock_enabled && s.pro)];
-                if s.dock_enabled && s.pro {
-                    dock_rows.push(switch(
-                        Key::DockTheme,
-                        "Force Liquid Glass dock",
-                        Some("Use frosted Liquid Glass even when the island uses another theme"),
-                        s.dock_theme == DockThemeMode::LiquidGlass,
-                    ));
-                }
-                out.push(Block::Group(
+            const DOCK_SIZES: [(DockIconSize, &str); 3] = [
+                (DockIconSize::Compact, "Compact"),
+                (DockIconSize::Default, "Default"),
+                (DockIconSize::Large, "Large"),
+            ];
+            let dock_sub = if s.pro {
+                "Floating macOS-style app shelf at the bottom of the screen"
+            } else {
+                "Floating macOS-style app shelf at the bottom of the screen (Halo Pro)"
+            };
+            vec![
+                Block::Group(
                     Some("Bottom dock"),
-                    dock_rows,
-                ));
-            }
-            out
+                    vec![
+                        switch(Key::DockEnabled, "Enable Bottom Dock", Some(dock_sub), s.dock_enabled && s.pro),
+                        item(
+                            Key::DockTheme,
+                            "Appearance",
+                            Some("Match the island's look or force frosted Liquid Glass"),
+                            Ctl::Choice(names(&DOCK_THEMES), chosen(&DOCK_THEMES, s.dock_theme)),
+                        ),
+                        item(
+                            Key::DockIconSize,
+                            "Icon size",
+                            Some("Size of app icons and shelf height"),
+                            Ctl::Choice(names(&DOCK_SIZES), chosen(&DOCK_SIZES, s.dock_icon_size)),
+                        ),
+                        switch(
+                            Key::DockMagnification,
+                            "Hover magnification",
+                            Some("Icons grow smoothly under the pointer"),
+                            s.dock_magnification,
+                        ),
+                    ],
+                ),
+                Block::Group(
+                    Some("Taskbar & placement"),
+                    vec![
+                        switch(
+                            Key::DockHideTaskbar,
+                            "Auto-hide Windows taskbar",
+                            Some("Hide the system taskbar while the dock is active; restores when off or exiting"),
+                            s.dock_hide_taskbar,
+                        ),
+                        switch(
+                            Key::DockBottomMost,
+                            "Anchor to bottom edge",
+                            Some("Keep the dock flush at the very bottom so open apps stay unobstructed"),
+                            s.dock_bottom_most,
+                        ),
+                    ],
+                ),
+                Block::Group(
+                    Some("Dock items"),
+                    vec![
+                        switch(
+                            Key::DockShowApps,
+                            "Running apps",
+                            Some("Show open and minimized windows with Genie minimize & restore"),
+                            s.dock_show_apps,
+                        ),
+                        switch(
+                            Key::DockShowDownloads,
+                            "Downloads stack",
+                            Some("Fan-out recent downloads popover next to the tray"),
+                            s.dock_show_downloads,
+                        ),
+                        switch(
+                            Key::DockShowTray,
+                            "System tray & Control Center",
+                            Some("Weather, Wi-Fi, volume slider, battery, Focus Mode and clock"),
+                            s.dock_show_tray,
+                        ),
+                    ],
+                ),
+            ]
         }
         Section::Music => vec![
             Block::Group(
@@ -832,7 +908,15 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Island, "Show FPS, GPU and CPU over games", Key::GameStats),
     (Section::Island, "Only for a few seconds", Key::GamePeek),
     (Section::Island, "Mini handle", Key::StepAside),
-    (Section::Island, "Enable Bottom Dock", Key::DockEnabled),
+    (Section::Dock, "Enable Bottom Dock", Key::DockEnabled),
+    (Section::Dock, "Appearance", Key::DockTheme),
+    (Section::Dock, "Icon size", Key::DockIconSize),
+    (Section::Dock, "Hover magnification", Key::DockMagnification),
+    (Section::Dock, "Auto-hide Windows taskbar", Key::DockHideTaskbar),
+    (Section::Dock, "Anchor to bottom edge", Key::DockBottomMost),
+    (Section::Dock, "Running apps", Key::DockShowApps),
+    (Section::Dock, "Downloads stack", Key::DockShowDownloads),
+    (Section::Dock, "System tray & Control Center", Key::DockShowTray),
     (Section::Music, "Synced lyrics", Key::Lyrics),
     (Section::Music, "Lyrics pronunciation", Key::Pronunciation),
     (Section::Music, "Timing", Key::LyricsOffset),
@@ -1030,13 +1114,31 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
             }
             s.dock_enabled = !s.dock_enabled;
         }
-        Key::DockTheme => {
-            s.dock_theme = match s.dock_theme {
-                DockThemeMode::FollowIsland => DockThemeMode::LiquidGlass,
-                DockThemeMode::LiquidGlass => DockThemeMode::Classic,
-                DockThemeMode::Classic => DockThemeMode::FollowIsland,
-            };
-        }
+        Key::DockTheme => match act {
+            Act::Pick(0) => s.dock_theme = DockThemeMode::FollowIsland,
+            Act::Pick(1) => s.dock_theme = DockThemeMode::LiquidGlass,
+            Act::Pick(2) => s.dock_theme = DockThemeMode::Classic,
+            Act::Toggle => {
+                s.dock_theme = match s.dock_theme {
+                    DockThemeMode::FollowIsland => DockThemeMode::LiquidGlass,
+                    DockThemeMode::LiquidGlass => DockThemeMode::Classic,
+                    DockThemeMode::Classic => DockThemeMode::FollowIsland,
+                };
+            }
+            _ => return,
+        },
+        Key::DockIconSize => match act {
+            Act::Pick(0) => s.dock_icon_size = DockIconSize::Compact,
+            Act::Pick(1) => s.dock_icon_size = DockIconSize::Default,
+            Act::Pick(2) => s.dock_icon_size = DockIconSize::Large,
+            _ => return,
+        },
+        Key::DockMagnification => s.dock_magnification = !s.dock_magnification,
+        Key::DockHideTaskbar => s.dock_hide_taskbar = !s.dock_hide_taskbar,
+        Key::DockBottomMost => s.dock_bottom_most = !s.dock_bottom_most,
+        Key::DockShowApps => s.dock_show_apps = !s.dock_show_apps,
+        Key::DockShowDownloads => s.dock_show_downloads = !s.dock_show_downloads,
+        Key::DockShowTray => s.dock_show_tray = !s.dock_show_tray,
         Key::Autostart => {
             if let Some(on) = st.ui.autostart {
                 st.cmd(Command::SetAutostart(!on));

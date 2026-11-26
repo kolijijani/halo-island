@@ -1860,17 +1860,30 @@ impl App {
         }
     }
 
+    fn dock_config(&self) -> crate::dock::DockConfig {
+        let s = &self.st.settings;
+        crate::dock::DockConfig {
+            icon_size: s.dock_icon_size,
+            magnification: s.dock_magnification,
+            bottom_most: s.dock_bottom_most,
+            show_apps: s.dock_show_apps,
+            show_downloads: s.dock_show_downloads,
+            show_tray: s.dock_show_tray,
+        }
+    }
+
     /// Create or destroy the bottom dock window to match `Settings::dock_enabled` + Halo Pro.
     fn sync_dock(&mut self) {
         if crate::dock::dock_allowed(self.st.settings.dock_enabled, self.st.settings.pro, self.in_selftest) {
             let look = self.dock_look();
+            let cfg = self.dock_config();
             let hide_tb = self.st.settings.dock_hide_taskbar;
             crate::dock::set_system_taskbar_hidden(hide_tb);
             if self.dock.is_none() {
                 let shared = self.gfx.d3d_handles();
                 match crate::dock::Dock::with_look(&self.monitor, look, shared) {
                     Ok(mut d) => {
-                        d.set_bottom_most(&self.monitor, true);
+                        d.set_config(&self.monitor, cfg);
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
                         d.set_apps(watcher.refresh());
@@ -1884,7 +1897,15 @@ impl App {
                 }
             } else {
                 if let Some(d) = self.dock.as_mut() {
-                    d.set_bottom_most(&self.monitor, true);
+                    if d.set_config(&self.monitor, cfg) {
+                        self.request_frame();
+                    }
+                }
+                if !cfg.show_downloads {
+                    self.close_dock_stack();
+                }
+                if !cfg.show_tray {
+                    self.close_dock_flyout();
                 }
                 self.sync_dock_tray();
             }
@@ -2058,7 +2079,7 @@ impl App {
             crate::dock::DockAction::OpenSettings => {
                 self.close_dock_popovers();
                 self.collapse();
-                self.open_settings_window(Some(Section::Island), deferred);
+                self.open_settings_window(Some(Section::Dock), deferred);
             }
             crate::dock::DockAction::ToggleAppWindow { hwnd: target, minimized, focused, icon_rect } => {
                 self.close_dock_popovers();
@@ -2243,7 +2264,7 @@ impl App {
             }
             crate::dock::DockCmd::OpenSettings => {
                 self.collapse();
-                self.open_settings_window(Some(Section::Island), deferred);
+                self.open_settings_window(Some(Section::Dock), deferred);
             }
             crate::dock::DockCmd::DisableDock => {
                 if self.st.settings.dock_enabled {
@@ -2817,7 +2838,13 @@ impl App {
         }
         if (before.dock_enabled != self.st.settings.dock_enabled
             || before.dock_theme != self.st.settings.dock_theme
+            || before.dock_icon_size != self.st.settings.dock_icon_size
+            || before.dock_magnification != self.st.settings.dock_magnification
             || before.dock_hide_taskbar != self.st.settings.dock_hide_taskbar
+            || before.dock_bottom_most != self.st.settings.dock_bottom_most
+            || before.dock_show_apps != self.st.settings.dock_show_apps
+            || before.dock_show_downloads != self.st.settings.dock_show_downloads
+            || before.dock_show_tray != self.st.settings.dock_show_tray
             || before.notch_theme != self.st.settings.notch_theme
             || before.notch_type != self.st.settings.notch_type
             || before.custom_look != self.st.settings.custom_look)

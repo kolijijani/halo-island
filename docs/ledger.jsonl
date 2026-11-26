@@ -109,3 +109,5 @@
 {"id": "dock-phase-6-control-center-flyout-auto-", "ev": "open", "title": "Dock Phase 6: Control Center flyout, auto-hide Windows taskbar, and bottom-edge dock placement", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795631020}
 {"id": "dock-phase-6-control-center-flyout-auto-", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-6-control-center-flyout-auto-", "who": "ag", "ts": 1795631020}
 {"id": "dock-phase-6-control-center-flyout-auto-", "ev": "done", "owner": "ag", "who": "ag", "commit": "ed1ca41", "note": "Added Control Center flyout popover (2x2 quick tiles, network box, interactive volume slider, Focus Mode sync), auto-hide/restore Windows taskbar, and bottom-most dock placement", "ts": 1795655016}
+{"id": "dock-phase-7-dedicated-dock-settings-men", "ev": "open", "title": "Dock Phase 7: Dedicated Dock settings menu, rich dock controls, and final release build", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795655061}
+{"id": "dock-phase-7-dedicated-dock-settings-men", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-7-dedicated-dock-settings-men", "who": "ag", "ts": 1795655061}
