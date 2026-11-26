@@ -33,6 +33,8 @@ mod commands;
 #[cfg(windows)]
 mod dock;
 #[cfg(windows)]
+pub mod dock_widgets;
+#[cfg(windows)]
 mod dock_genie;
 mod dock_genie_gpu;
 #[cfg(windows)]

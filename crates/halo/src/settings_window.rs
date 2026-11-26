@@ -358,6 +358,7 @@ pub enum Key {
     DockShowApps,
     DockShowDownloads,
     DockShowTray,
+    DockWidgets,
     DockPinned(u8),
     DockResetPinned,
 }
@@ -747,6 +748,12 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                             Some("Weather, Wi-Fi, volume slider, battery, Focus Mode and clock"),
                             s.dock_show_tray,
                         ),
+                        switch(
+                            Key::DockWidgets,
+                            "Desktop widgets",
+                            Some("2x2 Liquid Glass tiles on wallpaper: clock, calendar, battery, and system stats"),
+                            s.dock_widgets,
+                        ),
                     ],
                 ),
                 Block::Group(
@@ -985,6 +992,7 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Dock, "Running apps", Key::DockShowApps),
     (Section::Dock, "Downloads stack", Key::DockShowDownloads),
     (Section::Dock, "System tray & Control Center", Key::DockShowTray),
+    (Section::Dock, "Desktop widgets", Key::DockWidgets),
     (Section::Dock, "Pinned app", Key::DockPinned(0)),
     (Section::Dock, "Reset pinned apps", Key::DockResetPinned),
     (Section::Music, "Synced lyrics", Key::Lyrics),
@@ -1210,6 +1218,7 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         Key::DockShowApps => s.dock_show_apps = !s.dock_show_apps,
         Key::DockShowDownloads => s.dock_show_downloads = !s.dock_show_downloads,
         Key::DockShowTray => s.dock_show_tray = !s.dock_show_tray,
+        Key::DockWidgets => s.dock_widgets = !s.dock_widgets,
         Key::DockPinned(i) => {
             if !s.dock_pinned.is_empty() {
                 let idx = (i as usize).min(s.dock_pinned.len() - 1);

@@ -153,6 +153,14 @@ pub fn default_dock_pinned() -> Vec<String> {
     ]
 }
 
+pub fn default_dock_widget_items() -> Vec<String> {
+    vec!["clock".into(), "date".into(), "battery".into(), "system".into()]
+}
+
+pub fn default_dock_widget_position() -> String {
+    "top-right".into()
+}
+
 fn bool_true() -> bool {
     true
 }
@@ -213,6 +221,17 @@ pub struct Settings {
     /// Up to 3 recently run unpinned app specs shown after the pinned section.
     #[serde(default)]
     pub dock_recent: Vec<String>,
+    /// Desktop widgets enabled on wallpaper (2x2 Liquid Glass tiles).
+    pub dock_widgets: bool,
+    /// Desktop widgets items in 4 slots: "clock", "digital_clock", "date", "battery", "system", "none".
+    #[serde(default = "default_dock_widget_items")]
+    pub dock_widget_items: Vec<String>,
+    /// Desktop widgets anchor position: "top-right", "top-left", "bottom-right", "bottom-left", "custom".
+    #[serde(default = "default_dock_widget_position")]
+    pub dock_widget_position: String,
+    /// Custom widget offset (X, Y) in screen coordinates when dragged freely.
+    #[serde(default)]
+    pub dock_widget_offset: Option<(i32, i32)>,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -490,6 +509,10 @@ impl Default for Settings {
             dock_show_tray: true,
             dock_pinned: default_dock_pinned(),
             dock_recent: Vec::new(),
+            dock_widgets: false,
+            dock_widget_items: default_dock_widget_items(),
+            dock_widget_position: default_dock_widget_position(),
+            dock_widget_offset: None,
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

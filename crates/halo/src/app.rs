@@ -182,6 +182,9 @@ fn run(selftest_dir: Option<String>) -> Result<i32> {
     if let Err(e) = crate::dock::register_launchpad(dock_launchpad_wndproc) {
         pwarn!("dock launchpad window: class not registered ({e})");
     }
+    if let Err(e) = crate::dock_widgets::register_widgets(dock_widgets_wndproc) {
+        pwarn!("dock widgets window: class not registered ({e})");
+    }
     if let Err(e) = crate::dock_genie::register() {
         pwarn!("dock genie window: class not registered ({e})");
     }
@@ -404,6 +407,19 @@ unsafe extern "system" fn dock_launchpad_wndproc(hwnd: HWND, msg: u32, wp: WPARA
     }
 }
 
+/// The desktop widgets messages (`dock_widgets`).
+unsafe extern "system" fn dock_widgets_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let mut deferred = Vec::new();
+    let res = with_app(|app| app.handle_dock_widgets_window(hwnd, msg, wp, lp, &mut deferred));
+    for d in deferred {
+        run_deferred(d);
+    }
+    match res {
+        Some(Some(r)) => r,
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
 fn run_deferred(d: Deferred) {
     match d {
         Deferred::DragOut(paths) => {
@@ -491,6 +507,8 @@ pub struct App {
     dock_flyout: Option<crate::dock::DockControlCenter>,
     /// Transient Launchpad searchable AppsFolder overlay, alive only while open.
     dock_launchpad: Option<crate::dock::DockLaunchpad>,
+    /// Desktop 2x2 Liquid Glass widgets pinned to wallpaper.
+    dock_widgets: Option<crate::dock_widgets::DockWidgets>,
     /// Transient 72-slice Genie overlay, alive only during a ~340 ms minimize/restore.
     dock_genie: Option<crate::dock_genie::DockGenie>,
     wifi_connected: Option<bool>,
@@ -814,6 +832,7 @@ impl App {
             dock_stack: None,
             dock_flyout: None,
             dock_launchpad: None,
+            dock_widgets: None,
             dock_genie: None,
             wifi_connected: None,
             wifi_ssid: String::new(),
@@ -1963,6 +1982,7 @@ impl App {
                 pinfo!("dock: disabled");
             }
         }
+        self.sync_dock_widgets();
     }
 
     fn dock_tray_state(&self) -> crate::dock::DockTrayState {
@@ -2110,6 +2130,7 @@ impl App {
             || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
             || self.dock_flyout.as_ref().is_some_and(|f| f.needs_frame())
             || self.dock_launchpad.as_ref().is_some_and(|lp| lp.needs_frame())
+            || self.dock_widgets.as_ref().is_some_and(|w| w.needs_frame())
             || self.dock_genie.is_some()
     }
 
@@ -2148,6 +2169,15 @@ impl App {
         if let Some(lp) = self.dock_launchpad.as_mut() {
             if lp.needs_frame() {
                 lp.paint(shared.clone());
+            }
+        }
+        let look = self.dock_look();
+        if let Some(w) = self.dock_widgets.as_mut() {
+            if !self.locked && !self.display_off {
+                let changed = w.check_periodic_tick();
+                if changed || w.needs_frame() {
+                    w.paint(&self.monitor, look);
+                }
             }
         }
         if let Some(g) = self.dock_genie.as_mut() {
@@ -2516,6 +2546,72 @@ impl App {
                 self.open_settings_window(Some(Section::Dock), deferred);
             }
             crate::dock::LaunchpadAction::Close => self.close_dock_launchpad(),
+        }
+        res
+    }
+
+    fn sync_dock_widgets(&mut self) {
+        let enabled = crate::dock::dock_allowed(self.st.settings.dock_enabled, self.st.settings.pro, self.in_selftest)
+            && self.st.settings.dock_widgets;
+
+        if enabled {
+            let look = self.dock_look();
+            if self.dock_widgets.is_none() {
+                let shared = self.gfx.d3d_handles();
+                let items = self.st.settings.dock_widget_items.clone();
+                let pos = self.st.settings.dock_widget_position.clone();
+                let off = self.st.settings.dock_widget_offset;
+                match crate::dock_widgets::DockWidgets::open(&self.monitor, items, pos, off, look, shared) {
+                    Ok(w) => {
+                        pinfo!("dock widgets: opened");
+                        self.dock_widgets = Some(w);
+                        self.request_frame();
+                    }
+                    Err(e) => pwarn!("dock widgets: couldn't open ({e})"),
+                }
+            } else if let Some(w) = self.dock_widgets.as_mut() {
+                let changed = w.set_items(self.st.settings.dock_widget_items.clone())
+                    | w.set_position_and_offset(&self.monitor, self.st.settings.dock_widget_position.clone(), self.st.settings.dock_widget_offset)
+                    | w.set_look(look);
+                if changed {
+                    self.request_frame();
+                }
+            }
+        } else if self.dock_widgets.take().is_some() {
+            pinfo!("dock widgets: closed");
+            self.request_frame();
+        }
+    }
+
+    fn handle_dock_widgets_window(
+        &mut self,
+        hwnd: HWND,
+        msg: u32,
+        wp: WPARAM,
+        lp: LPARAM,
+        deferred: &mut Vec<Deferred>,
+    ) -> Option<LRESULT> {
+        let (res, act) = self.dock_widgets.as_mut()?.handle_message(hwnd, msg, wp, lp, &self.monitor);
+        if let Some(act) = act {
+            match act {
+                crate::dock_widgets::WidgetsAction::SaveLayout { items, position, offset } => {
+                    let before = self.st.settings.clone();
+                    self.st.settings.dock_widget_items = items;
+                    self.st.settings.dock_widget_position = position;
+                    self.st.settings.dock_widget_offset = offset;
+                    self.settings_changed(&before);
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                    self.request_frame();
+                }
+                crate::dock_widgets::WidgetsAction::OpenSettings => {
+                    self.collapse();
+                    self.open_settings_window(Some(Section::Dock), deferred);
+                }
+            }
         }
         res
     }
