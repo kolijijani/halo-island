@@ -190,3 +190,5 @@
 {"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "done", "owner": "ag", "who": "ag", "commit": "19fc2a4", "note": "ignore our own windows in AppEvent::Foreground and keep popovers topmost", "ts": 1795694960}
 {"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "open", "title": "dock: fix Launchpad flicker and outside-click self-dismiss", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795694976}
 {"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "done", "owner": "ag", "who": "ag", "commit": "8484b68", "note": "ignore our own windows in AppEvent::Foreground and keep popovers topmost", "ts": 1795694976}
+{"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "doing", "owner": "ag", "branch": "ag/dock-fix-launchpad-flicker-and-outside-c-2", "who": "ag", "ts": 1795694987}
+{"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "done", "owner": "ag", "who": "ag", "commit": "8484b68", "note": "duplicate entry closed", "ts": 1795694987}
