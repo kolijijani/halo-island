@@ -1973,9 +1973,7 @@ fn draw_dock(
                         draw_progress_ring(c, tile, p);
                     }
 
-                    if app.minimized {
-                        draw_minimized_window_tile(c, tile, app, theme_ink, theme_accent, light, is_hover);
-                    } else if let Some(img) = app.icon.as_ref() {
+                    if let Some(img) = app.icon.as_ref() {
                         // Crisp full-bleed app icon with soft drop-shadow (.dock-icon-img in mockup)
                         draw_squircle_shadow(c, tile.inset(2.0, 2.0), tr, light);
                         c.image_hq(img, tile.inset(0.5, 0.5));

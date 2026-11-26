@@ -112,3 +112,7 @@
 {"id": "dock-phase-7-dedicated-dock-settings-men", "ev": "open", "title": "Dock Phase 7: Dedicated Dock settings menu, rich dock controls, and final release build", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795655061}
 {"id": "dock-phase-7-dedicated-dock-settings-men", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-7-dedicated-dock-settings-men", "who": "ag", "ts": 1795655061}
 {"id": "dock-phase-7-dedicated-dock-settings-men", "ev": "done", "owner": "ag", "who": "ag", "commit": "0e753e8", "note": "Moved dock settings into dedicated Section::Dock with theme, icon size, magnification, auto-hide taskbar, bottom-edge anchor, running apps, downloads stack, and system tray controls", "ts": 1795655315}
+{"id": "dock-phase-8-live-control-center-data", "ev": "open", "title": "Dock phase 8: live Control Center data", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795662324}
+{"id": "dock-phase-8-live-control-center-data", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-8-live-control-center-data", "who": "ag", "ts": 1795662333}
+{"id": "dock-phase-8-live-control-center-data", "ev": "done", "owner": "ag", "who": "ag", "commit": "c7f250e", "note": "Control Center shows real SSID, internet state, connected Bluetooth device; fake rows removed", "ts": 1795662477}
+{"id": "dock-phase-9-icon-squircle-separation", "ev": "open", "title": "dock-phase-9-icon-squircle-separation", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795662554}
