@@ -106,8 +106,8 @@ thread_local! {
 pub enum Deferred {
     DragOut(Vec<String>),
     Menu(POINT),
-    /// Right-click context menu on the bottom dock (`(screen_pt, tucked, app_target)`).
-    DockMenu(POINT, bool, Option<services::dock_apps::RunningApp>),
+    /// Right-click context menu on the bottom dock (`(screen_pt, tucked, target)`).
+    DockMenu(POINT, bool, crate::dock::DockMenuTarget),
     /// The header's "…": the tabs that didn't fit, at the pointer.
     TabMenu(Vec<PageKind>),
 }
@@ -413,9 +413,9 @@ fn run_deferred(d: Deferred) {
                 }
             });
         }
-        Deferred::DockMenu(pt, tucked, app_target) => {
+        Deferred::DockMenu(pt, tucked, target) => {
             let Some(helper) = with_app(|app| app.helper) else { return };
-            let cmd = crate::dock::show_menu(helper, pt, tucked, app_target.as_ref());
+            let cmd = crate::dock::show_menu(helper, pt, tucked, &target);
             if let Some(cmd) = cmd {
                 let mut deferred = Vec::new();
                 with_app(|app| app.on_dock_menu(cmd, &mut deferred));
@@ -1895,7 +1895,10 @@ impl App {
                         d.set_config(&self.monitor, cfg);
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
-                        d.set_apps(watcher.refresh_with_pinned(&self.st.settings.dock_pinned));
+                        d.set_apps(watcher.refresh_with_pinned_and_recent(
+                            &self.st.settings.dock_pinned,
+                            &mut self.st.settings.dock_recent,
+                        ));
                         d.set_tray(self.dock_tray_state());
                         crate::dock_genie::set_system_min_animate(false);
                         pinfo!("dock: enabled");
@@ -1909,7 +1912,10 @@ impl App {
                 if let Some(d) = self.dock.as_mut() {
                     let mut changed = d.set_config(&self.monitor, cfg);
                     if let Some(w) = self.dock_apps.as_mut() {
-                        changed |= d.set_apps(w.refresh_with_pinned(&self.st.settings.dock_pinned));
+                        changed |= d.set_apps(w.refresh_with_pinned_and_recent(
+                            &self.st.settings.dock_pinned,
+                            &mut self.st.settings.dock_recent,
+                        ));
                     }
                     if changed {
                         self.request_frame();
@@ -2191,6 +2197,10 @@ impl App {
                     }
                 }
             }
+            crate::dock::DockAction::OpenRecycleBin => {
+                self.close_dock_popovers();
+                crate::shell::open("shell:RecycleBinFolder");
+            }
             crate::dock::DockAction::ToggleControlCenter(anchor_rect) => {
                 self.close_dock_stack();
                 if self.dock_flyout.is_some() {
@@ -2212,9 +2222,9 @@ impl App {
                     }
                 }
             }
-            crate::dock::DockAction::ShowMenu(pt, tucked, app_target) => {
+            crate::dock::DockAction::ShowMenu(pt, tucked, target) => {
                 self.close_dock_popovers();
-                deferred.push(Deferred::DockMenu(pt, tucked, app_target));
+                deferred.push(Deferred::DockMenu(pt, tucked, target));
             }
             crate::dock::DockAction::DropToShelf(paths) => {
                 self.close_dock_popovers();
@@ -2229,10 +2239,39 @@ impl App {
                 self.request_frame();
                 pinfo!("dock shelf drop: {n} new item(s)");
             }
+            crate::dock::DockAction::DropToRecycleBin(paths) => {
+                self.close_dock_popovers();
+                crate::shell::recycle_files(&paths);
+                self.request_frame();
+            }
             crate::dock::DockAction::OpenFilesWithApp { hwnd: target, exe, files } => {
                 self.close_dock_popovers();
                 crate::shell::open_with_exe(exe.as_deref(), &files);
                 services::dock_apps::focus_window(target);
+            }
+            crate::dock::DockAction::ReorderPinned(new_order) => {
+                if !new_order.is_empty() && self.st.settings.dock_pinned != new_order {
+                    self.st.settings.dock_pinned = new_order;
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                }
+                self.request_frame();
+            }
+            crate::dock::DockAction::RemovePinnedApp(spec) => {
+                let before = self.st.settings.clone();
+                self.st.settings.dock_pinned.retain(|p| !p.eq_ignore_ascii_case(&spec));
+                if self.st.settings.dock_pinned != before.dock_pinned {
+                    self.settings_changed(&before);
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                }
+                self.request_frame();
             }
         }
         res
@@ -2370,6 +2409,12 @@ impl App {
             }
             crate::dock::DockCmd::QuitApp(wins, primary) => {
                 services::dock_apps::close_windows(&wins, primary);
+            }
+            crate::dock::DockCmd::OpenRecycleBin => {
+                crate::shell::open("shell:RecycleBinFolder");
+            }
+            crate::dock::DockCmd::EmptyRecycleBin => {
+                crate::shell::empty_recycle_bin(self.helper);
             }
         }
     }
@@ -3272,10 +3317,20 @@ impl App {
             }
             AppEvent::DockAppsChanged => {
                 if !self.locked && !self.display_off {
+                    let prev_rec = self.st.settings.dock_recent.clone();
+                    let mut changed = false;
                     if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
-                        if d.set_apps(w.refresh_with_pinned(&self.st.settings.dock_pinned)) {
-                            self.request_frame();
-                        }
+                        let apps = w.refresh_with_pinned_and_recent(
+                            &self.st.settings.dock_pinned,
+                            &mut self.st.settings.dock_recent,
+                        );
+                        changed = d.set_apps(apps);
+                    }
+                    if self.st.settings.dock_recent != prev_rec {
+                        self.save_settings();
+                    }
+                    if changed {
+                        self.request_frame();
                     }
                 }
             }

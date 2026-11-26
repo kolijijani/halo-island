@@ -181,8 +181,12 @@ impl DockAppsWatcher {
         }
     }
 
-    /// Enumerate pinned and running apps in stable dock order (pinned first, then unpinned running apps).
-    pub fn refresh_with_pinned(&mut self, pinned_specs: &[String]) -> Vec<RunningApp> {
+    /// Enumerate pinned, up to 3 recent unpinned apps, and running unpinned apps in stable dock order.
+    pub fn refresh_with_pinned_and_recent(
+        &mut self,
+        pinned_specs: &[String],
+        recent_specs: &mut Vec<String>,
+    ) -> Vec<RunningApp> {
         HOOK.with(|h| {
             if let Some(st) = h.borrow().as_ref() {
                 st.pending.set(false);
@@ -270,6 +274,7 @@ impl DockAppsWatcher {
         let mut by_key: HashMap<String, RunningApp> = HashMap::new();
         for w in raw_wins {
             let is_fg = w.hwnd == fg;
+            let title_badge = badge_from_title(&w.title);
             if let Some(pin_idx) = best_pinned_match(&pinned_items, &w) {
                 let pin = &mut pinned_items[pin_idx];
                 if !pin.running {
@@ -291,6 +296,7 @@ impl DockAppsWatcher {
                     pin.hwnd = w.hwnd;
                     pin.minimized = false;
                 }
+                pin.badge = pin.badge.saturating_add(title_badge);
                 pin.windows.push((w.hwnd, w.title));
                 continue;
             }
@@ -311,6 +317,7 @@ impl DockAppsWatcher {
                     existing.hwnd = w.hwnd;
                     existing.minimized = false;
                 }
+                existing.badge = existing.badge.saturating_add(title_badge);
                 existing.windows.push((w.hwnd, w.title));
                 continue;
             }
@@ -333,7 +340,7 @@ impl DockAppsWatcher {
                     focused: is_fg,
                     icon,
                     thumb: None,
-                    badge: 0,
+                    badge: title_badge,
                     progress: None,
                 },
             );
@@ -347,14 +354,70 @@ impl DockAppsWatcher {
             }
         }
 
-        let mut out = pinned_items;
+        let mut running_unpinned = Vec::new();
         for k in &self.order {
+            if let Some(app) = by_key.remove(k) {
+                if let Some(spec) = app.launch.as_ref().or(app.exe.as_ref()) {
+                    recent_specs.retain(|r| !r.eq_ignore_ascii_case(spec));
+                    recent_specs.insert(0, spec.clone());
+                }
+                running_unpinned.push(app);
+            }
+        }
+        // Prune any recent specs that are now pinned.
+        recent_specs.retain(|r| {
+            !pinned_items.iter().any(|p| {
+                p.launch.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(r))
+                    || p.exe.as_deref().is_some_and(|e| e.eq_ignore_ascii_case(r))
+            })
+        });
+        recent_specs.truncate(3);
+
+        // Build up to 3 recent unpinned items (running if matched, otherwise idle recent).
+        let mut recent_items: Vec<RunningApp> = Vec::new();
+        for spec in recent_specs.iter() {
+            let spec_trim = spec.trim();
+            if spec_trim.is_empty() {
+                continue;
+            }
+            if let Some(pos) = running_unpinned.iter().position(|r| {
+                r.launch.as_deref().is_some_and(|l| l.eq_ignore_ascii_case(spec_trim))
+                    || r.exe.as_deref().is_some_and(|e| e.eq_ignore_ascii_case(spec_trim))
+            }) {
+                recent_items.push(running_unpinned.remove(pos));
+                continue;
+            }
+            let key = format!("rec:{}", spec_trim.to_ascii_lowercase());
+            let meta = self.resolve_pinned_meta(&key, spec_trim);
+            if meta.icon.is_none() && meta.exe.is_none() && meta.aumid.is_none() {
+                continue;
+            }
+            recent_items.push(RunningApp {
+                key,
+                name: meta.name,
+                exe: meta.exe,
+                aumid: meta.aumid,
+                launch: Some(spec_trim.to_string()),
+                profile_directory: meta.profile_directory,
+                pinned: false,
+                running: false,
+                hwnd: HWND::default(),
+                windows: Vec::new(),
+                minimized: false,
+                focused: false,
+                icon: meta.icon,
+                thumb: None,
+                badge: 0,
+                progress: None,
+            });
+        }
+
+        let mut out = pinned_items;
+        for app in recent_items.into_iter().chain(running_unpinned) {
             if out.len() >= MAX_APPS {
                 break;
             }
-            if let Some(app) = by_key.remove(k) {
-                out.push(app);
-            }
+            out.push(app);
         }
         out
     }
@@ -1169,4 +1232,22 @@ fn hicon_to_image(hicon: HICON, size: u32) -> Option<Image> {
         }
         Some(ImageData::new(size, size, pixels))
     }
+}
+
+/// Extract unread notification count from a window title prefix: `"(12) Inbox"` → `12`, `"(99+) Chats"` → `99`.
+pub fn badge_from_title(title: &str) -> u16 {
+    let t = title.trim_start();
+    let Some(rest) = t.strip_prefix('(').or_else(|| t.strip_prefix('[')) else {
+        return 0;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() || digits.len() > 4 {
+        return 0;
+    }
+    let after = &rest[digits.len()..];
+    let after = after.strip_prefix('+').unwrap_or(after);
+    if !after.starts_with(") ") && !after.starts_with(")\t") && !after.starts_with("] ") && !after.starts_with("]\t") {
+        return 0;
+    }
+    digits.parse::<u16>().unwrap_or(0)
 }

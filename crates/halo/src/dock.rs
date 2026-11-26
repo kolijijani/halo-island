@@ -299,6 +299,15 @@ pub enum DockCmd {
     RemoveFromDock(String),
     ShowInExplorer(String),
     QuitApp(Vec<(HWND, String)>, HWND),
+    OpenRecycleBin,
+    EmptyRecycleBin,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DockMenuTarget {
+    Shelf,
+    App(RunningApp),
+    Trash,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -312,10 +321,14 @@ pub enum DockAction {
     ToggleAppWindow { hwnd: HWND, minimized: bool, focused: bool, icon_rect: Rect },
     LaunchPinnedApp(String),
     ToggleDownloadsStack(Rect),
+    OpenRecycleBin,
     ToggleControlCenter(Rect),
-    ShowMenu(POINT, bool, Option<RunningApp>),
+    ShowMenu(POINT, bool, DockMenuTarget),
     DropToShelf(Vec<String>),
+    DropToRecycleBin(Vec<String>),
     OpenFilesWithApp { hwnd: HWND, exe: Option<String>, files: Vec<String> },
+    ReorderPinned(Vec<String>),
+    RemovePinnedApp(String),
 }
 
 #[derive(Clone, Copy)]
@@ -686,6 +699,9 @@ pub struct Dock {
     mouse: Option<Point>,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    drag_start: Option<Point>,
+    dragging_app: bool,
+    drag_out: bool,
     tray: DockTrayState,
     hovered_tray: Option<DockTrayZone>,
     pressed_tray: Option<DockTrayZone>,
@@ -766,12 +782,15 @@ impl Dock {
             tucked: false,
             tuck: Spring::smooth(0.0),
             apps: Vec::new(),
-            scales: (0..ANCHOR_SLOTS.len() + 1).map(|_| mag_spring(1.0)).collect(),
-            bounces: vec![0.0; ANCHOR_SLOTS.len() + 1],
+            scales: (0..ANCHOR_SLOTS.len() + 2).map(|_| mag_spring(1.0)).collect(),
+            bounces: vec![0.0; ANCHOR_SLOTS.len() + 2],
             tracking: false,
             mouse: None,
             hovered: None,
             pressed: None,
+            drag_start: None,
+            dragging_app: false,
+            drag_out: false,
             tray: DockTrayState::default(),
             hovered_tray: None,
             pressed_tray: None,
@@ -938,7 +957,15 @@ impl Dock {
     }
 
     fn stack_count(&self) -> usize {
-        usize::from(self.cfg.show_downloads)
+        usize::from(self.cfg.show_downloads) + 1 // Downloads stack (optional) + Trash (always)
+    }
+
+    fn downloads_slot_index(&self) -> Option<usize> {
+        self.cfg.show_downloads.then_some(ANCHOR_SLOTS.len() + self.visible_apps().len())
+    }
+
+    fn trash_slot_index(&self) -> usize {
+        ANCHOR_SLOTS.len() + self.visible_apps().len() + usize::from(self.cfg.show_downloads)
     }
 
     fn effective_tray_w(&self) -> f32 {
@@ -1284,6 +1311,61 @@ impl Dock {
                 let p = to_dip(lp, self.scale());
                 let moved = self.mouse != Some(p);
                 self.mouse = Some(p);
+
+                // Drag-to-reorder & drag-out-to-unpin for pinned app slots.
+                if let (Some(slot_idx), Some(start)) = (self.pressed, self.drag_start) {
+                    if self.cfg.show_apps
+                        && slot_idx >= ANCHOR_SLOTS.len()
+                        && slot_idx < ANCHOR_SLOTS.len() + self.apps.len()
+                    {
+                        let app_idx = slot_idx - ANCHOR_SLOTS.len();
+                        if self.apps.get(app_idx).is_some_and(|a| a.pinned) {
+                            let dx = (p.x - start.x).abs();
+                            let dy = (p.y - start.y).abs();
+                            if !self.dragging_app && (dx > 7.0 || dy > 7.0) {
+                                self.dragging_app = true;
+                                self.hovered = None;
+                            }
+                            if self.dragging_app {
+                                let sw = self.surf_w_dip();
+                                let scales = self.current_scales();
+                                let tray_w = self.effective_tray_w();
+                                let (shelf, _, _, _, rects, _) = layout_slots_configured(
+                                    sw,
+                                    ANCHOR_SLOTS.len(),
+                                    self.apps.len(),
+                                    self.stack_count(),
+                                    tray_w,
+                                    &scales,
+                                    self.tuck.value,
+                                    self.cfg.slot_max(),
+                                    self.cfg.shelf_h(),
+                                );
+                                self.drag_out = !self.apps[app_idx].running && p.y < shelf.y - 54.0;
+                                if !self.drag_out {
+                                    let pinned_end = self.apps.iter().take_while(|a| a.pinned).count();
+                                    let mut target_app = app_idx;
+                                    for j in 0..pinned_end {
+                                        let Some(r) = rects.get(ANCHOR_SLOTS.len() + j) else { continue };
+                                        let cx = r.x + r.w * 0.5;
+                                        if (j < app_idx && p.x < cx) || (j > app_idx && p.x > cx) {
+                                            target_app = j;
+                                            break;
+                                        }
+                                    }
+                                    if target_app != app_idx {
+                                        let item = self.apps.remove(app_idx);
+                                        self.apps.insert(target_app, item);
+                                        self.pressed = Some(ANCHOR_SLOTS.len() + target_app);
+                                    }
+                                }
+                                self.dirty = true;
+                                return (Some(LRESULT(0)), DockAction::RequestFrame);
+                            }
+                        }
+                    }
+                }
+
                 let next_hover = self.slot_at(p);
                 let next_tray = if next_hover.is_none() { self.tray_zone_at(p) } else { None };
                 let hover_changed = next_hover != self.hovered || next_tray != self.hovered_tray;
@@ -1299,8 +1381,12 @@ impl Dock {
                 (Some(LRESULT(0)), DockAction::None)
             }
             WM_MOUSELEAVE => {
+                if self.dragging_app {
+                    return (Some(LRESULT(0)), DockAction::None);
+                }
                 self.tracking = false;
                 self.mouse = None;
+                self.drag_start = None;
                 let had_ui = self.hovered.take().is_some()
                     || self.pressed.take().is_some()
                     || self.hovered_tray.take().is_some()
@@ -1318,6 +1404,9 @@ impl Dock {
                 unsafe {
                     SetCapture(self.hwnd);
                 }
+                self.drag_start = Some(p);
+                self.dragging_app = false;
+                self.drag_out = false;
                 if self.tucked && peek_hit_rect(self.surf_w_dip()).contains(p) {
                     self.pressed = Some(usize::MAX);
                     return (Some(LRESULT(0)), DockAction::None);
@@ -1339,7 +1428,36 @@ impl Dock {
                 }
                 let down = self.pressed.take();
                 let down_tray = self.pressed_tray.take();
+                let was_dragging = self.dragging_app;
+                let was_drag_out = self.drag_out;
+                self.drag_start = None;
+                self.dragging_app = false;
+                self.drag_out = false;
                 self.dirty = true;
+                if was_dragging {
+                    if let Some(slot_idx) = down {
+                        let app_idx = slot_idx.saturating_sub(ANCHOR_SLOTS.len());
+                        if was_drag_out {
+                            if let Some(app) = self.apps.get(app_idx).filter(|a| a.pinned && !a.running) {
+                                if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                                    self.apps.remove(app_idx);
+                                    let total = self.total_slots();
+                                    self.scales.resize_with(total, || mag_spring(1.0));
+                                    self.bounces.resize(total, 0.0);
+                                    return (Some(LRESULT(0)), DockAction::RemovePinnedApp(spec));
+                                }
+                            }
+                        }
+                        let new_order: Vec<String> = self
+                            .apps
+                            .iter()
+                            .filter(|a| a.pinned)
+                            .filter_map(|a| a.launch.clone().or_else(|| a.exe.clone()))
+                            .collect();
+                        return (Some(LRESULT(0)), DockAction::ReorderPinned(new_order));
+                    }
+                    return (Some(LRESULT(0)), DockAction::RequestFrame);
+                }
                 if down == Some(usize::MAX) && self.tucked && peek_hit_rect(self.surf_w_dip()).contains(p) {
                     self.set_tucked(false, instant);
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
@@ -1380,9 +1498,12 @@ impl Dock {
                             },
                         );
                     }
-                    if self.cfg.show_downloads && i == ANCHOR_SLOTS.len() + vis_apps.len() {
+                    if Some(i) == self.downloads_slot_index() {
                         let icon_rect = self.slot_screen_rect(i);
                         return (Some(LRESULT(0)), DockAction::ToggleDownloadsStack(icon_rect));
+                    }
+                    if i == self.trash_slot_index() {
+                        return (Some(LRESULT(0)), DockAction::OpenRecycleBin);
                     }
                 }
                 (Some(LRESULT(0)), DockAction::RequestFrame)
@@ -1414,6 +1535,9 @@ impl Dock {
                 let p = Point::new(pt.x as f32 / scale, pt.y as f32 / scale);
                 if let Some(i) = self.slot_at(p) {
                     self.trigger_bounce(i, instant);
+                    if i == self.trash_slot_index() {
+                        return (Some(LRESULT(0)), DockAction::DropToRecycleBin(files));
+                    }
                     let vis_apps = self.visible_apps();
                     if i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + vis_apps.len() {
                         let app = &vis_apps[i - ANCHOR_SLOTS.len()];
@@ -1431,14 +1555,18 @@ impl Dock {
             }
             WM_RBUTTONUP => {
                 let p = to_dip(lp, self.scale());
-                let app_target = self.slot_at(p).and_then(|i| {
-                    let vis_apps = self.visible_apps();
-                    if i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + vis_apps.len() {
-                        Some(vis_apps[i - ANCHOR_SLOTS.len()].clone())
-                    } else {
-                        None
+                let target = match self.slot_at(p) {
+                    Some(i) if i == self.trash_slot_index() => DockMenuTarget::Trash,
+                    Some(i) => {
+                        let vis_apps = self.visible_apps();
+                        if i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + vis_apps.len() {
+                            DockMenuTarget::App(vis_apps[i - ANCHOR_SLOTS.len()].clone())
+                        } else {
+                            DockMenuTarget::Shelf
+                        }
                     }
-                });
+                    None => DockMenuTarget::Shelf,
+                };
                 let mut pt = POINT {
                     x: (lp.0 & 0xffff) as u16 as i16 as i32,
                     y: ((lp.0 >> 16) & 0xffff) as u16 as i16 as i32,
@@ -1446,9 +1574,12 @@ impl Dock {
                 unsafe {
                     let _ = ClientToScreen(self.hwnd, &mut pt);
                 }
-                (Some(LRESULT(0)), DockAction::ShowMenu(pt, self.tucked, app_target))
+                (Some(LRESULT(0)), DockAction::ShowMenu(pt, self.tucked, target))
             }
             WM_CAPTURECHANGED => {
+                self.drag_start = None;
+                self.dragging_app = false;
+                self.drag_out = false;
                 if self.pressed.take().is_some() || self.pressed_tray.take().is_some() {
                     self.dirty = true;
                     return (Some(LRESULT(0)), DockAction::RequestFrame);
@@ -1530,6 +1661,9 @@ impl Dock {
         let stack_open = self.stack_open;
         let ctrl_open = self.ctrl_open;
         let show_apps = self.cfg.show_apps;
+        let show_downloads = self.cfg.show_downloads;
+        let drag_x = if self.dragging_app { self.mouse.map(|p| p.x) } else { None };
+        let drag_out = self.drag_out;
 
         let Some(gfx) = self.gfx.as_mut() else { return };
         if !gfx.has_gpu() && shared.is_some() {
@@ -1575,10 +1709,13 @@ impl Dock {
                     sep3_x,
                     &slot_rects,
                     apps_slice,
+                    show_downloads,
                     stack_open,
                     ctrl_open,
                     hovered,
                     pressed,
+                    drag_x,
+                    drag_out,
                     tray_rect,
                     &tray,
                     hovered_tray,
@@ -1882,6 +2019,36 @@ fn draw_downloads_stack_icon(
     c.stroke_rrect(tile, tr, tile_rim, 1.0);
 }
 
+/// Draw the macOS Trash / Recycle Bin squircle tile icon (`shell:RecycleBinFolder`).
+fn draw_trash_slot_icon(c: &mut Canvas<'_>, tile: Rect, tr: f32, light: bool, is_hover: bool) {
+    let bg = if light {
+        Color::rgba(0.91, 0.93, 0.96, 0.92)
+    } else {
+        Color::hex(0x1E2633).with_alpha(0.92)
+    };
+    c.fill_rrect(tile, tr, bg);
+    let tile_segs = crate::pill::shape::segments(tile, tr);
+    c.fill_path_fade(
+        &tile_segs,
+        Color::white(1.0),
+        tile.y,
+        tile.y + tile.h * 0.52,
+        if light { 0.34 } else { 0.18 },
+        0.0,
+    );
+    let rim = if is_hover {
+        Color::hex(0x38BDF8).with_alpha(0.72)
+    } else if light {
+        Color::black(0.12)
+    } else {
+        Color::white(0.22)
+    };
+    c.stroke_rrect(tile, tr, rim, 1.0);
+    let ic_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+    let ic_col = if light { Color::hex(0x334155) } else { Color::hex(0xCBD5E1) };
+    c.icon(Icon::Trash, ic_box, ic_col);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_dock(
     c: &mut Canvas<'_>,
@@ -1896,10 +2063,13 @@ fn draw_dock(
     sep3_x: Option<f32>,
     slot_rects: &[Rect],
     apps: &[RunningApp],
+    show_downloads: bool,
     stack_open: bool,
     ctrl_open: bool,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    drag_x: Option<f32>,
+    drag_out: bool,
     tray_rect: Option<Rect>,
     tray: &DockTrayState,
     hovered_tray: Option<DockTrayZone>,
@@ -1990,102 +2160,127 @@ fn draw_dock(
 
                 for (j, app) in apps.iter().enumerate() {
                     let idx = ANCHOR_SLOTS.len() + j;
-                    let Some(&sr) = slot_rects.get(idx) else { continue };
+                    let Some(&base_sr) = slot_rects.get(idx) else { continue };
                     let is_hover = hovered == Some(idx);
                     let is_press = pressed == Some(idx);
-                    let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
+                    let is_dragged = is_press && drag_x.is_some();
+                    let sr = if let Some(dx) = drag_x.filter(|_| is_press) {
+                        Rect::new(dx - base_sr.w * 0.5, base_sr.y - if drag_out { 28.0 } else { 4.0 }, base_sr.w, base_sr.h)
+                    } else {
+                        base_sr
+                    };
+                    // Draw subtle divider between pinned and unpinned/recent apps when both exist.
+                    if j > 0 && !app.pinned && apps[j - 1].pinned && !is_dragged {
+                        if let Some(&prev_sr) = slot_rects.get(idx - 1) {
+                            draw_glass_divider(c, (prev_sr.right() + base_sr.x) * 0.5, shelf, light);
+                        }
+                    }
+                    let tile = if is_press && !is_dragged { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
+                    let item_alpha = if is_dragged && drag_out { 0.45 } else { 1.0 };
+                    c.with_alpha(item_alpha, |c| {
+                        let ring_p = app.progress.or_else(|| {
+                            if !browser_ring_drawn && is_browser_key(&app.key) {
+                                dl_frac
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(p) = ring_p {
+                            if app.progress.is_none() {
+                                browser_ring_drawn = true;
+                            }
+                            draw_progress_ring(c, tile, p);
+                        }
 
-                    let ring_p = app.progress.or_else(|| {
-                        if !browser_ring_drawn && is_browser_key(&app.key) {
-                            dl_frac
+                        if let Some(img) = app.icon.as_ref() {
+                            // Crisp full-bleed app icon with soft drop-shadow (.dock-icon-img in mockup)
+                            draw_squircle_shadow(c, tile.inset(2.0, 2.0), tr, light);
+                            c.image_hq(img, tile.inset(0.5, 0.5));
+                            if is_hover {
+                                c.stroke_rrect(tile, tr, theme_accent.with_alpha(0.42), 1.0);
+                            }
                         } else {
-                            None
+                            draw_squircle_shadow(c, tile, tr, light);
+                            let back = if is_hover {
+                                if light { Color::black(0.10) } else { Color::white(0.18) }
+                            } else if app.focused {
+                                if light { Color::black(0.07) } else { Color::white(0.12) }
+                            } else if light {
+                                Color::black(0.08)
+                            } else {
+                                Color::white(0.12)
+                            };
+                            c.fill_rrect(tile, tr, back);
+                            let tile_segs = crate::pill::shape::segments(tile, tr);
+                            c.fill_path_fade(
+                                &tile_segs,
+                                Color::white(1.0),
+                                tile.y,
+                                tile.y + tile.h * 0.45,
+                                if light { 0.20 } else { 0.12 },
+                                0.0,
+                            );
+                            let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
+                            c.icon(Icon::AppWindow, icon_box, theme_ink);
+                            let r_c = if is_hover {
+                                theme_accent.with_alpha(0.64)
+                            } else if app.focused {
+                                if light { Color::black(0.15) } else { Color::white(0.26) }
+                            } else if light {
+                                Color::black(0.08)
+                            } else {
+                                Color::white(0.13)
+                            };
+                            c.stroke_rrect(tile, tr, r_c, 1.0);
+                        }
+
+                        if app.badge > 0 {
+                            draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
+                        }
+
+                        // Active running-app indicator dot (only when running; pinned idle apps have no dot).
+                        if app.running {
+                            let dot_r = if app.focused { 2.3 } else if app.minimized { 1.6 } else { 1.9 };
+                            let dot_a = if app.focused { 0.96 } else if app.minimized { 0.55 } else { 0.78 };
+                            draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
                         }
                     });
-                    if let Some(p) = ring_p {
-                        if app.progress.is_none() {
-                            browser_ring_drawn = true;
-                        }
-                        draw_progress_ring(c, tile, p);
-                    }
-
-                    if let Some(img) = app.icon.as_ref() {
-                        // Crisp full-bleed app icon with soft drop-shadow (.dock-icon-img in mockup)
-                        draw_squircle_shadow(c, tile.inset(2.0, 2.0), tr, light);
-                        c.image_hq(img, tile.inset(0.5, 0.5));
-                        if is_hover {
-                            c.stroke_rrect(tile, tr, theme_accent.with_alpha(0.42), 1.0);
-                        }
-                    } else {
-                        draw_squircle_shadow(c, tile, tr, light);
-                        let back = if is_hover {
-                            if light { Color::black(0.10) } else { Color::white(0.18) }
-                        } else if app.focused {
-                            if light { Color::black(0.07) } else { Color::white(0.12) }
-                        } else if light {
-                            Color::black(0.08)
-                        } else {
-                            Color::white(0.12)
-                        };
-                        c.fill_rrect(tile, tr, back);
-                        let tile_segs = crate::pill::shape::segments(tile, tr);
-                        c.fill_path_fade(
-                            &tile_segs,
-                            Color::white(1.0),
-                            tile.y,
-                            tile.y + tile.h * 0.45,
-                            if light { 0.20 } else { 0.12 },
-                            0.0,
-                        );
-                        let icon_box = tile.inset(tile.w * 0.24, tile.h * 0.24);
-                        c.icon(Icon::AppWindow, icon_box, theme_ink);
-                        let r_c = if is_hover {
-                            theme_accent.with_alpha(0.64)
-                        } else if app.focused {
-                            if light { Color::black(0.15) } else { Color::white(0.26) }
-                        } else if light {
-                            Color::black(0.08)
-                        } else {
-                            Color::white(0.13)
-                        };
-                        c.stroke_rrect(tile, tr, r_c, 1.0);
-                    }
-
-                    if app.badge > 0 {
-                        draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
-                    }
-
-                    // Active running-app indicator dot (only when running; pinned idle apps have no dot).
-                    if app.running {
-                        let dot_r = if app.focused { 2.3 } else if app.minimized { 1.6 } else { 1.9 };
-                        let dot_a = if app.focused { 0.96 } else if app.minimized { 0.55 } else { 0.78 };
-                        draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
-                    }
                 }
 
                 if let Some(sx) = sep2_x {
                     draw_glass_divider(c, sx, shelf, light);
                 }
 
-                let dl_idx = ANCHOR_SLOTS.len() + apps.len();
-                if let Some(&sr) = slot_rects.get(dl_idx) {
-                    let is_hover = hovered == Some(dl_idx);
-                    let is_press = pressed == Some(dl_idx);
+                let dl_idx = show_downloads.then_some(ANCHOR_SLOTS.len() + apps.len());
+                let trash_idx = ANCHOR_SLOTS.len() + apps.len() + usize::from(show_downloads);
+                if let Some(dl_idx) = dl_idx {
+                    if let Some(&sr) = slot_rects.get(dl_idx) {
+                        let is_hover = hovered == Some(dl_idx);
+                        let is_press = pressed == Some(dl_idx);
+                        let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
+                        let tr = (tile.w * 0.25).clamp(8.0, 15.0);
+                        let accent = look.accent.unwrap_or(Color::hex(0x007AFF));
+                        if let Some(p) = dl_frac {
+                            draw_progress_ring(c, tile, p);
+                        }
+                        draw_squircle_shadow(c, tile, tr, light);
+                        draw_downloads_stack_icon(c, tile, tr, accent, light, is_hover, stack_open);
+                        if tray.downloads_active > 0 {
+                            draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue);
+                        }
+                        if stack_open {
+                            draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent, 0.95);
+                        }
+                    }
+                }
+                if let Some(&sr) = slot_rects.get(trash_idx) {
+                    let is_hover = hovered == Some(trash_idx);
+                    let is_press = pressed == Some(trash_idx);
                     let tile = if is_press { sr.inset(1.5, 1.5) } else { sr };
                     let tr = (tile.w * 0.25).clamp(8.0, 15.0);
-                    let accent = look.accent.unwrap_or(Color::hex(0x007AFF));
-                    if let Some(p) = dl_frac {
-                        draw_progress_ring(c, tile, p);
-                    }
                     draw_squircle_shadow(c, tile, tr, light);
-                    draw_downloads_stack_icon(c, tile, tr, accent, light, is_hover, stack_open);
-                    if tray.downloads_active > 0 {
-                        draw_dock_badge(c, tile, tray.downloads_active, DockBadgeStyle::Blue);
-                    }
-                    if stack_open {
-                        draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), 2.1, accent, 0.95);
-                    }
+                    draw_trash_slot_icon(c, tile, tr, light, is_hover);
                 }
 
                 if let Some(sx) = sep3_x {
@@ -2231,12 +2426,21 @@ fn draw_dock(
                 let tip: Option<(&str, Rect)> = if let Some(i) = hovered {
                     let label = if i < ANCHOR_SLOTS.len() {
                         Some(ANCHOR_SLOTS[i].label)
-                    } else if i == dl_idx {
+                    } else if Some(i) == dl_idx {
                         Some("Downloads")
+                    } else if i == trash_idx {
+                        Some("Trash")
                     } else {
                         apps.get(i - ANCHOR_SLOTS.len()).map(|a| a.name.as_str())
                     };
                     label.zip(slot_rects.get(i).copied())
+                } else if let (Some(i), Some(dx)) = (pressed, drag_x) {
+                    let label = if drag_out {
+                        Some("Remove from Dock")
+                    } else {
+                        apps.get(i.saturating_sub(ANCHOR_SLOTS.len())).map(|a| a.name.as_str())
+                    };
+                    label.zip(slot_rects.get(i).map(|sr| Rect::new(dx - sr.w * 0.5, sr.y - if drag_out { 28.0 } else { 4.0 }, sr.w, sr.h)))
                 } else if let (Some(z), Some(tr)) = (hovered_tray, tray_rect) {
                     let (weather_r, status_r, clock_r) = tray_zone_rects(tr, tray);
                     match z {
@@ -2299,7 +2503,7 @@ fn draw_dock(
 }
 
 /// Show the dock's right-click context menu without permanently stealing focus.
-pub fn show_menu(owner: HWND, pt: POINT, tucked: bool, app: Option<&RunningApp>) -> Option<DockCmd> {
+pub fn show_menu(owner: HWND, pt: POINT, tucked: bool, target: &DockMenuTarget) -> Option<DockCmd> {
     unsafe {
         let menu = CreatePopupMenu().ok()?;
         let mut cmds: Vec<(usize, DockCmd)> = Vec::new();
@@ -2312,42 +2516,51 @@ pub fn show_menu(owner: HWND, pt: POINT, tucked: bool, app: Option<&RunningApp>)
             cmds.push((id, cmd));
         };
 
-        if let Some(app) = app {
-            if app.running {
-                for &(h, ref title) in app.windows.iter().take(12) {
-                    let t: String = if title.chars().count() > 48 {
-                        title.chars().take(47).chain(Some('…')).collect()
+        match target {
+            DockMenuTarget::App(app) => {
+                if app.running {
+                    for &(h, ref title) in app.windows.iter().take(12) {
+                        let t: String = if title.chars().count() > 48 {
+                            title.chars().take(47).chain(Some('…')).collect()
+                        } else {
+                            title.clone()
+                        };
+                        push_item(&t, DockCmd::ActivateWindow(h));
+                    }
+                    if !app.windows.is_empty() {
+                        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                    }
+                }
+                if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                    push_item(if app.running { "New Window" } else { "Open" }, DockCmd::LaunchApp(spec.clone()));
+                    if app.pinned {
+                        push_item("Remove from Dock", DockCmd::RemoveFromDock(spec));
                     } else {
-                        title.clone()
-                    };
-                    push_item(&t, DockCmd::ActivateWindow(h));
+                        push_item("Keep in Dock", DockCmd::KeepInDock(spec));
+                    }
                 }
-                if !app.windows.is_empty() {
-                    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                if let Some(exe) = app.exe.as_ref().filter(|e| std::path::Path::new(e).exists()) {
+                    push_item("Show in Explorer", DockCmd::ShowInExplorer(exe.clone()));
                 }
-            }
-            if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
-                push_item(if app.running { "New Window" } else { "Open" }, DockCmd::LaunchApp(spec.clone()));
-                if app.pinned {
-                    push_item("Remove from Dock", DockCmd::RemoveFromDock(spec));
-                } else {
-                    push_item("Keep in Dock", DockCmd::KeepInDock(spec));
-                }
-            }
-            if let Some(exe) = app.exe.as_ref().filter(|e| std::path::Path::new(e).exists()) {
-                push_item("Show in Explorer", DockCmd::ShowInExplorer(exe.clone()));
-            }
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            push_item("Dock Settings…", DockCmd::OpenSettings);
-            if app.running {
                 let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-                push_item("Quit", DockCmd::QuitApp(app.windows.clone(), app.hwnd));
+                push_item("Dock Settings…", DockCmd::OpenSettings);
+                if app.running {
+                    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                    push_item("Quit", DockCmd::QuitApp(app.windows.clone(), app.hwnd));
+                }
             }
-        } else {
-            push_item(if tucked { "Show shelf" } else { "Hide shelf" }, DockCmd::ToggleTuck);
-            push_item("Dock Settings…", DockCmd::OpenSettings);
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            push_item("Turn off Bottom Dock", DockCmd::DisableDock);
+            DockMenuTarget::Trash => {
+                push_item("Open Recycle Bin", DockCmd::OpenRecycleBin);
+                push_item("Empty Recycle Bin", DockCmd::EmptyRecycleBin);
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                push_item("Dock Settings…", DockCmd::OpenSettings);
+            }
+            DockMenuTarget::Shelf => {
+                push_item(if tucked { "Show shelf" } else { "Hide shelf" }, DockCmd::ToggleTuck);
+                push_item("Dock Settings…", DockCmd::OpenSettings);
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                push_item("Turn off Bottom Dock", DockCmd::DisableDock);
+            }
         }
 
         let prev = GetForegroundWindow();
@@ -3772,5 +3985,23 @@ mod tests {
             ),
             Some(1)
         );
+    }
+
+    #[test]
+    fn title_badges_trash_slot_and_drag_reorder_work() {
+        use crate::services::dock_apps::badge_from_title;
+        assert_eq!(badge_from_title("(12) Inbox - Gmail"), 12);
+        assert_eq!(badge_from_title("(99+) WhatsApp"), 99);
+        assert_eq!(badge_from_title("[3] Slack - General"), 3);
+        assert_eq!(badge_from_title(" Halo Island"), 0);
+        assert_eq!(badge_from_title("(not a number) Title"), 0);
+
+        // Trash slot is always included after Downloads stack (stack_count = 2 when show_downloads = true, 1 when false).
+        let scales = vec![1.0f32; 11];
+        let (shelf, sep1, sep2, rects) = layout_slots_with_stack(1360.0, 6, 3, 2, &scales, 0.0);
+        assert!(sep1.is_some() && sep2.is_some());
+        assert_eq!(rects.len(), 11);
+        assert!(rects[10].x > rects[9].right(), "Trash slot must sit to the right of Downloads stack");
+        assert!(rects[10].right() <= shelf.right() - SHELF_PAD_X + 0.5);
     }
 }

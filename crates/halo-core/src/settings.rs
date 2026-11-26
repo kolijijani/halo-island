@@ -210,6 +210,9 @@ pub struct Settings {
     /// Pinned app specs (`shell:AppsFolder\...`, `.lnk`, or `.exe`) shown in the dock even when not running.
     #[serde(default = "default_dock_pinned")]
     pub dock_pinned: Vec<String>,
+    /// Up to 3 recently run unpinned app specs shown after the pinned section.
+    #[serde(default)]
+    pub dock_recent: Vec<String>,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -486,6 +489,7 @@ impl Default for Settings {
             dock_show_downloads: true,
             dock_show_tray: true,
             dock_pinned: default_dock_pinned(),
+            dock_recent: Vec::new(),
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

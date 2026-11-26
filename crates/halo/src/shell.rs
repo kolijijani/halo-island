@@ -173,6 +173,44 @@ pub fn open_dock_spec(spec: &str) {
     }
 }
 
+/// Move `files` to the Windows Recycle Bin asynchronously (undoable, respects Explorer confirmation settings).
+pub fn recycle_files(files: &[String]) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
+    let mut from: Vec<u16> = Vec::new();
+    for f in files {
+        let trimmed = f.trim();
+        if !trimmed.is_empty() {
+            from.extend(trimmed.encode_utf16());
+            from.push(0);
+        }
+    }
+    if from.is_empty() {
+        return;
+    }
+    from.push(0);
+    run("recycle", move || {
+        let mut op = SHFILEOPSTRUCTW {
+            wFunc: FO_DELETE,
+            pFrom: PCWSTR(from.as_ptr()),
+            fFlags: FOF_ALLOWUNDO.0 as u16,
+            ..Default::default()
+        };
+        unsafe {
+            let _ = SHFileOperationW(&mut op);
+        }
+    });
+}
+
+/// Empty the Windows Recycle Bin (`SHEmptyRecycleBinW`).
+pub fn empty_recycle_bin(owner: windows::Win32::Foundation::HWND) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::SHEmptyRecycleBinW;
+    unsafe {
+        let _ = SHEmptyRecycleBinW(owner, PCWSTR::null(), 0);
+    }
+}
+
 /// Open the Claude app through its own link, `claude://` (asynchronously):
 /// the AI tab's Sign in, used once the app's settings are on this PC, so
 /// the link has the app to go to. It signs Claude Code in.
