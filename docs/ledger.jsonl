@@ -130,3 +130,6 @@
 {"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "open", "title": "Dock Phase 13: True Liquid Glass and Live WGC Backdrop parity", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795665740}
 {"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-13-true-liquid-glass-and-live", "who": "ag", "ts": 1795665740}
 {"id": "dock-phase-13-true-liquid-glass-and-live", "ev": "done", "owner": "ag", "who": "ag", "commit": "95e7e86", "note": "Shared monitor DXGI backdrop worker, secondary window capture exclusion, live Glass::frame on Dock, removed opaque overlay mud", "ts": 1795666484}
+{"id": "dock-phase-14-pin-unpin-apps-keep-in-doc", "ev": "open", "title": "Dock Phase 14: Pin/Unpin apps, Keep in Dock menu, AUMID matching & Settings UI", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795666723}
+{"id": "dock-phase-14-pin-unpin-apps-keep-in-doc", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-14-pin-unpin-apps-keep-in-doc", "who": "ag", "ts": 1795666723}
+{"id": "dock-phase-14-pin-unpin-apps-keep-in-doc", "ev": "done", "owner": "ag", "who": "ag", "commit": "bb85baf", "note": "Added dock_pinned in Settings, right-click Keep/Remove/Open/Quit menu, AUMID/Squirrel/profile matching, and Settings > Dock pin management", "ts": 1795667322}
