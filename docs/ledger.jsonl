@@ -192,3 +192,6 @@
 {"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "done", "owner": "ag", "who": "ag", "commit": "8484b68", "note": "ignore our own windows in AppEvent::Foreground and keep popovers topmost", "ts": 1795694976}
 {"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "doing", "owner": "ag", "branch": "ag/dock-fix-launchpad-flicker-and-outside-c-2", "who": "ag", "ts": 1795694987}
 {"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "done", "owner": "ag", "who": "ag", "commit": "8484b68", "note": "duplicate entry closed", "ts": 1795694987}
+{"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "open", "title": "Dock: smooth Genie restore curve, remove 4x MSAA choke and defer WinEvents", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795695907}
+{"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-7-dedicated-dock-settings-men", "who": "ag", "ts": 1795695907}
+{"id": "dock-smooth-genie-restore-curve-remove-4", "ev": "done", "owner": "ag", "who": "ag", "commit": "3e27051", "note": "Unified continuous Genie restore curve, removed full-screen 4x MSAA resolve choke, clamped initial/landed dt, and deferred DockAppsChanged during Genie", "ts": 1795696155}
