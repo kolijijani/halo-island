@@ -540,6 +540,29 @@ pub fn mag_scale(dist_x: f32, step: f32) -> f32 {
     }
 }
 
+/// Closest-center dock slot hit-test with hover hysteresis so sub-pixel magnification
+/// shifts cannot ping-pong `hovered` between two adjacent dock slots.
+pub fn slot_index_at(rects: &[Rect], p: Point, prev_hovered: Option<usize>) -> Option<usize> {
+    if let Some(prev) = prev_hovered {
+        if let Some(r) = rects.get(prev) {
+            if r.inset(-1.5, -6.0).contains(p) {
+                return Some(prev);
+            }
+        }
+    }
+    let mut best: Option<(usize, f32)> = None;
+    for (i, r) in rects.iter().enumerate() {
+        if r.inset(-2.5, -6.0).contains(p) {
+            let cx = r.x + r.w * 0.5;
+            let dist = (p.x - cx).abs();
+            if best.is_none_or(|(_, bd)| dist < bd) {
+                best = Some((i, dist));
+            }
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
 /// Single-row slot size in DIPs for `count` items inside `surf_w` DIPs:
 /// shrinks proportionally at high counts (e.g. 30 apps) so icons never wrap or clip.
 pub fn slot_metrics(surf_w: f32, count: usize) -> (f32, f32) {
@@ -751,7 +774,9 @@ fn slot_rect(shelf: Rect, index: usize, count: usize, surf_w: f32) -> Rect {
 }
 
 fn mag_spring(value: f32) -> Spring {
-    Spring::new(value, 460.0, 38.0)
+    // Critically damped (damping ~= 2 * sqrt(stiffness)) so magnification rises and
+    // settles smoothly without overshoot or rebound tremor on adjacent slots.
+    Spring::new(value, 420.0, 41.0)
 }
 
 const SLOT_SHIFT_EPS: f32 = 0.25;
@@ -1349,14 +1374,35 @@ impl Dock {
             self.cfg.slot_max(),
             self.cfg.shelf_h(),
         );
-        let icons_right = sep3_x.unwrap_or_else(|| rest_shelf.right());
-        let active_band = Rect::new(
-            rest_shelf.x - 16.0,
-            (rest_shelf.y - 36.0).max(0.0),
-            (icons_right - rest_shelf.x + 20.0).max(32.0),
-            rest_shelf.h + 44.0,
+        let cur_scales = self.current_scales();
+        let (cur_shelf, _, _, cur_sep3_x, cur_rects, _) = layout_slots_configured(
+            sw,
+            ANCHOR_SLOTS.len(),
+            app_len,
+            stack_n,
+            tray_w,
+            &cur_scales,
+            self.tuck.value,
+            self.cfg.slot_max(),
+            self.cfg.shelf_h(),
         );
-        if !active_band.contains(p) {
+        let rest_right = sep3_x.unwrap_or_else(|| rest_shelf.right());
+        let cur_right = cur_sep3_x.unwrap_or_else(|| cur_shelf.right());
+        let band_left = rest_shelf.x.min(cur_shelf.x) - 18.0;
+        let band_right = rest_right.max(cur_right) + 8.0;
+        let band_top = cur_rects
+            .iter()
+            .fold(rest_shelf.y, |m, r| m.min(r.y))
+            .min(rest_shelf.y)
+            - 16.0;
+        let band_bottom = rest_shelf.bottom().max(cur_shelf.bottom()) + 10.0;
+        let active_band = Rect::new(
+            band_left,
+            band_top.max(0.0),
+            (band_right - band_left).max(32.0),
+            (band_bottom - band_top.max(0.0)).max(32.0),
+        );
+        if self.hovered.is_none() && !active_band.contains(p) {
             self.reset_mag_targets(instant);
             return;
         }
@@ -1368,7 +1414,7 @@ impl Dock {
             let target = mag_scale(p.x - (r.x + r.w * 0.5), step);
             if instant {
                 self.scales[i].snap(target);
-            } else {
+            } else if (self.scales[i].target - target).abs() > 1e-3 {
                 self.scales[i].set_target(target);
             }
         }
@@ -1502,7 +1548,7 @@ impl Dock {
             self.cfg.slot_max(),
             self.cfg.shelf_h(),
         );
-        rects.iter().position(|r| r.inset(-3.0, -6.0).contains(p))
+        slot_index_at(&rects, p, self.hovered)
     }
 
     fn tray_zone_at(&self, p: Point) -> Option<DockTrayZone> {
@@ -6357,5 +6403,71 @@ mod tests {
         assert!((in_shelf.y - (base.y - 5.0)).abs() < 0.01);
         let pulled_out = dragged_slot_rect(base, Point::new(260.0, 20.0), true);
         assert!(pulled_out.y < in_shelf.y);
+    }
+
+    #[test]
+    fn multi_window_app_grouping_and_hover_stability() {
+        use crate::services::dock_apps::app_group_key;
+
+        // Two windows of the same desktop app must merge even if only one sets a window AUMID.
+        let k1 = app_group_key(
+            Some(r"C:\Program Files\App\app.exe"),
+            Some("Vendor.App.Main"),
+            Some("Vendor.App.Main"),
+            None,
+            0x101,
+        );
+        let k2 = app_group_key(Some(r"C:\Program Files\App\app.exe"), None, None, None, 0x202);
+        assert_eq!(k1, k2);
+
+        // Distinct Chromium PWAs and distinct profiles stay separated; UWP host exes still key on AUMID.
+        let pwa = app_group_key(
+            Some(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
+            Some("Chrome._crx_abcdef"),
+            Some("Chrome._crx_abcdef"),
+            None,
+            0x303,
+        );
+        let browser = app_group_key(
+            Some(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
+            Some("Chrome"),
+            None,
+            None,
+            0x404,
+        );
+        assert_ne!(pwa, browser);
+
+        let uwp1 = app_group_key(
+            Some(r"C:\Windows\System32\ApplicationFrameHost.exe"),
+            Some("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"),
+            None,
+            None,
+            0x501,
+        );
+        let uwp2 = app_group_key(
+            Some(r"C:\Windows\System32\ApplicationFrameHost.exe"),
+            Some("Microsoft.Windows.Photos_8wekyb3d8bbwe!App"),
+            None,
+            None,
+            0x502,
+        );
+        assert_ne!(uwp1, uwp2);
+
+        // Critically-damped mag_spring never overshoots target (`<= target + 1e-4`), avoiding hover tremor.
+        let mut ms = mag_spring(1.0);
+        ms.set_target(MAX_MAG);
+        for _ in 0..180 {
+            ms.step_eps(1.0 / 120.0, MAG_EPS);
+            assert!(ms.value <= MAX_MAG + 1e-4, "mag_spring overshot: {}", ms.value);
+        }
+        assert!(ms.is_settled_eps(MAG_EPS));
+
+        // Slot hit-testing breaks ties by closest center and honors hover hysteresis.
+        let rects = vec![
+            Rect::new(100.0, 70.0, 44.0, 44.0),
+            Rect::new(148.0, 70.0, 44.0, 44.0),
+        ];
+        assert_eq!(slot_index_at(&rects, Point::new(146.5, 92.0), None), Some(1));
+        assert_eq!(slot_index_at(&rects, Point::new(145.0, 92.0), Some(0)), Some(0));
     }
 }

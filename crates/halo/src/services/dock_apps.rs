@@ -303,37 +303,30 @@ impl DockAppsWatcher {
             });
         }
 
-        // 2. Match running windows against pinned items or group into unpinned running apps.
-        let mut by_key: HashMap<String, RunningApp> = HashMap::new();
+        // 2. Match running windows against pinned items (2-pass so learned pin EXEs
+        // catch sibling windows earlier in Z-order), then group remaining windows per app.
+        let mut unmatched: Vec<InspectedWin> = Vec::new();
         for w in raw_wins {
-            let is_fg = w.hwnd == fg;
-            let title_badge = badge_from_title(&w.title);
             if let Some(pin_idx) = best_pinned_match(&pinned_items, &w) {
-                let pin = &mut pinned_items[pin_idx];
-                if !pin.running {
-                    pin.running = true;
-                    pin.hwnd = w.hwnd;
-                    pin.minimized = w.minimized;
-                    pin.focused = is_fg;
-                    if pin.exe.is_none() {
-                        pin.exe = w.exe.clone();
-                    }
-                    if pin.icon.is_none() {
-                        pin.icon = self.cached_icon(&pin.key, w.hwnd, pin.exe.as_deref(), pin.launch.as_deref());
-                    }
-                } else if is_fg {
-                    pin.hwnd = w.hwnd;
-                    pin.focused = true;
-                    pin.minimized = w.minimized;
-                } else if pin.minimized && !w.minimized {
-                    pin.hwnd = w.hwnd;
-                    pin.minimized = false;
-                }
-                pin.badge = pin.badge.saturating_add(title_badge);
-                pin.windows.push((w.hwnd, w.title));
+                attach_window_to_app(&mut pinned_items[pin_idx], w, fg, &mut |key, hwnd, exe, launch| {
+                    self.cached_icon(key, hwnd, exe, launch)
+                });
+            } else {
+                unmatched.push(w);
+            }
+        }
+
+        let mut by_key: HashMap<String, RunningApp> = HashMap::new();
+        for w in unmatched {
+            if let Some(pin_idx) = best_pinned_match(&pinned_items, &w) {
+                attach_window_to_app(&mut pinned_items[pin_idx], w, fg, &mut |key, hwnd, exe, launch| {
+                    self.cached_icon(key, hwnd, exe, launch)
+                });
                 continue;
             }
 
+            let is_fg = w.hwnd == fg;
+            let title_badge = badge_from_title(&w.title);
             let run_id = running_identity(&w);
             let key = format!("run:{run_id}");
             let launch = match (&w.aumid, &w.exe) {
@@ -377,6 +370,35 @@ impl DockAppsWatcher {
                     progress: None,
                 },
             );
+        }
+
+        // If a desktop exe has one profiled window group (e.g. Chrome Default) plus a
+        // profile-less secondary window (e.g. Incognito/dialog), fold them into one icon.
+        let plain_keys: Vec<String> = by_key
+            .keys()
+            .filter(|k| !k.contains("#profile:") && !k.contains("._crx_"))
+            .cloned()
+            .collect();
+        for pk in plain_keys {
+            let prefix = format!("{pk}#profile:");
+            let mut prof_matches: Vec<String> = by_key
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .cloned()
+                .collect();
+            if prof_matches.len() == 1 {
+                if let Some(extra) = by_key.remove(&pk) {
+                    if let Some(target) = by_key.get_mut(&prof_matches.remove(0)) {
+                        if extra.focused || (target.minimized && !extra.minimized) {
+                            target.hwnd = extra.hwnd;
+                            target.focused |= extra.focused;
+                            target.minimized &= extra.minimized;
+                        }
+                        target.badge = target.badge.saturating_add(extra.badge);
+                        target.windows.extend(extra.windows);
+                    }
+                }
+            }
         }
 
         // Maintain stable left-to-right ordering for unpinned running apps.
@@ -696,6 +718,16 @@ unsafe extern "system" fn on_win_event(
     if is_obj && (id_object != OBJID_WINDOW.0 || id_child != 0) {
         return;
     }
+    if is_obj {
+        let mut pid = 0u32;
+        unsafe {
+            let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        }
+        let is_self = pid != 0 && HOOK.with(|h| h.borrow().as_ref().is_some_and(|st| st.self_pid == pid));
+        if is_self {
+            return;
+        }
+    }
     // Ignore child controls when still alive.
     if event != EVENT_OBJECT_DESTROY {
         let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
@@ -875,16 +907,99 @@ fn best_pinned_match(items: &[RunningApp], w: &InspectedWin) -> Option<usize> {
     owner
 }
 
-fn running_identity(w: &InspectedWin) -> String {
-    if let Some(profile) = &w.profile_directory {
-        let app = w.aumid.as_deref().or(w.exe.as_deref()).unwrap_or("unknown");
-        return format!("{app}#profile:{profile}").to_ascii_lowercase();
+fn attach_window_to_app<F>(pin: &mut RunningApp, w: InspectedWin, fg: HWND, cached_icon: &mut F)
+where
+    F: FnMut(&str, HWND, Option<&str>, Option<&str>) -> Option<Image>,
+{
+    let is_fg = w.hwnd == fg;
+    let title_badge = badge_from_title(&w.title);
+    if !pin.running {
+        pin.running = true;
+        pin.hwnd = w.hwnd;
+        pin.minimized = w.minimized;
+        pin.focused = is_fg;
+        if pin.exe.is_none() {
+            pin.exe = w.exe.clone();
+        }
+        if pin.icon.is_none() {
+            pin.icon = cached_icon(&pin.key, w.hwnd, pin.exe.as_deref(), pin.launch.as_deref());
+        }
+    } else if is_fg {
+        pin.hwnd = w.hwnd;
+        pin.focused = true;
+        pin.minimized = w.minimized;
+    } else if pin.minimized && !w.minimized {
+        pin.hwnd = w.hwnd;
+        pin.minimized = false;
     }
-    w.aumid
-        .clone()
-        .or_else(|| w.exe.clone())
-        .unwrap_or_else(|| format!("hwnd:{:#x}", w.hwnd.0 as usize))
+    pin.badge = pin.badge.saturating_add(title_badge);
+    pin.windows.push((w.hwnd, w.title));
+}
+
+fn is_generic_host_exe(exe: &str) -> bool {
+    let name = std::path::Path::new(exe)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "applicationframehost.exe"
+            | "rundll32.exe"
+            | "dllhost.exe"
+            | "conhost.exe"
+            | "javaw.exe"
+            | "java.exe"
+            | "python.exe"
+            | "pythonw.exe"
+            | "electron.exe"
+            | "wwahost.exe"
+    )
+}
+
+fn is_pwa_aumid(aumid: Option<&str>) -> bool {
+    aumid.is_some_and(|id| id.contains("._crx_") || id.contains("._CRX_"))
+}
+
+pub fn app_group_key(
+    exe: Option<&str>,
+    aumid: Option<&str>,
+    window_aumid: Option<&str>,
+    profile_directory: Option<&str>,
+    hwnd_raw: usize,
+) -> String {
+    if is_pwa_aumid(window_aumid) {
+        let base = window_aumid.unwrap_or("pwa");
+        if let Some(profile) = profile_directory {
+            return format!("{base}#profile:{profile}").to_ascii_lowercase();
+        }
+        return base.to_ascii_lowercase();
+    }
+    if let Some(profile) = profile_directory {
+        let base = exe
+            .filter(|e| !is_generic_host_exe(e))
+            .or(aumid)
+            .or(exe)
+            .unwrap_or("unknown");
+        return format!("{base}#profile:{profile}").to_ascii_lowercase();
+    }
+    if let Some(e) = exe.filter(|e| !is_generic_host_exe(e)) {
+        return e.to_ascii_lowercase();
+    }
+    aumid
+        .map(|s| s.to_string())
+        .or_else(|| exe.map(|s| s.to_string()))
+        .unwrap_or_else(|| format!("hwnd:{hwnd_raw:#x}"))
         .to_ascii_lowercase()
+}
+
+fn running_identity(w: &InspectedWin) -> String {
+    app_group_key(
+        w.exe.as_deref(),
+        w.aumid.as_deref(),
+        w.window_aumid.as_deref(),
+        w.profile_directory.as_deref(),
+        w.hwnd.0 as usize,
+    )
 }
 
 fn inspect_window(hwnd: HWND, self_pid: u32) -> Option<InspectedWin> {
