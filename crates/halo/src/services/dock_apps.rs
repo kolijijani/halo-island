@@ -8,21 +8,32 @@ use crate::events::{AppEvent, EventSink};
 use crate::gfx::{Image, ImageData};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::ffi::OsString;
+use std::ffi::{c_void, OsString};
 use std::os::windows::ffi::OsStringExt;
-use windows::core::PWSTR;
-use windows::Win32::Foundation::{BOOL, CloseHandle, HMODULE, HWND, LPARAM, WPARAM};
+use windows::core::{Interface, BSTR, PCWSTR, PWSTR};
+use windows::Win32::Foundation::{BOOL, CloseHandle, HMODULE, HWND, LPARAM, SIZE, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BI_RGB, BITMAPINFO, BITMAPINFOHEADER,
-    DIB_RGB_COLORS, HGDIOBJ,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetObjectW, SelectObject, BI_RGB, BITMAP,
+    BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
 };
+use windows::Win32::Storage::EnhancedStorage::{
+    PKEY_AppUserModel_ID, PKEY_AppUserModel_RelaunchCommand, PKEY_Link_TargetParsingPath,
+};
+use windows::Win32::Storage::Packaging::Appx::GetApplicationUserModelId;
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
+use windows::Win32::UI::Shell::PropertiesSystem::{
+    IPropertyStore, SHGetPropertyStoreForWindow, SHGetPropertyStoreFromParsingName, GPS_DEFAULT, PROPERTYKEY,
+};
+use windows::Win32::UI::Shell::{
+    IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON,
+    SHGFI_LARGEICON, SIGDN_NORMALDISPLAY, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[link(name = "user32")]
@@ -48,7 +59,13 @@ pub struct RunningApp {
     pub key: String,
     pub name: String,
     pub exe: Option<String>,
+    pub aumid: Option<String>,
+    pub launch: Option<String>,
+    pub profile_directory: Option<String>,
+    pub pinned: bool,
+    pub running: bool,
     pub hwnd: HWND,
+    pub windows: Vec<(HWND, String)>,
     pub minimized: bool,
     pub focused: bool,
     pub icon: Option<Image>,
@@ -57,12 +74,46 @@ pub struct RunningApp {
     pub progress: Option<f32>,
 }
 
+impl Default for RunningApp {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            name: String::new(),
+            exe: None,
+            aumid: None,
+            launch: None,
+            profile_directory: None,
+            pinned: false,
+            running: true,
+            hwnd: HWND::default(),
+            windows: Vec::new(),
+            minimized: false,
+            focused: false,
+            icon: None,
+            thumb: None,
+            badge: 0,
+            progress: None,
+        }
+    }
+}
+
+impl PartialEq for RunningApp {
+    fn eq(&self, other: &Self) -> bool {
+        self.visual_eq(other)
+    }
+}
+
 impl RunningApp {
     pub fn visual_eq(&self, other: &Self) -> bool {
         self.key == other.key
             && self.name == other.name
             && self.exe == other.exe
+            && self.aumid == other.aumid
+            && self.launch == other.launch
+            && self.pinned == other.pinned
+            && self.running == other.running
             && self.hwnd == other.hwnd
+            && self.windows.len() == other.windows.len()
             && self.minimized == other.minimized
             && self.focused == other.focused
             && self.icon.as_ref().map(|i| i.id) == other.icon.as_ref().map(|i| i.id)
@@ -82,9 +133,20 @@ thread_local! {
     static HOOK: RefCell<Option<HookState>> = const { RefCell::new(None) };
 }
 
+#[derive(Clone)]
+struct PinnedMeta {
+    name: String,
+    exe: Option<String>,
+    aumid: Option<String>,
+    profile_directory: Option<String>,
+    icon: Option<Image>,
+}
+
 pub struct DockAppsWatcher {
     hooks: Vec<HWINEVENTHOOK>,
     icons: HashMap<String, Option<Image>>,
+    pinned_cache: HashMap<String, PinnedMeta>,
+    procs: HashMap<u32, (Option<String>, Option<String>)>,
     order: Vec<String>,
     self_pid: u32,
 }
@@ -112,18 +174,23 @@ impl DockAppsWatcher {
         Self {
             hooks,
             icons: HashMap::new(),
+            pinned_cache: HashMap::new(),
+            procs: HashMap::new(),
             order: Vec::new(),
             self_pid: unsafe { GetCurrentProcessId() },
         }
     }
 
-    /// Enumerate taskbar-eligible running apps in stable dock order.
-    pub fn refresh(&mut self) -> Vec<RunningApp> {
+    /// Enumerate pinned and running apps in stable dock order (pinned first, then unpinned running apps).
+    pub fn refresh_with_pinned(&mut self, pinned_specs: &[String]) -> Vec<RunningApp> {
         HOOK.with(|h| {
             if let Some(st) = h.borrow().as_ref() {
                 st.pending.set(false);
             }
         });
+        if self.procs.len() > 256 {
+            self.procs.clear();
+        }
 
         let fg = unsafe {
             let raw = GetForegroundWindow();
@@ -137,7 +204,7 @@ impl DockAppsWatcher {
 
         struct Collect {
             self_pid: u32,
-            raw: Vec<(HWND, String, String, Option<String>, bool)>,
+            raw: Vec<InspectedWin>,
         }
 
         unsafe extern "system" fn enum_cb(hwnd: HWND, lp: LPARAM) -> BOOL {
@@ -153,30 +220,116 @@ impl DockAppsWatcher {
             let _ = EnumWindows(Some(enum_cb), LPARAM(&mut ctx as *mut Collect as isize));
         }
 
-        // Group multiple windows of the same executable into one dock item.
-        let mut by_key: HashMap<String, RunningApp> = HashMap::new();
-        for (hwnd, key, name, exe_path, minimized) in ctx.raw {
-            let is_fg = hwnd == fg;
-            if let Some(existing) = by_key.get_mut(&key) {
-                if is_fg {
-                    existing.hwnd = hwnd;
-                    existing.focused = true;
-                    existing.minimized = minimized;
-                } else if existing.minimized && !minimized {
-                    existing.hwnd = hwnd;
-                    existing.minimized = false;
-                }
+        let mut raw_wins = ctx.raw;
+        for w in &mut raw_wins {
+            let (p_exe, p_aumid) = self.process_info(w.pid);
+            if w.exe.is_none() {
+                w.exe = p_exe;
+            }
+            if w.aumid.is_none() {
+                w.aumid = p_aumid;
+            }
+        }
+
+        // 1. Build pinned items in exact user-configured order.
+        let mut pinned_items: Vec<RunningApp> = Vec::with_capacity(pinned_specs.len());
+        for spec in pinned_specs {
+            let spec_trim = spec.trim();
+            if spec_trim.is_empty() {
                 continue;
             }
-            let icon = self.cached_icon(&key, hwnd, exe_path.as_deref());
+            let key = format!("pin:{}", spec_trim.to_ascii_lowercase());
+            if pinned_items.iter().any(|p| p.key == key) {
+                continue;
+            }
+            let meta = self.resolve_pinned_meta(&key, spec_trim);
+            if meta.icon.is_none() && meta.exe.is_none() && meta.aumid.is_none() {
+                continue;
+            }
+            pinned_items.push(RunningApp {
+                key,
+                name: meta.name,
+                exe: meta.exe,
+                aumid: meta.aumid,
+                launch: Some(spec_trim.to_string()),
+                profile_directory: meta.profile_directory,
+                pinned: true,
+                running: false,
+                hwnd: HWND::default(),
+                windows: Vec::new(),
+                minimized: false,
+                focused: false,
+                icon: meta.icon,
+                thumb: None,
+                badge: 0,
+                progress: None,
+            });
+        }
+
+        // 2. Match running windows against pinned items or group into unpinned running apps.
+        let mut by_key: HashMap<String, RunningApp> = HashMap::new();
+        for w in raw_wins {
+            let is_fg = w.hwnd == fg;
+            if let Some(pin_idx) = best_pinned_match(&pinned_items, &w) {
+                let pin = &mut pinned_items[pin_idx];
+                if !pin.running {
+                    pin.running = true;
+                    pin.hwnd = w.hwnd;
+                    pin.minimized = w.minimized;
+                    pin.focused = is_fg;
+                    if pin.exe.is_none() {
+                        pin.exe = w.exe.clone();
+                    }
+                    if pin.icon.is_none() {
+                        pin.icon = self.cached_icon(&pin.key, w.hwnd, pin.exe.as_deref(), pin.launch.as_deref());
+                    }
+                } else if is_fg {
+                    pin.hwnd = w.hwnd;
+                    pin.focused = true;
+                    pin.minimized = w.minimized;
+                } else if pin.minimized && !w.minimized {
+                    pin.hwnd = w.hwnd;
+                    pin.minimized = false;
+                }
+                pin.windows.push((w.hwnd, w.title));
+                continue;
+            }
+
+            let run_id = running_identity(&w);
+            let key = format!("run:{run_id}");
+            let launch = match (&w.aumid, &w.exe) {
+                (Some(a), _) => Some(format!("shell:AppsFolder\\{a}")),
+                (None, Some(e)) => Some(e.clone()),
+                _ => None,
+            };
+            if let Some(existing) = by_key.get_mut(&key) {
+                if is_fg {
+                    existing.hwnd = w.hwnd;
+                    existing.focused = true;
+                    existing.minimized = w.minimized;
+                } else if existing.minimized && !w.minimized {
+                    existing.hwnd = w.hwnd;
+                    existing.minimized = false;
+                }
+                existing.windows.push((w.hwnd, w.title));
+                continue;
+            }
+            let icon = self.cached_icon(&key, w.hwnd, w.exe.as_deref(), launch.as_deref());
+            let name = friendly_app_name(w.exe.as_deref(), w.aumid.as_deref(), &w.title);
             by_key.insert(
                 key.clone(),
                 RunningApp {
                     key,
                     name,
-                    exe: exe_path,
-                    hwnd,
-                    minimized,
+                    exe: w.exe,
+                    aumid: w.aumid,
+                    launch,
+                    profile_directory: w.profile_directory,
+                    pinned: false,
+                    running: true,
+                    hwnd: w.hwnd,
+                    windows: vec![(w.hwnd, w.title)],
+                    minimized: w.minimized,
                     focused: is_fg,
                     icon,
                     thumb: None,
@@ -186,8 +339,7 @@ impl DockAppsWatcher {
             );
         }
 
-        // Maintain stable left-to-right ordering: keep existing apps in place,
-        // drop closed ones, append newly opened apps at the end.
+        // Maintain stable left-to-right ordering for unpinned running apps.
         self.order.retain(|k| by_key.contains_key(k));
         for k in by_key.keys() {
             if !self.order.iter().any(|o| o == k) {
@@ -195,21 +347,88 @@ impl DockAppsWatcher {
             }
         }
 
-        self.order
-            .iter()
-            .filter_map(|k| by_key.remove(k))
-            .take(MAX_APPS)
-            .collect()
+        let mut out = pinned_items;
+        for k in &self.order {
+            if out.len() >= MAX_APPS {
+                break;
+            }
+            if let Some(app) = by_key.remove(k) {
+                out.push(app);
+            }
+        }
+        out
     }
 
-    fn cached_icon(&mut self, key: &str, hwnd: HWND, exe_path: Option<&str>) -> Option<Image> {
+    fn process_info(&mut self, pid: u32) -> (Option<String>, Option<String>) {
+        if let Some(c) = self.procs.get(&pid) {
+            return c.clone();
+        }
+        let exe = process_exe_path(pid);
+        let aumid = process_aumid(pid);
+        let r = (exe, aumid);
+        self.procs.insert(pid, r.clone());
+        r
+    }
+
+    fn resolve_pinned_meta(&mut self, key: &str, spec: &str) -> PinnedMeta {
+        if let Some(hit) = self.pinned_cache.get(key) {
+            return hit.clone();
+        }
+        if self.pinned_cache.len() >= MAX_ICON_CACHE {
+            self.pinned_cache.clear();
+        }
+        const APPS_PREFIX: &str = "shell:AppsFolder\\";
+        let mut aumid = None;
+        let mut exe = None;
+        let mut profile_directory = None;
+        if spec.len() > APPS_PREFIX.len()
+            && spec.is_char_boundary(APPS_PREFIX.len())
+            && spec[..APPS_PREFIX.len()].eq_ignore_ascii_case(APPS_PREFIX)
+        {
+            let id = spec[APPS_PREFIX.len()..].to_string();
+            if let Some(t) = shell_link_target(spec).filter(|t| t.to_ascii_lowercase().ends_with(".exe")) {
+                exe = Some(t);
+            }
+            if id.eq_ignore_ascii_case("Microsoft.Windows.Explorer") {
+                let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
+                exe = Some(format!("{windir}\\explorer.exe"));
+            }
+            aumid = Some(id);
+        } else if spec.to_ascii_lowercase().ends_with(".lnk") {
+            aumid = shell_item_aumid(spec);
+            exe = shell_link_target(spec);
+            let (sc_aumid, sc_prof) = shortcut_identity(spec);
+            aumid = sc_aumid.or(aumid);
+            profile_directory = sc_prof;
+        } else {
+            exe = Some(spec.to_string());
+        }
+
+        let icon = extract_app_icon(HWND::default(), exe.as_deref(), Some(spec));
+        let mut name = shell_display_name(spec)
+            .unwrap_or_else(|| friendly_app_name(exe.as_deref(), aumid.as_deref(), spec));
+        if exe.is_some() && name.to_ascii_lowercase().ends_with(".exe") {
+            name = friendly_app_name(exe.as_deref(), None, &name);
+        }
+        let meta = PinnedMeta {
+            name,
+            exe,
+            aumid,
+            profile_directory,
+            icon,
+        };
+        self.pinned_cache.insert(key.to_string(), meta.clone());
+        meta
+    }
+
+    fn cached_icon(&mut self, key: &str, hwnd: HWND, exe_path: Option<&str>, spec: Option<&str>) -> Option<Image> {
         if let Some(hit) = self.icons.get(key) {
             return hit.clone();
         }
         if self.icons.len() >= MAX_ICON_CACHE {
             self.icons.clear();
         }
-        let img = extract_app_icon(hwnd, exe_path);
+        let img = extract_app_icon(hwnd, exe_path, spec);
         self.icons.insert(key.to_string(), img.clone());
         img
     }
@@ -276,7 +495,169 @@ pub fn focus_window(hwnd: HWND) {
     }
 }
 
-fn inspect_window(hwnd: HWND, self_pid: u32) -> Option<(HWND, String, String, Option<String>, bool)> {
+/// Send `WM_CLOSE` to all windows belonging to a running app in the dock.
+pub fn close_windows(windows: &[(HWND, String)], primary: HWND) {
+    unsafe {
+        if windows.is_empty() {
+            if !primary.is_invalid() && IsWindow(primary).as_bool() {
+                let _ = PostMessageW(primary, WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+            return;
+        }
+        for &(h, _) in windows {
+            if !h.is_invalid() && IsWindow(h).as_bool() {
+                let _ = PostMessageW(h, WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+}
+
+/// Extract Chromium's explicitly selected profile directory from launch arguments.
+pub fn extract_profile_directory(args: &str) -> Option<String> {
+    let mut args = args.trim().chars().peekable();
+    while args.peek().is_some() {
+        while args.peek().is_some_and(|c| c.is_whitespace()) {
+            args.next();
+        }
+        let mut token = String::new();
+        let mut quote = None;
+        while let Some(&c) = args.peek() {
+            if let Some(q) = quote {
+                args.next();
+                if c == q {
+                    quote = None;
+                } else {
+                    token.push(c);
+                }
+            } else if c == '"' || c == '\'' {
+                quote = Some(c);
+                args.next();
+            } else if c.is_whitespace() {
+                break;
+            } else {
+                token.push(c);
+                args.next();
+            }
+        }
+        if let Some((key, value)) = token.split_once('=') {
+            if key.eq_ignore_ascii_case("--profile-directory") && !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Squirrel apps are pinned through `...\App\Update.exe` while their windows belong to `...\App\app-1.2.3\App.exe`.
+pub fn launcher_of(pinned: &str, running: &str) -> bool {
+    let p = std::path::Path::new(pinned);
+    let (Some(dir), Some(file)) = (p.parent(), p.file_name()) else {
+        return false;
+    };
+    let prefix = format!("{}\\", dir.to_string_lossy());
+    if running.len() <= prefix.len()
+        || !running.is_char_boundary(prefix.len())
+        || !running[..prefix.len()].eq_ignore_ascii_case(&prefix)
+    {
+        return false;
+    }
+    let file = file.to_string_lossy();
+    let run_file = std::path::Path::new(running)
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    file.eq_ignore_ascii_case("Update.exe") || file.eq_ignore_ascii_case(&run_file)
+}
+
+pub fn match_score(
+    pin_exe: Option<&str>,
+    pin_aumid: Option<&str>,
+    pin_profile: Option<&str>,
+    win_exe: Option<&str>,
+    win_aumid: Option<&str>,
+    win_window_aumid: Option<&str>,
+    win_profile: Option<&str>,
+) -> Option<u8> {
+    let same_exe = pin_exe
+        .zip(win_exe)
+        .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b) || launcher_of(a, b));
+    if let Some(profile) = pin_profile {
+        if !same_exe {
+            return None;
+        }
+        if let Some(actual) = win_profile {
+            return profile.eq_ignore_ascii_case(actual).then_some(4);
+        }
+        if let Some((_, suffix)) = win_window_aumid.and_then(|s| s.rsplit_once('.')) {
+            if profile.replace(' ', "").eq_ignore_ascii_case(suffix) {
+                return Some(4);
+            }
+        }
+    }
+    if let Some(pin) = pin_aumid {
+        if win_window_aumid.is_some_and(|id| pin.eq_ignore_ascii_case(id)) {
+            return Some(3);
+        }
+        if win_window_aumid.is_none() && win_aumid.is_some_and(|id| pin.eq_ignore_ascii_case(id)) {
+            return Some(2);
+        }
+    }
+    if pin_profile.is_some() && (win_window_aumid.is_some() || win_profile.is_some()) {
+        return None;
+    }
+    if same_exe {
+        return Some(1);
+    }
+    None
+}
+
+struct InspectedWin {
+    hwnd: HWND,
+    pid: u32,
+    exe: Option<String>,
+    aumid: Option<String>,
+    window_aumid: Option<String>,
+    profile_directory: Option<String>,
+    title: String,
+    minimized: bool,
+}
+
+fn best_pinned_match(items: &[RunningApp], w: &InspectedWin) -> Option<usize> {
+    let (mut high, mut owner) = (0u8, None);
+    for (i, it) in items.iter().enumerate().filter(|(_, it)| it.pinned) {
+        if let Some(score) = match_score(
+            it.exe.as_deref(),
+            it.aumid.as_deref(),
+            it.profile_directory.as_deref(),
+            w.exe.as_deref(),
+            w.aumid.as_deref(),
+            w.window_aumid.as_deref(),
+            w.profile_directory.as_deref(),
+        ) {
+            if score > high {
+                high = score;
+                owner = Some(i);
+            } else if score == high {
+                owner = None;
+            }
+        }
+    }
+    owner
+}
+
+fn running_identity(w: &InspectedWin) -> String {
+    if let Some(profile) = &w.profile_directory {
+        let app = w.aumid.as_deref().or(w.exe.as_deref()).unwrap_or("unknown");
+        return format!("{app}#profile:{profile}").to_ascii_lowercase();
+    }
+    w.aumid
+        .clone()
+        .or_else(|| w.exe.clone())
+        .unwrap_or_else(|| format!("hwnd:{:#x}", w.hwnd.0 as usize))
+        .to_ascii_lowercase()
+}
+
+fn inspect_window(hwnd: HWND, self_pid: u32) -> Option<InspectedWin> {
     unsafe {
         if !IsWindowVisible(hwnd).as_bool() {
             return None;
@@ -336,17 +717,44 @@ fn inspect_window(hwnd: HWND, self_pid: u32) -> Option<(HWND, String, String, Op
             return None;
         }
 
-        let exe_path = process_exe_path(pid);
-        let key = exe_path
-            .as_ref()
-            .map(|p| p.to_ascii_lowercase())
-            .unwrap_or_else(|| format!("hwnd:{:#x}", hwnd.0 as usize));
-        let name = exe_path
-            .as_deref()
-            .and_then(friendly_exe_name)
-            .unwrap_or_else(|| shorten_title(&title));
+        let (window_aumid, relaunch) = window_property_identity(hwnd);
+        let mut aumid = window_aumid.clone();
+        let mut exe = None;
+        if cls == "ApplicationFrameWindow" {
+            let mut inner = (pid, 0u32);
+            unsafe extern "system" fn child_cb(c: HWND, l: LPARAM) -> BOOL {
+                let st = unsafe { &mut *(l.0 as *mut (u32, u32)) };
+                let mut cp = 0u32;
+                unsafe { GetWindowThreadProcessId(c, Some(&mut cp)) };
+                if cp != 0 && cp != st.0 {
+                    st.1 = cp;
+                    return BOOL(0);
+                }
+                BOOL(1)
+            }
+            let _ = EnumChildWindows(hwnd, Some(child_cb), LPARAM(&mut inner as *mut _ as isize));
+            if inner.1 != 0 {
+                pid = inner.1;
+                exe = process_exe_path(pid);
+                aumid = aumid.or_else(|| process_aumid(pid));
+            }
+            if aumid.is_none() {
+                return None;
+            }
+        }
+
+        let profile_directory = relaunch.as_deref().and_then(extract_profile_directory);
         let minimized = IsIconic(hwnd).as_bool();
-        Some((hwnd, key, name, exe_path, minimized))
+        Some(InspectedWin {
+            hwnd,
+            pid,
+            exe,
+            aumid,
+            window_aumid,
+            profile_directory,
+            title,
+            minimized,
+        })
     }
 }
 
@@ -385,7 +793,190 @@ fn shorten_title(title: &str) -> String {
     s.chars().take(28).collect()
 }
 
-fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>) -> Option<Image> {
+fn process_aumid(pid: u32) -> Option<String> {
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 512];
+        let mut len = buf.len() as u32;
+        let ok = GetApplicationUserModelId(h, &mut len, PWSTR(buf.as_mut_ptr())).is_ok();
+        let _ = CloseHandle(h);
+        if !ok || len == 0 {
+            return None;
+        }
+        let n = buf.iter().position(|&c| c == 0).unwrap_or(len as usize);
+        let s = String::from_utf16_lossy(&buf[..n]);
+        (!s.is_empty()).then_some(s)
+    }
+}
+
+fn read_prop_string(ps: &IPropertyStore, key: &PROPERTYKEY) -> Option<String> {
+    unsafe {
+        let pv = ps.GetValue(key).ok()?;
+        let s = BSTR::try_from(&pv).ok()?.to_string();
+        (!s.is_empty()).then_some(s)
+    }
+}
+
+fn store_prop_string(parsing: &str, key: &PROPERTYKEY) -> Option<String> {
+    unsafe {
+        let w: Vec<u16> = parsing.encode_utf16().chain(Some(0)).collect();
+        let ps: IPropertyStore = SHGetPropertyStoreFromParsingName(PCWSTR(w.as_ptr()), None, GPS_DEFAULT).ok()?;
+        read_prop_string(&ps, key)
+    }
+}
+
+fn shell_link_target(parsing: &str) -> Option<String> {
+    store_prop_string(parsing, &PKEY_Link_TargetParsingPath)
+}
+
+fn shell_item_aumid(parsing: &str) -> Option<String> {
+    store_prop_string(parsing, &PKEY_AppUserModel_ID)
+}
+
+fn window_property_identity(h: HWND) -> (Option<String>, Option<String>) {
+    unsafe {
+        let Ok(ps) = SHGetPropertyStoreForWindow::<_, IPropertyStore>(h) else {
+            return (None, None);
+        };
+        (
+            read_prop_string(&ps, &PKEY_AppUserModel_ID),
+            read_prop_string(&ps, &PKEY_AppUserModel_RelaunchCommand),
+        )
+    }
+}
+
+fn shortcut_identity(parsing: &str) -> (Option<String>, Option<String>) {
+    use windows::Win32::System::Com::{CoCreateInstance, IPersistFile, CLSCTX_INPROC_SERVER, STGM_READ};
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    unsafe {
+        let Ok(link) = CoCreateInstance::<_, IShellLinkW>(&ShellLink, None, CLSCTX_INPROC_SERVER) else {
+            return (None, None);
+        };
+        let w: Vec<u16> = parsing.encode_utf16().chain(Some(0)).collect();
+        let Ok(persist) = link.cast::<IPersistFile>() else {
+            return (None, None);
+        };
+        if persist.Load(PCWSTR(w.as_ptr()), STGM_READ).is_err() {
+            return (None, None);
+        }
+        let aumid = link
+            .cast::<IPropertyStore>()
+            .ok()
+            .and_then(|store| read_prop_string(&store, &PKEY_AppUserModel_ID));
+        let mut args = [0u16; 2048];
+        let args = link.GetArguments(&mut args).ok().map(|_| {
+            let n = args.iter().position(|&c| c == 0).unwrap_or(args.len());
+            String::from_utf16_lossy(&args[..n])
+        });
+        (aumid, args.as_deref().and_then(extract_profile_directory))
+    }
+}
+
+pub fn shell_display_name(parsing: &str) -> Option<String> {
+    unsafe {
+        let w: Vec<u16> = parsing.encode_utf16().chain(Some(0)).collect();
+        let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(w.as_ptr()), None).ok()?;
+        let p = item.GetDisplayName(SIGDN_NORMALDISPLAY).ok()?;
+        let s = p.to_string().ok();
+        CoTaskMemFree(Some(p.0 as *const c_void));
+        s.filter(|s| !s.trim().is_empty())
+    }
+}
+
+pub fn friendly_app_name(exe: Option<&str>, aumid: Option<&str>, fallback: &str) -> String {
+    if let Some(a) = aumid {
+        if let Some(n) = shell_display_name(&format!("shell:AppsFolder\\{a}")) {
+            return n;
+        }
+    }
+    if let Some(e) = exe {
+        if let Some(n) = shell_display_name(e) {
+            return n.trim_end_matches(".exe").to_string();
+        }
+        if let Some(n) = friendly_exe_name(e) {
+            return n;
+        }
+    }
+    shorten_title(fallback)
+}
+
+fn shell_parsing_icon(parsing: &str, max_px: u32) -> Option<Image> {
+    unsafe {
+        let w: Vec<u16> = parsing.encode_utf16().chain(Some(0)).collect();
+        let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(w.as_ptr()), None).ok()?;
+        let f: IShellItemImageFactory = item.cast().ok()?;
+        let hbm = f
+            .GetImage(
+                SIZE {
+                    cx: max_px as i32,
+                    cy: max_px as i32,
+                },
+                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+            )
+            .ok()?;
+        let img = hbitmap_to_image(hbm, max_px);
+        let _ = DeleteObject(HGDIOBJ(hbm.0));
+        img
+    }
+}
+
+unsafe fn hbitmap_to_image(hbm: HBITMAP, target: u32) -> Option<Image> {
+    let mut bm = BITMAP::default();
+    if GetObjectW(
+        HGDIOBJ(hbm.0),
+        std::mem::size_of::<BITMAP>() as i32,
+        Some(&mut bm as *mut _ as *mut c_void),
+    ) == 0
+        || bm.bmBits.is_null()
+        || bm.bmBitsPixel != 32
+    {
+        return None;
+    }
+    let (w, h, stride) = (
+        bm.bmWidth as usize,
+        bm.bmHeight.unsigned_abs() as usize,
+        bm.bmWidthBytes as usize,
+    );
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let mut v = vec![0u8; w * h * 4];
+    let src = bm.bmBits as *const u8;
+    for y in 0..h {
+        let sy = if bm.bmHeight > 0 { h - 1 - y } else { y };
+        std::ptr::copy_nonoverlapping(src.add(sy * stride), v.as_mut_ptr().add(y * w * 4), w * 4);
+    }
+    for p in v.chunks_exact_mut(4) {
+        let a = p[3];
+        p[0] = p[0].min(a);
+        p[1] = p[1].min(a);
+        p[2] = p[2].min(a);
+    }
+    if w as u32 <= target && h as u32 <= target {
+        return Some(ImageData::new(w as u32, h as u32, v));
+    }
+    let tw = target as usize;
+    let mut out = vec![0u8; tw * tw * 4];
+    for ty in 0..tw {
+        let sy = (ty * h / tw).min(h - 1);
+        for tx in 0..tw {
+            let sx = (tx * w / tw).min(w - 1);
+            let si = (sy * w + sx) * 4;
+            let di = (ty * tw + tx) * 4;
+            out[di..di + 4].copy_from_slice(&v[si..si + 4]);
+        }
+    }
+    Some(ImageData::new(target, target, out))
+}
+
+fn extract_app_icon(hwnd: HWND, exe_path: Option<&str>, spec: Option<&str>) -> Option<Image> {
+    if let Some(s) = spec {
+        if s.len() > 6 && s[..6].eq_ignore_ascii_case("shell:") || s.to_ascii_lowercase().ends_with(".lnk") {
+            if let Some(img) = shell_parsing_icon(s, ICON_PX) {
+                return Some(img);
+            }
+        }
+    }
     unsafe {
         let mut owned = false;
         let mut hicon = HICON::default();

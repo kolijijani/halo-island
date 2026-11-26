@@ -141,6 +141,18 @@ fn version_zero() -> u32 {
     0
 }
 
+pub fn default_dock_pinned() -> Vec<String> {
+    vec![
+        r"shell:AppsFolder\Microsoft.Windows.Explorer".into(),
+        r"shell:AppsFolder\Chrome".into(),
+        r"shell:AppsFolder\Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows".into(),
+        r"shell:AppsFolder\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App".into(),
+        r"shell:AppsFolder\Microsoft.VisualStudioCode".into(),
+        r"shell:AppsFolder\com.squirrel.Discord.Discord".into(),
+        r"shell:AppsFolder\windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel".into(),
+    ]
+}
+
 fn bool_true() -> bool {
     true
 }
@@ -195,6 +207,9 @@ pub struct Settings {
     /// Show the System Tray & Control Center capsule on the right side of the dock.
     #[serde(default = "bool_true")]
     pub dock_show_tray: bool,
+    /// Pinned app specs (`shell:AppsFolder\...`, `.lnk`, or `.exe`) shown in the dock even when not running.
+    #[serde(default = "default_dock_pinned")]
+    pub dock_pinned: Vec<String>,
     pub monitor: MonitorChoice,
     /// Where the island sits along the top edge once dragged there: its
     /// centre as a share of the monitor's width (0 the left edge, 1 the
@@ -470,6 +485,7 @@ impl Default for Settings {
             dock_show_apps: true,
             dock_show_downloads: true,
             dock_show_tray: true,
+            dock_pinned: default_dock_pinned(),
             monitor: MonitorChoice::Primary,
             island_x: None,
             show_media_activity: true,

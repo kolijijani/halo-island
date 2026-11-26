@@ -106,8 +106,8 @@ thread_local! {
 pub enum Deferred {
     DragOut(Vec<String>),
     Menu(POINT),
-    /// Right-click context menu on the bottom dock (`(screen_pt, tucked)`).
-    DockMenu(POINT, bool),
+    /// Right-click context menu on the bottom dock (`(screen_pt, tucked, app_target)`).
+    DockMenu(POINT, bool, Option<services::dock_apps::RunningApp>),
     /// The header's "…": the tabs that didn't fit, at the pointer.
     TabMenu(Vec<PageKind>),
 }
@@ -413,9 +413,9 @@ fn run_deferred(d: Deferred) {
                 }
             });
         }
-        Deferred::DockMenu(pt, tucked) => {
+        Deferred::DockMenu(pt, tucked, app_target) => {
             let Some(helper) = with_app(|app| app.helper) else { return };
-            let cmd = crate::dock::show_menu(helper, pt, tucked);
+            let cmd = crate::dock::show_menu(helper, pt, tucked, app_target.as_ref());
             if let Some(cmd) = cmd {
                 let mut deferred = Vec::new();
                 with_app(|app| app.on_dock_menu(cmd, &mut deferred));
@@ -1895,7 +1895,7 @@ impl App {
                         d.set_config(&self.monitor, cfg);
                         d.set_fullscreen_hidden(self.fullscreen_hidden);
                         let mut watcher = services::dock_apps::DockAppsWatcher::start(self.sink.clone());
-                        d.set_apps(watcher.refresh());
+                        d.set_apps(watcher.refresh_with_pinned(&self.st.settings.dock_pinned));
                         d.set_tray(self.dock_tray_state());
                         crate::dock_genie::set_system_min_animate(false);
                         pinfo!("dock: enabled");
@@ -1907,7 +1907,11 @@ impl App {
                 }
             } else {
                 if let Some(d) = self.dock.as_mut() {
-                    if d.set_config(&self.monitor, cfg) {
+                    let mut changed = d.set_config(&self.monitor, cfg);
+                    if let Some(w) = self.dock_apps.as_mut() {
+                        changed |= d.set_apps(w.refresh_with_pinned(&self.st.settings.dock_pinned));
+                    }
+                    if changed {
                         self.request_frame();
                     }
                 }
@@ -2164,6 +2168,10 @@ impl App {
                     services::dock_apps::focus_window(target);
                 }
             }
+            crate::dock::DockAction::LaunchPinnedApp(spec) => {
+                self.close_dock_popovers();
+                crate::shell::open_dock_spec(&spec);
+            }
             crate::dock::DockAction::ToggleDownloadsStack(icon_rect) => {
                 self.close_dock_flyout();
                 if self.dock_stack.is_some() {
@@ -2204,9 +2212,9 @@ impl App {
                     }
                 }
             }
-            crate::dock::DockAction::ShowMenu(pt, tucked) => {
+            crate::dock::DockAction::ShowMenu(pt, tucked, app_target) => {
                 self.close_dock_popovers();
-                deferred.push(Deferred::DockMenu(pt, tucked));
+                deferred.push(Deferred::DockMenu(pt, tucked, app_target));
             }
             crate::dock::DockAction::DropToShelf(paths) => {
                 self.close_dock_popovers();
@@ -2326,6 +2334,42 @@ impl App {
                         self.paint_settings(deferred);
                     }
                 }
+            }
+            crate::dock::DockCmd::ActivateWindow(hwnd) => {
+                services::dock_apps::focus_window(hwnd);
+            }
+            crate::dock::DockCmd::LaunchApp(spec) => {
+                crate::shell::open_dock_spec(&spec);
+            }
+            crate::dock::DockCmd::KeepInDock(spec) => {
+                if !self.st.settings.dock_pinned.iter().any(|p| p.eq_ignore_ascii_case(&spec)) {
+                    let before = self.st.settings.clone();
+                    self.st.settings.dock_pinned.push(spec);
+                    self.settings_changed(&before);
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                }
+            }
+            crate::dock::DockCmd::RemoveFromDock(spec) => {
+                let before = self.st.settings.clone();
+                self.st.settings.dock_pinned.retain(|p| !p.eq_ignore_ascii_case(&spec));
+                if self.st.settings.dock_pinned != before.dock_pinned {
+                    self.settings_changed(&before);
+                    self.save_settings();
+                    if let Some(w) = self.settings_win.as_mut() {
+                        w.view.dirty = true;
+                        self.paint_settings(deferred);
+                    }
+                }
+            }
+            crate::dock::DockCmd::ShowInExplorer(path) => {
+                crate::shell::reveal(&path);
+            }
+            crate::dock::DockCmd::QuitApp(wins, primary) => {
+                services::dock_apps::close_windows(&wins, primary);
             }
         }
     }
@@ -2894,6 +2938,7 @@ impl App {
             || before.dock_show_apps != self.st.settings.dock_show_apps
             || before.dock_show_downloads != self.st.settings.dock_show_downloads
             || before.dock_show_tray != self.st.settings.dock_show_tray
+            || before.dock_pinned != self.st.settings.dock_pinned
             || before.notch_theme != self.st.settings.notch_theme
             || before.notch_type != self.st.settings.notch_type
             || before.custom_look != self.st.settings.custom_look)
@@ -3228,7 +3273,7 @@ impl App {
             AppEvent::DockAppsChanged => {
                 if !self.locked && !self.display_off {
                     if let (Some(d), Some(w)) = (self.dock.as_mut(), self.dock_apps.as_mut()) {
-                        if d.set_apps(w.refresh()) {
+                        if d.set_apps(w.refresh_with_pinned(&self.st.settings.dock_pinned)) {
                             self.request_frame();
                         }
                     }

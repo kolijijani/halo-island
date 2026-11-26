@@ -159,6 +159,20 @@ pub fn open_app(app_id: &str) {
     });
 }
 
+/// Launch a dock app specification (`shell:AppsFolder\<AUMID>`, `.lnk`, or `.exe` path) asynchronously.
+pub fn open_dock_spec(spec: &str) {
+    const APPS_PREFIX: &str = "shell:AppsFolder\\";
+    let s = spec.trim();
+    if s.len() > APPS_PREFIX.len()
+        && s.is_char_boundary(APPS_PREFIX.len())
+        && s[..APPS_PREFIX.len()].eq_ignore_ascii_case(APPS_PREFIX)
+    {
+        open_app(&s[APPS_PREFIX.len()..]);
+    } else {
+        open(s);
+    }
+}
+
 /// Open the Claude app through its own link, `claude://` (asynchronously):
 /// the AI tab's Sign in, used once the app's settings are on this PC, so
 /// the link has the app to go to. It signs Claude Code in.

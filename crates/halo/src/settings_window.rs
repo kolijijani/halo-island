@@ -358,6 +358,8 @@ pub enum Key {
     DockShowApps,
     DockShowDownloads,
     DockShowTray,
+    DockPinned(u8),
+    DockResetPinned,
 }
 
 /// A row's control, at its right end.
@@ -564,6 +566,46 @@ fn news_name(setting: &str) -> String {
     halo_core::news::preset_index(setting).map_or_else(|| "Your own feed".to_string(), |i| halo_core::news::PRESETS[i].0.to_string())
 }
 
+fn dock_pinned_label(spec: &str) -> String {
+    const APPS_PREFIX: &str = "shell:AppsFolder\\";
+    let s = spec.trim();
+    if s.len() > APPS_PREFIX.len()
+        && s.is_char_boundary(APPS_PREFIX.len())
+        && s[..APPS_PREFIX.len()].eq_ignore_ascii_case(APPS_PREFIX)
+    {
+        let id = &s[APPS_PREFIX.len()..];
+        if id.eq_ignore_ascii_case("Microsoft.Windows.Explorer") {
+            return "File Explorer".into();
+        }
+        if id.eq_ignore_ascii_case("Chrome") {
+            return "Google Chrome".into();
+        }
+        if id.to_ascii_lowercase().contains("outlook") {
+            return "Outlook".into();
+        }
+        if id.to_ascii_lowercase().contains("windowsterminal") {
+            return "Windows Terminal".into();
+        }
+        if id.to_ascii_lowercase().contains("visualstudiocode") {
+            return "Visual Studio Code".into();
+        }
+        if id.to_ascii_lowercase().contains("discord") {
+            return "Discord".into();
+        }
+        if id.to_ascii_lowercase().contains("immersivecontrolpanel") {
+            return "Settings".into();
+        }
+        let short = id.split('!').next().unwrap_or(id);
+        let short = short.split('_').next().unwrap_or(short);
+        return short.rsplit('.').next().unwrap_or(short).to_string();
+    }
+    std::path::Path::new(s)
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or(s)
+        .to_string()
+}
+
 /// What `section` shows for `st`.
 pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
     let s = &st.settings;
@@ -706,6 +748,32 @@ pub fn blocks(section: Section, st: &AppState) -> Vec<Block> {
                             s.dock_show_tray,
                         ),
                     ],
+                ),
+                Block::Group(
+                    Some("Pinned apps"),
+                    {
+                        let mut pinned_rows: Vec<Item> = s
+                            .dock_pinned
+                            .iter()
+                            .take(64)
+                            .enumerate()
+                            .map(|(i, spec)| {
+                                item(
+                                    Key::DockPinned(i as u8),
+                                    &dock_pinned_label(spec),
+                                    Some(spec.as_str()),
+                                    Ctl::Button("Unpin"),
+                                )
+                            })
+                            .collect();
+                        pinned_rows.push(item(
+                            Key::DockResetPinned,
+                            "Reset pinned apps",
+                            Some("Restore the default pinned dock apps; right-click any running app in the dock to Keep in Dock"),
+                            Ctl::Button("Reset"),
+                        ));
+                        pinned_rows
+                    },
                 ),
             ]
         }
@@ -917,6 +985,8 @@ const INVENTORY: &[(Section, &str, Key)] = &[
     (Section::Dock, "Running apps", Key::DockShowApps),
     (Section::Dock, "Downloads stack", Key::DockShowDownloads),
     (Section::Dock, "System tray & Control Center", Key::DockShowTray),
+    (Section::Dock, "Pinned app", Key::DockPinned(0)),
+    (Section::Dock, "Reset pinned apps", Key::DockResetPinned),
     (Section::Music, "Synced lyrics", Key::Lyrics),
     (Section::Music, "Lyrics pronunciation", Key::Pronunciation),
     (Section::Music, "Timing", Key::LyricsOffset),
@@ -980,6 +1050,7 @@ const INVENTORY: &[(Section, &str, Key)] = &[
 fn item_key(k: Key) -> Key {
     match k {
         Key::Widget(_) => Key::Widget(0),
+        Key::DockPinned(_) => Key::DockPinned(0),
         k => k,
     }
 }
@@ -1139,6 +1210,13 @@ pub fn apply(st: &mut AppState, key: Key, act: Act) {
         Key::DockShowApps => s.dock_show_apps = !s.dock_show_apps,
         Key::DockShowDownloads => s.dock_show_downloads = !s.dock_show_downloads,
         Key::DockShowTray => s.dock_show_tray = !s.dock_show_tray,
+        Key::DockPinned(i) => {
+            if !s.dock_pinned.is_empty() {
+                let idx = (i as usize).min(s.dock_pinned.len() - 1);
+                s.dock_pinned.remove(idx);
+            }
+        }
+        Key::DockResetPinned => s.dock_pinned = halo_core::settings::default_dock_pinned(),
         Key::Autostart => {
             if let Some(on) = st.ui.autostart {
                 st.cmd(Command::SetAutostart(!on));
@@ -2298,7 +2376,13 @@ fn draw_row(ui: &mut Ui, it: &Item, at: (usize, usize), row: Rect, view: Rect, a
             ui.c.text(value, vr, &TextStyle::body().weight(Weight::Semibold).tabular().center());
         }
         Ctl::Button(label) => {
-            let icon = if it.key == Key::ResetTabOrder { Icon::Reset } else { Icon::Open };
+            let icon = if matches!(it.key, Key::ResetTabOrder | Key::DockResetPinned) {
+                Icon::Reset
+            } else if matches!(it.key, Key::DockPinned(_)) {
+                Icon::Trash
+            } else {
+                Icon::Open
+            };
             let r = Rect::new(ctl_x, row.center().y - PILL_SMALL / 2.0, ctl_w, PILL_SMALL);
             let clicked = match visible(r, view).filter(|v| v.h >= r.h - 0.5) {
                 Some(_) => ui.pill(id("button"), r, label, Some(icon), PillStyle::Utility).clicked,
@@ -2805,6 +2889,7 @@ mod tests {
             // Its words are the row's own label (the slots are one item).
             match states.iter().find_map(|st| rows(*s, st).into_iter().find(|i| i.key == *k)) {
                 Some(it) if *k == Key::Widget(0) => assert_eq!(it.label, "Slot 1"),
+                Some(it) if *k == Key::DockPinned(0) => assert_eq!(it.label, "File Explorer"),
                 Some(it) => assert_eq!(it.label, *label, "{k:?}"),
                 None => {}
             }

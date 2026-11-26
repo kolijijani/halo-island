@@ -39,6 +39,7 @@ features = [
     "Storage_FileProperties",
     "System",
     "Win32_Storage_EnhancedStorage",
+    "Win32_Storage_Packaging_Appx",
     "Win32_System_Console",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_UI_Controls",

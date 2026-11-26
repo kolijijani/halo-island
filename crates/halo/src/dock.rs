@@ -288,11 +288,17 @@ fn tray_zone_rects(tray_rect: Rect, tray: &DockTrayState) -> (Option<Rect>, Rect
     (weather_r, status_r, clock_r)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DockCmd {
     ToggleTuck,
     OpenSettings,
     DisableDock,
+    ActivateWindow(HWND),
+    LaunchApp(String),
+    KeepInDock(String),
+    RemoveFromDock(String),
+    ShowInExplorer(String),
+    QuitApp(Vec<(HWND, String)>, HWND),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -304,9 +310,10 @@ pub enum DockAction {
     OpenPage(PageKind),
     OpenSettings,
     ToggleAppWindow { hwnd: HWND, minimized: bool, focused: bool, icon_rect: Rect },
+    LaunchPinnedApp(String),
     ToggleDownloadsStack(Rect),
     ToggleControlCenter(Rect),
-    ShowMenu(POINT, bool),
+    ShowMenu(POINT, bool, Option<RunningApp>),
     DropToShelf(Vec<String>),
     OpenFilesWithApp { hwnd: HWND, exe: Option<String>, files: Vec<String> },
 }
@@ -1357,6 +1364,11 @@ impl Dock {
                     }
                     let vis_apps = self.visible_apps();
                     if let Some(app) = vis_apps.get(i - ANCHOR_SLOTS.len()) {
+                        if !app.running {
+                            if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                                return (Some(LRESULT(0)), DockAction::LaunchPinnedApp(spec));
+                            }
+                        }
                         let icon_rect = self.slot_screen_rect(i);
                         return (
                             Some(LRESULT(0)),
@@ -1418,6 +1430,15 @@ impl Dock {
                 (Some(LRESULT(0)), DockAction::DropToShelf(files))
             }
             WM_RBUTTONUP => {
+                let p = to_dip(lp, self.scale());
+                let app_target = self.slot_at(p).and_then(|i| {
+                    let vis_apps = self.visible_apps();
+                    if i >= ANCHOR_SLOTS.len() && i < ANCHOR_SLOTS.len() + vis_apps.len() {
+                        Some(vis_apps[i - ANCHOR_SLOTS.len()].clone())
+                    } else {
+                        None
+                    }
+                });
                 let mut pt = POINT {
                     x: (lp.0 & 0xffff) as u16 as i16 as i32,
                     y: ((lp.0 >> 16) & 0xffff) as u16 as i16 as i32,
@@ -1425,7 +1446,7 @@ impl Dock {
                 unsafe {
                     let _ = ClientToScreen(self.hwnd, &mut pt);
                 }
-                (Some(LRESULT(0)), DockAction::ShowMenu(pt, self.tucked))
+                (Some(LRESULT(0)), DockAction::ShowMenu(pt, self.tucked, app_target))
             }
             WM_CAPTURECHANGED => {
                 if self.pressed.take().is_some() || self.pressed_tray.take().is_some() {
@@ -2035,10 +2056,12 @@ fn draw_dock(
                         draw_dock_badge(c, tile, app.badge, DockBadgeStyle::Red);
                     }
 
-                    // Active running-app indicator dot (focused = brighter & slightly larger).
-                    let dot_r = if app.focused { 2.3 } else if app.minimized { 1.6 } else { 1.9 };
-                    let dot_a = if app.focused { 0.96 } else if app.minimized { 0.55 } else { 0.78 };
-                    draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
+                    // Active running-app indicator dot (only when running; pinned idle apps have no dot).
+                    if app.running {
+                        let dot_r = if app.focused { 2.3 } else if app.minimized { 1.6 } else { 1.9 };
+                        let dot_a = if app.focused { 0.96 } else if app.minimized { 0.55 } else { 0.78 };
+                        draw_active_dot(c, Point::new(sr.x + sr.w * 0.5, dot_y), dot_r, dot_ink, dot_a);
+                    }
                 }
 
                 if let Some(sx) = sep2_x {
@@ -2276,16 +2299,56 @@ fn draw_dock(
 }
 
 /// Show the dock's right-click context menu without permanently stealing focus.
-pub fn show_menu(owner: HWND, pt: POINT, tucked: bool) -> Option<DockCmd> {
+pub fn show_menu(owner: HWND, pt: POINT, tucked: bool, app: Option<&RunningApp>) -> Option<DockCmd> {
     unsafe {
         let menu = CreatePopupMenu().ok()?;
-        let toggle_label: Vec<u16> = if tucked { "Show shelf\0" } else { "Hide shelf\0" }.encode_utf16().collect();
-        let settings_label: Vec<u16> = "Dock settings…\0".encode_utf16().collect();
-        let off_label: Vec<u16> = "Turn off Bottom Dock\0".encode_utf16().collect();
-        let _ = AppendMenuW(menu, MF_STRING, 1, PCWSTR(toggle_label.as_ptr()));
-        let _ = AppendMenuW(menu, MF_STRING, 2, PCWSTR(settings_label.as_ptr()));
-        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let _ = AppendMenuW(menu, MF_STRING, 3, PCWSTR(off_label.as_ptr()));
+        let mut cmds: Vec<(usize, DockCmd)> = Vec::new();
+        let mut next_id = 1usize;
+        let mut push_item = |label: &str, cmd: DockCmd| {
+            let id = next_id;
+            next_id += 1;
+            let w: Vec<u16> = label.encode_utf16().chain(Some(0)).collect();
+            let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR(w.as_ptr()));
+            cmds.push((id, cmd));
+        };
+
+        if let Some(app) = app {
+            if app.running {
+                for &(h, ref title) in app.windows.iter().take(12) {
+                    let t: String = if title.chars().count() > 48 {
+                        title.chars().take(47).chain(Some('…')).collect()
+                    } else {
+                        title.clone()
+                    };
+                    push_item(&t, DockCmd::ActivateWindow(h));
+                }
+                if !app.windows.is_empty() {
+                    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                }
+            }
+            if let Some(spec) = app.launch.clone().or_else(|| app.exe.clone()) {
+                push_item(if app.running { "New Window" } else { "Open" }, DockCmd::LaunchApp(spec.clone()));
+                if app.pinned {
+                    push_item("Remove from Dock", DockCmd::RemoveFromDock(spec));
+                } else {
+                    push_item("Keep in Dock", DockCmd::KeepInDock(spec));
+                }
+            }
+            if let Some(exe) = app.exe.as_ref().filter(|e| std::path::Path::new(e).exists()) {
+                push_item("Show in Explorer", DockCmd::ShowInExplorer(exe.clone()));
+            }
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+            push_item("Dock Settings…", DockCmd::OpenSettings);
+            if app.running {
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+                push_item("Quit", DockCmd::QuitApp(app.windows.clone(), app.hwnd));
+            }
+        } else {
+            push_item(if tucked { "Show shelf" } else { "Hide shelf" }, DockCmd::ToggleTuck);
+            push_item("Dock Settings…", DockCmd::OpenSettings);
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+            push_item("Turn off Bottom Dock", DockCmd::DisableDock);
+        }
 
         let prev = GetForegroundWindow();
         let _ = SetForegroundWindow(owner);
@@ -2293,13 +2356,13 @@ pub fn show_menu(owner: HWND, pt: POINT, tucked: bool) -> Option<DockCmd> {
         let _ = PostMessageW(owner, WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(menu);
 
-        let cmd = match chosen.0 as usize {
-            1 => Some(DockCmd::ToggleTuck),
-            2 => Some(DockCmd::OpenSettings),
-            3 => Some(DockCmd::DisableDock),
-            _ => None,
-        };
-        if cmd != Some(DockCmd::OpenSettings) && !prev.is_invalid() && prev != owner && IsWindow(prev).as_bool() && GetForegroundWindow() == owner {
+        let cmd = cmds.into_iter().find_map(|(id, c)| (id == chosen.0 as usize).then_some(c));
+        if cmd != Some(DockCmd::OpenSettings)
+            && !prev.is_invalid()
+            && prev != owner
+            && IsWindow(prev).as_bool()
+            && GetForegroundWindow() == owner
+        {
             let _ = SetForegroundWindow(prev);
         }
         cmd
@@ -3667,5 +3730,47 @@ mod tests {
         assert!(sc.y > nb.bottom());
         assert!(tr.x > sc.x && tr.right() < sc.right());
         assert!(ft.y > sc.bottom() && ft.bottom() <= card.h);
+    }
+
+    #[test]
+    fn pinned_app_aumid_squirrel_and_profile_matching() {
+        use crate::services::dock_apps::{extract_profile_directory, launcher_of, match_score};
+        assert_eq!(
+            extract_profile_directory(r#"--profile-directory="Profile 1" --no-first-run"#).as_deref(),
+            Some("Profile 1")
+        );
+        assert!(launcher_of(
+            r"C:\Users\me\AppData\Local\Discord\Update.exe",
+            r"C:\Users\me\AppData\Local\Discord\app-1.0.9015\Discord.exe"
+        ));
+        assert!(!launcher_of(
+            r"C:\Users\me\AppData\Local\Discord\Update.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        ));
+        // Window AUMID exact match (score 3) beats process AUMID match (score 2) and exe match (score 1).
+        assert_eq!(
+            match_score(
+                None,
+                Some("Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"),
+                None,
+                Some(r"C:\Program Files\WindowsApps\WindowsTerminal.exe"),
+                Some("Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"),
+                Some("Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"),
+                None,
+            ),
+            Some(3)
+        );
+        assert_eq!(
+            match_score(
+                Some(r"C:\Users\me\AppData\Local\Discord\Update.exe"),
+                None,
+                None,
+                Some(r"C:\Users\me\AppData\Local\Discord\app-1.0.9015\Discord.exe"),
+                None,
+                None,
+                None,
+            ),
+            Some(1)
+        );
     }
 }
