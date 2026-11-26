@@ -191,6 +191,110 @@ pub fn dock_glass_params_with_material(
     }
 }
 
+/// Adapt live [`GlassParams`] (typically from [`crate::glass::Glass::frame`]) for the chosen
+/// [`DockGlassMaterial`], keeping the live desktop screen copy (`use_copy`, `copy_origin`)
+/// intact so the dock matches Halo Island's Liquid Glass instead of falling back to smoked black.
+pub fn dock_glass_params_from_base(
+    base: Option<&GlassParams>,
+    body: Rect,
+    radius: f32,
+    look: &Look,
+    scale: f32,
+    mat: DockGlassMaterial,
+) -> GlassParams {
+    let Some(bg) = base else {
+        return dock_glass_params_with_material(body, radius, look, scale, mat);
+    };
+    let mut gp = *bg;
+    gp.body = body;
+    gp.radius = radius;
+    gp.shoulder = -1.0;
+    match mat {
+        DockGlassMaterial::Dynamic => gp,
+        DockGlassMaterial::SmokedDark => {
+            gp.ground_dark = Color::hex(0x0D1016);
+            gp.light_mix = bg.light_mix * 0.25;
+            gp.tint_dark = (bg.tint_dark + 0.18).min(0.62);
+            gp.tint_light = 0.58;
+            gp.frost_mix = (bg.frost_mix + 0.12).min(1.0);
+            gp.rim = 0.92;
+            gp.glow = 0.12;
+            gp.saturation = 1.18;
+            gp.dispersion = 0.015;
+            gp
+        }
+        DockGlassMaterial::CrystalLight => {
+            gp.ground_light = Color::hex(0xF8FAFC);
+            gp.light_mix = bg.light_mix.max(0.85);
+            gp.tint_dark = 0.14;
+            gp.tint_light = (bg.tint_light * 0.55).max(0.18);
+            gp.frost_mix = (bg.frost_mix * 0.65).max(0.12);
+            gp.rim = 0.96;
+            gp.glow = 0.14;
+            gp.saturation = 1.60;
+            gp.dispersion = 0.055;
+            gp
+        }
+        DockGlassMaterial::FrostedMatte => {
+            gp.frost_mix = (bg.frost_mix + 0.35).min(1.0);
+            gp.tint_dark = (bg.tint_dark + 0.06).min(0.55);
+            gp.tint_light = (bg.tint_light + 0.06).min(0.58);
+            gp.rim = 0.72;
+            gp.glow = 0.06;
+            gp.saturation = 1.20;
+            gp.dispersion = 0.01;
+            gp
+        }
+    }
+}
+
+fn sync_window_glass(
+    glass: &mut crate::glass::Glass,
+    gfx: &mut Gfx,
+    hwnd: HWND,
+    at: (i32, i32, i32, i32),
+    want: bool,
+    sink: &crate::events::EventSink,
+    monitor: isize,
+    shared: Option<SharedD3d>,
+) {
+    if !gfx.has_gpu() && shared.is_some() {
+        gfx.set_shared_d3d(shared);
+    }
+    if want && !gfx.has_gpu() {
+        let _ = gfx.set_surface(at.2, at.3);
+        gfx.ensure_gpu_ready();
+    }
+    let on = want && matches!(gfx.renderer(), crate::gfx::Renderer::Gpu { .. });
+    let rect = RECT { left: at.0, top: at.1, right: at.0 + at.2, bottom: at.1 + at.3 };
+    glass.sync(on, hwnd, sink, monitor, rect, gfx);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_popup_glass(
+    glass: &mut crate::glass::Glass,
+    glass_moving: &mut bool,
+    gfx: &mut Gfx,
+    body: Rect,
+    radius: f32,
+    look: &'static Look,
+    now: f64,
+    dt: f32,
+    scale: f32,
+    full: RECT,
+) -> Option<GlassParams> {
+    if look.material == look::Material::Glass {
+        glass.app_light = look.light;
+        let (_light, gp, moving) = glass.frame(body, radius, -1.0, false, now, dt, scale, gfx);
+        *glass_moving = moving;
+        gfx.prepare_glass(&gp, full);
+        Some(gp)
+    } else {
+        *glass_moving = false;
+        None
+    }
+}
+
 /// Whether the bottom dock should be active (Halo Pro required, disabled in selftest).
 pub fn dock_allowed(enabled: bool, pro: bool, in_selftest: bool) -> bool {
     enabled && pro && !in_selftest
@@ -983,21 +1087,11 @@ impl Dock {
         shared: Option<SharedD3d>,
     ) {
         let Some(gfx) = self.gfx.as_mut() else { return };
-        if !gfx.has_gpu() && shared.is_some() {
-            gfx.set_shared_d3d(shared);
-        }
         let want = allow_copy
             && !self.fs_hidden
             && !self.tucked
             && self.theme_look.material == look::Material::Glass;
-        if want && !gfx.has_gpu() {
-            let _ = gfx.set_surface(self.at.2, self.at.3);
-            gfx.ensure_gpu_ready();
-        }
-        let on = want && matches!(gfx.renderer(), crate::gfx::Renderer::Gpu { .. });
-        let (x, y, w, h) = self.at;
-        let rect = RECT { left: x, top: y, right: x + w, bottom: y + h };
-        self.glass.sync(on, self.hwnd, sink, monitor, rect, gfx);
+        sync_window_glass(&mut self.glass, gfx, self.hwnd, self.at, want, sink, monitor, shared);
     }
 
     /// Receive a new desktop frame behind the dock; returns `true` if the dock must redraw.
@@ -2102,13 +2196,13 @@ impl Dock {
         let (look, glass_params) = if tuck_t < 0.995 && theme_look.material == look::Material::Glass {
             let r = SHELF_R.min(shelf.h * 0.5);
             self.glass.app_light = theme_look.light;
-            let (light, _gp, moving) = self.glass.frame(shelf, r, -1.0, true, now, dt, scale, gfx);
+            let (light, base_gp, moving) = self.glass.frame(shelf, r, -1.0, true, now, dt, scale, gfx);
             self.glass_moving = moving;
-            let gl = look::glass(light);
+            let custom_gp = dock_glass_params_from_base(Some(&base_gp), shelf, r, look::glass(light), scale, glass_mat);
+            let gl = look::glass(custom_gp.light_mix >= 0.5);
             self.look = gl;
-            self.light = light;
+            self.light = gl.light;
             gfx.set_look(gl);
-            let custom_gp = dock_glass_params_with_material(shelf, r, gl, scale, glass_mat);
             gfx.prepare_glass(&custom_gp, full);
             (gl, Some(custom_gp))
         } else {
@@ -2793,6 +2887,8 @@ fn draw_dock(
                     let well_r = (well.h * 0.38).min(16.0);
                     let well_bg = if light {
                         Color::black(0.055)
+                    } else if glass.is_some() {
+                        Color::white(0.055)
                     } else {
                         Color::rgba(0.03, 0.05, 0.08, 0.36)
                     };
@@ -3233,6 +3329,8 @@ pub fn stack_surface_rect(mon: &MonitorInfo, anchor_screen: Rect, item_count: us
 /// Transient Downloads stack popover (`Halo.DockStack`): exists only while open.
 pub struct DockStack {
     gfx: Option<Gfx>,
+    glass: crate::glass::Glass,
+    glass_moving: bool,
     pub hwnd: HWND,
     at: (i32, i32, i32, i32),
     dpi: u32,
@@ -3293,6 +3391,8 @@ impl DockStack {
         let _ = gfx.set_surface(w, h);
         Ok(Self {
             gfx: Some(gfx),
+            glass: crate::glass::Glass::new_secondary(look.light),
+            glass_moving: false,
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
@@ -3313,12 +3413,28 @@ impl DockStack {
         }
         self.look = look;
         self.light = look.light;
+        self.glass.app_light = look.light;
         self.dirty = true;
         true
     }
 
+    pub fn sync_glass(&mut self, allow_copy: bool, sink: &crate::events::EventSink, monitor: isize, shared: Option<SharedD3d>) {
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        let want = allow_copy && self.look.material == look::Material::Glass;
+        sync_window_glass(&mut self.glass, gfx, self.hwnd, self.at, want, sink, monitor, shared);
+    }
+
+    pub fn on_backdrop(&mut self) -> bool {
+        let Some(gfx) = self.gfx.as_mut() else { return false };
+        if self.glass.on_backdrop(self.hwnd, gfx) {
+            self.dirty = true;
+            return true;
+        }
+        false
+    }
+
     pub fn needs_frame(&self) -> bool {
-        self.dirty
+        self.dirty || self.glass_moving
     }
 
     fn scale(&self) -> f32 {
@@ -3420,8 +3536,8 @@ impl DockStack {
         }
     }
 
-    pub fn paint(&mut self, shared: Option<SharedD3d>) {
-        if !self.dirty {
+    pub fn paint(&mut self, now: f64, dt: f32, shared: Option<SharedD3d>) {
+        if !self.dirty && !self.glass_moving {
             return;
         }
         let (x, y, w, h) = self.at;
@@ -3441,13 +3557,18 @@ impl DockStack {
         gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         let body = card.inset(1.0, 1.0);
-        let glass_params = if look.material == look::Material::Glass {
-            let gp = dock_glass_params(body, STACK_R, look, scale);
-            gfx.prepare_glass(&gp, full);
-            Some(gp)
-        } else {
-            None
-        };
+        let glass_params = prepare_popup_glass(
+            &mut self.glass,
+            &mut self.glass_moving,
+            gfx,
+            body,
+            STACK_R,
+            look,
+            now,
+            dt,
+            scale,
+            full,
+        );
         if let Ok(mut c) = gfx.begin(full) {
             c.unthemed(|c| {
                 let ink = look.ink;
@@ -3666,6 +3787,8 @@ pub fn launchpad_dot_rect(card: Rect, dot: usize, total_pages: usize) -> Rect {
 
 pub struct DockLaunchpad {
     gfx: Option<Gfx>,
+    glass: crate::glass::Glass,
+    glass_moving: bool,
     hwnd: HWND,
     at: (i32, i32, i32, i32),
     dpi: u32,
@@ -3734,6 +3857,8 @@ impl DockLaunchpad {
         crate::services::dock_apps::refresh_launchpad_async(hwnd);
         let mut lp = Self {
             gfx: Some(gfx),
+            glass: crate::glass::Glass::new_secondary(look.light),
+            glass_moving: false,
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
@@ -3755,8 +3880,23 @@ impl DockLaunchpad {
         Ok(lp)
     }
 
+    pub fn sync_glass(&mut self, allow_copy: bool, sink: &crate::events::EventSink, monitor: isize, shared: Option<SharedD3d>) {
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        let want = allow_copy && self.look.material == look::Material::Glass;
+        sync_window_glass(&mut self.glass, gfx, self.hwnd, self.at, want, sink, monitor, shared);
+    }
+
+    pub fn on_backdrop(&mut self) -> bool {
+        let Some(gfx) = self.gfx.as_mut() else { return false };
+        if self.glass.on_backdrop(self.hwnd, gfx) {
+            self.dirty = true;
+            return true;
+        }
+        false
+    }
+
     pub fn needs_frame(&self) -> bool {
-        self.dirty
+        self.dirty || self.glass_moving
     }
 
     pub fn set_look(&mut self, look: &'static Look) -> bool {
@@ -3765,6 +3905,7 @@ impl DockLaunchpad {
         }
         self.look = look;
         self.light = look.light;
+        self.glass.app_light = look.light;
         self.dirty = true;
         true
     }
@@ -4068,8 +4209,8 @@ impl DockLaunchpad {
         }
     }
 
-    pub fn paint(&mut self, shared: Option<SharedD3d>) {
-        if !self.dirty {
+    pub fn paint(&mut self, now: f64, dt: f32, shared: Option<SharedD3d>) {
+        if !self.dirty && !self.glass_moving {
             return;
         }
         let card = self.card_dip();
@@ -4099,13 +4240,18 @@ impl DockLaunchpad {
         gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         let body = card.inset(1.0, 1.0);
-        let glass_params = if look.material == look::Material::Glass {
-            let gp = dock_glass_params(body, LP_R, look, scale);
-            gfx.prepare_glass(&gp, full);
-            Some(gp)
-        } else {
-            None
-        };
+        let glass_params = prepare_popup_glass(
+            &mut self.glass,
+            &mut self.glass_moving,
+            gfx,
+            body,
+            LP_R,
+            look,
+            now,
+            dt,
+            scale,
+            full,
+        );
 
         let ink = look.ink;
         let sub = ink.with_alpha(if light { 0.58 } else { 0.68 });
@@ -4526,6 +4672,8 @@ fn cc_weekday(y: i32, m: u8, d: i32) -> i32 {
 /// Transient System Tray Control Center popover (`Halo.DockFlyout`).
 pub struct DockControlCenter {
     gfx: Option<Gfx>,
+    glass: crate::glass::Glass,
+    glass_moving: bool,
     pub hwnd: HWND,
     at: (i32, i32, i32, i32),
     dpi: u32,
@@ -4605,6 +4753,8 @@ impl DockControlCenter {
         let brightness_pct = crate::services::power::query_brightness().unwrap_or(80);
         Ok(Self {
             gfx: Some(gfx),
+            glass: crate::glass::Glass::new_secondary(look.light),
+            glass_moving: false,
             hwnd,
             at: (x, y, w, h),
             dpi: mon.dpi,
@@ -4732,8 +4882,24 @@ impl DockControlCenter {
         }
         self.look = look;
         self.light = look.light;
+        self.glass.app_light = look.light;
         self.dirty = true;
         true
+    }
+
+    pub fn sync_glass(&mut self, allow_copy: bool, sink: &crate::events::EventSink, monitor: isize, shared: Option<SharedD3d>) {
+        let Some(gfx) = self.gfx.as_mut() else { return };
+        let want = allow_copy && self.look.material == look::Material::Glass;
+        sync_window_glass(&mut self.glass, gfx, self.hwnd, self.at, want, sink, monitor, shared);
+    }
+
+    pub fn on_backdrop(&mut self) -> bool {
+        let Some(gfx) = self.gfx.as_mut() else { return false };
+        if self.glass.on_backdrop(self.hwnd, gfx) {
+            self.dirty = true;
+            return true;
+        }
+        false
     }
 
     pub fn set_tray(&mut self, tray: DockTrayState) -> bool {
@@ -4746,7 +4912,7 @@ impl DockControlCenter {
     }
 
     pub fn needs_frame(&self) -> bool {
-        self.dirty
+        self.dirty || self.glass_moving
     }
 
     fn scale(&self) -> f32 {
@@ -5132,8 +5298,8 @@ impl DockControlCenter {
         }
     }
 
-    pub fn paint(&mut self, shared: Option<SharedD3d>) {
-        if !self.dirty {
+    pub fn paint(&mut self, now: f64, dt: f32, shared: Option<SharedD3d>) {
+        if !self.dirty && !self.glass_moving {
             return;
         }
         let (x, y, w, h) = self.at;
@@ -5193,13 +5359,18 @@ impl DockControlCenter {
         gfx.set_look(look);
         let full = RECT { left: 0, top: 0, right: w, bottom: h };
         let body = card.inset(1.0, 1.0);
-        let glass_params = if look.material == look::Material::Glass {
-            let gp = dock_glass_params(body, FLYOUT_R, look, scale);
-            gfx.prepare_glass(&gp, full);
-            Some(gp)
-        } else {
-            None
-        };
+        let glass_params = prepare_popup_glass(
+            &mut self.glass,
+            &mut self.glass_moving,
+            gfx,
+            body,
+            FLYOUT_R,
+            look,
+            now,
+            dt,
+            scale,
+            full,
+        );
         if let Ok(mut c) = gfx.begin(full) {
             c.unthemed(|c| {
                 let ink = look.ink;
@@ -6086,6 +6257,32 @@ mod tests {
         let gp_matte = dock_glass_params_with_material(shelf, SHELF_R, &look::GLASS_DARK, 1.0, DockGlassMaterial::FrostedMatte);
         assert_eq!(gp_matte.glow, 0.06);
         assert_eq!(gp_matte.saturation, 1.20);
+
+        // Phase 3: live screen-copy GlassParams from Glass::frame must be preserved across dock materials.
+        let mut live_base = gp_dark;
+        live_base.use_copy = true;
+        live_base.copy_origin = (12.0, -4.0);
+        live_base.light_mix = 0.65;
+        live_base.tint_dark = 0.37;
+        live_base.tint_light = 0.44;
+        live_base.shadow_alpha = 0.48;
+
+        let dyn_live = dock_glass_params_from_base(Some(&live_base), shelf, SHELF_R, &look::GLASS_LIGHT, 1.25, DockGlassMaterial::Dynamic);
+        assert!(dyn_live.use_copy, "Dynamic dock glass must preserve live screen copy");
+        assert_eq!(dyn_live.copy_origin, (12.0, -4.0));
+        assert_eq!(dyn_live.light_mix, 0.65);
+        assert_eq!(dyn_live.tint_dark, 0.37);
+
+        let crystal_live = dock_glass_params_from_base(Some(&live_base), shelf, SHELF_R, &look::GLASS_DARK, 1.25, DockGlassMaterial::CrystalLight);
+        assert!(crystal_live.use_copy);
+        assert!(crystal_live.light_mix >= 0.85);
+
+        let smoked_live = dock_glass_params_from_base(Some(&live_base), shelf, SHELF_R, &look::GLASS_DARK, 1.25, DockGlassMaterial::SmokedDark);
+        assert!(smoked_live.use_copy);
+        assert!(smoked_live.tint_dark > live_base.tint_dark && smoked_live.tint_dark <= 0.62);
+
+        let fallback = dock_glass_params_from_base(None, shelf, SHELF_R, &look::GLASS_DARK, 1.25, DockGlassMaterial::Dynamic);
+        assert!(!fallback.use_copy);
 
         // Parabolic launch/click bounce curve: 0 at rest/end, negative upward lift during hops, decaying amplitude.
         assert_eq!(bounce_offset_y(0.0), 0.0);

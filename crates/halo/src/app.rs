@@ -2334,7 +2334,14 @@ impl App {
         if let Some(d) = self.dock.as_mut() {
             d.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
         }
+        if let Some(s) = self.dock_stack.as_mut() {
+            s.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
+        }
+        if let Some(f) = self.dock_flyout.as_mut() {
+            f.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
+        }
         if let Some(lp) = self.dock_launchpad.as_mut() {
+            lp.sync_glass(copy_on, &self.sink, self.monitor.handle, shared.clone());
             lp.sync_catalog();
         }
         if !self.dock_moving() {
@@ -2348,17 +2355,17 @@ impl App {
         }
         if let Some(s) = self.dock_stack.as_mut() {
             if s.needs_frame() {
-                s.paint(shared.clone());
+                s.paint(now, dt, shared.clone());
             }
         }
         if let Some(f) = self.dock_flyout.as_mut() {
             if f.needs_frame() {
-                f.paint(shared.clone());
+                f.paint(now, dt, shared.clone());
             }
         }
         if let Some(lp) = self.dock_launchpad.as_mut() {
             if lp.needs_frame() {
-                lp.paint(shared.clone());
+                lp.paint(now, dt, shared.clone());
             }
         }
         if let Some(p) = self.dock_preview.as_mut() {
@@ -3757,6 +3764,15 @@ impl App {
                 if let Some(d) = self.dock.as_mut() {
                     redraw |= d.on_backdrop();
                 }
+                if let Some(s) = self.dock_stack.as_mut() {
+                    redraw |= s.on_backdrop();
+                }
+                if let Some(f) = self.dock_flyout.as_mut() {
+                    redraw |= f.on_backdrop();
+                }
+                if let Some(lp) = self.dock_launchpad.as_mut() {
+                    redraw |= lp.on_backdrop();
+                }
                 if redraw {
                     self.request_frame();
                 }
@@ -5094,6 +5110,15 @@ impl App {
             if let Some(d) = self.dock.as_mut() {
                 d.set_fullscreen_hidden(true);
                 d.sync_glass(false, &self.sink, self.monitor.handle, None);
+            }
+            if let Some(s) = self.dock_stack.as_mut() {
+                s.sync_glass(false, &self.sink, self.monitor.handle, None);
+            }
+            if let Some(f) = self.dock_flyout.as_mut() {
+                f.sync_glass(false, &self.sink, self.monitor.handle, None);
+            }
+            if let Some(lp) = self.dock_launchpad.as_mut() {
+                lp.sync_glass(false, &self.sink, self.monitor.handle, None);
             }
             self.close_dock_preview();
             // Nothing is drawn, but timers, chimes and commands keep working.
