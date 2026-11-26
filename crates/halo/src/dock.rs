@@ -4354,8 +4354,8 @@ impl DockLaunchpad {
                 }
                 (Some(LRESULT(0)), LaunchpadAction::None)
             }
-            WM_KILLFOCUS => (Some(LRESULT(0)), LaunchpadAction::Close),
-            WM_ACTIVATE if (wp.0 & 0xffff) == 0 => (Some(LRESULT(0)), LaunchpadAction::Close),
+            WM_KILLFOCUS if self.shown => (Some(LRESULT(0)), LaunchpadAction::Close),
+            WM_ACTIVATE if self.shown && (wp.0 & 0xffff) == 0 => (Some(LRESULT(0)), LaunchpadAction::Close),
             WM_MOUSEWHEEL => {
                 let delta = ((wp.0 >> 16) & 0xffff) as u16 as i16;
                 if delta != 0 {
@@ -4745,12 +4745,13 @@ impl DockLaunchpad {
             let _ = gfx.push_hit_mask(x, y, &mask, None);
         }
         if !self.shown {
-            self.shown = true;
             unsafe {
                 let _ = ShowWindow(self.hwnd, SW_SHOW);
                 let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
                 let _ = SetForegroundWindow(self.hwnd);
+                let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(self.hwnd);
             }
+            self.shown = true;
             gfx.set_shown(true);
         }
         self.dirty = false;

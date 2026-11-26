@@ -185,3 +185,7 @@
 {"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "open", "title": "dock polish 6 authentic app icons for halo shelf tasks focus settings trash", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795692082}
 {"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-6-authentic-app-icons-for-ha", "who": "ag", "ts": 1795692086}
 {"id": "dock-polish-6-authentic-app-icons-for-ha", "ev": "done", "owner": "ag", "who": "ag", "commit": "a96dc67d5b28707ad229d0e050db7798e4219335", "note": "authentic app icons for halo shelf tasks focus settings trash", "ts": 1795692612}
+{"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "open", "title": "dock: fix Launchpad flicker and outside-click self-dismiss", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795693825}
+{"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "doing", "owner": "ag", "branch": "ag/dock-fix-launchpad-flicker-and-outside-c", "who": "ag", "ts": 1795693829}
+{"id": "dock-fix-launchpad-flicker-and-outside-c", "ev": "done", "owner": "ag", "who": "ag", "commit": "19fc2a4", "note": "ignore our own windows in AppEvent::Foreground and keep popovers topmost", "ts": 1795694960}
+{"id": "dock-fix-launchpad-flicker-and-outside-c-2", "ev": "open", "title": "dock: fix Launchpad flicker and outside-click self-dismiss", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795694976}

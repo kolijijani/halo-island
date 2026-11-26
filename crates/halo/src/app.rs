@@ -2351,6 +2351,19 @@ impl App {
         self.dock_flyout.is_some() || self.dock_stack.is_some() || self.dock_launchpad.is_some()
     }
 
+    fn is_our_foreground_window(&self) -> bool {
+        let fg = unsafe { GetForegroundWindow() };
+        if fg.is_invalid() {
+            return false;
+        }
+        fg == self.hwnd
+            || self.dock.as_ref().is_some_and(|d| d.hwnd == fg)
+            || self.dock_flyout.as_ref().is_some_and(|f| f.hwnd == fg)
+            || self.dock_stack.as_ref().is_some_and(|s| s.hwnd == fg)
+            || self.dock_launchpad.as_ref().is_some_and(|lp| lp.hwnd == fg)
+            || self.settings_win.as_ref().is_some_and(|w| w.hwnd == fg)
+    }
+
     pub(crate) fn is_screen_point_in_dock_or_popovers(&self, pt: POINT) -> bool {
         let in_hwnd = |hwnd: HWND| -> bool {
             if hwnd.is_invalid() {
@@ -4074,8 +4087,10 @@ impl App {
                 self.sync_game();
             }
             AppEvent::Foreground => {
-                // Switching apps or foreground focus closes transient dock popovers.
-                self.close_dock_popovers();
+                // Switching to another app closes transient dock popovers; ignore our own windows.
+                if !self.is_our_foreground_window() {
+                    self.close_dock_popovers();
+                }
                 // All monitors: the island goes where the active window is.
                 if self.st.settings.monitor == MonitorChoice::All {
                     self.refresh_monitor();
@@ -4923,6 +4938,21 @@ impl App {
         }
         if let Some(d) = self.dock.as_ref() {
             d.raise_topmost();
+        }
+        if let Some(lp) = self.dock_launchpad.as_ref() {
+            unsafe {
+                let _ = SetWindowPos(lp.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+        if let Some(f) = self.dock_flyout.as_ref() {
+            unsafe {
+                let _ = SetWindowPos(f.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+        if let Some(s) = self.dock_stack.as_ref() {
+            unsafe {
+                let _ = SetWindowPos(s.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         }
     }
 
