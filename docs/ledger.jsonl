@@ -121,3 +121,6 @@
 {"id": "dock-phase-10-gpu-genie-d3d11-port-of-ma", "ev": "open", "title": "dock phase 10: GPU genie (D3D11 port of MacDock)", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795662641}
 {"id": "dock-phase-10-gpu-genie-d3d11-port-of-ma", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-10-gpu-genie-d3d11-port-of-ma", "who": "ag", "ts": 1795662645}
 {"id": "dock-phase-10-gpu-genie-d3d11-port-of-ma", "ev": "done", "owner": "ag", "who": "ag", "commit": "02bafc3", "note": "Ported MacDock D3D11 128-row strip-mesh GPU genie with 4x MSAA, rounded-corner/shadow HLSL, DWM vsync timing, and SPI_SETANIMATION disable", "ts": 1795663115}
+{"id": "dock-phase-11-liquid-glass-material-laun", "ev": "open", "title": "dock phase 11: liquid glass material, launch bounce, drag-drop files", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795663233}
+{"id": "dock-phase-11-liquid-glass-material-laun", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-11-liquid-glass-material-laun", "who": "ag", "ts": 1795663244}
+{"id": "dock-phase-11-liquid-glass-material-laun", "ev": "done", "owner": "ag", "who": "ag", "commit": "3062a05", "note": "Liquid glass shader parity + cursor specular boost, parabolic click/launch bounce, WM_DROPFILES app/shelf opening", "ts": 1795663616}
