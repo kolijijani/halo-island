@@ -1053,6 +1053,7 @@ impl App {
     }
 
     pub fn request_frame(&mut self) {
+        self.clock.set_divisor(1);
         self.clock.set_active(true);
     }
 
@@ -2300,6 +2301,19 @@ impl App {
         self.close_dock_preview();
     }
 
+    fn paint_dock_genie_if_needed(&mut self, dt: f32) {
+        if self.dock_genie.is_none() {
+            return;
+        }
+        let instant = self.reduce_motion || self.st.power.saver;
+        let shared = self.gfx.d3d_handles();
+        if let Some(g) = self.dock_genie.as_mut() {
+            if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
+                self.dock_genie = None;
+            }
+        }
+    }
+
     fn dock_moving(&self) -> bool {
         self.dock.as_ref().is_some_and(|d| d.needs_frame())
             || self.dock_stack.as_ref().is_some_and(|s| s.needs_frame())
@@ -2359,11 +2373,6 @@ impl App {
                 if changed || w.needs_frame() {
                     w.paint(&self.monitor, look);
                 }
-            }
-        }
-        if let Some(g) = self.dock_genie.as_mut() {
-            if instant || self.fullscreen_hidden || !g.tick_and_paint(dt, shared) {
-                self.dock_genie = None;
             }
         }
     }
@@ -5199,6 +5208,9 @@ impl App {
             dt = dt.min(period);
         }
         let dt = dt.clamp(0.0, 0.05) as f32;
+        if !self.locked && !self.display_off {
+            self.paint_dock_genie_if_needed(dt);
+        }
         self.set_sysmon(self.mode == Mode::Expanded(PageKind::System));
         self.set_stocks_watch();
         self.set_usage_watch();

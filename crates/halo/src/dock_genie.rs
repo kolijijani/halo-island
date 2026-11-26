@@ -28,8 +28,8 @@ unsafe extern "system" {
 
 pub const CLASS: PCWSTR = w!("Halo.DockGenie");
 pub const GENIE_SLICES: usize = 72;
-pub const GENIE_DURATION: f32 = 0.34;
-const MAX_CAPTURE_PX: i32 = 1280;
+pub const GENIE_DURATION: f32 = 0.36;
+const MAX_CAPTURE_PX: i32 = 1024;
 const PW_RENDERFULLCONTENT: u32 = 0x0000_0002;
 
 /// Toggle Windows' built-in minimize/restore animation (`SPI_SETANIMATION`) without writing to the user profile,
@@ -102,7 +102,7 @@ pub fn genie_slices(
 ) -> Vec<GenieSlice> {
     let t = t.clamp(0.0, 1.0);
     let (bend, suck) = match dir {
-        GenieDir::Minimize => (smoothstep(0.0, 0.50, t), smoothstep(0.20, 1.0, t)),
+        GenieDir::Minimize => (smoothstep(0.0, 0.42, t), smoothstep(0.05, 1.0, t)),
         GenieDir::Restore => {
             let ease_out = 1.0 - (1.0 - t).powi(3);
             (1.0 - smoothstep(0.10, 1.0, t), 1.0 - ease_out)
@@ -240,13 +240,20 @@ pub fn capture_window(hwnd: HWND) -> Option<(Image, RECT)> {
         let _ = DeleteObject(HGDIOBJ(src_bmp.0));
         let _ = DeleteDC(src_dc);
 
-        // PrintWindow leaves alpha = 0 on opaque GDI/DX windows; force opaque alpha.
+        // PrintWindow leaves alpha = 0 on opaque GDI/DX windows; force opaque alpha in fast 32-bit pass.
         let mut non_black = false;
-        for px in pixels.chunks_exact_mut(4) {
-            if px[0] != 0 || px[1] != 0 || px[2] != 0 {
+        let words = std::slice::from_raw_parts_mut(pixels.as_mut_ptr() as *mut u32, pixels.len() / 4);
+        for &w in words.iter().step_by(17) {
+            if (w & 0x00FF_FFFF) != 0 {
                 non_black = true;
+                break;
             }
-            px[3] = 255;
+        }
+        if !non_black {
+            non_black = words.iter().any(|&w| (w & 0x00FF_FFFF) != 0);
+        }
+        for w in words.iter_mut() {
+            *w |= 0xFF00_0000;
         }
         if !non_black {
             return None;
@@ -438,7 +445,7 @@ impl DockGenie {
 
         if let Some(s) = shared.clone() {
             if let Ok(mut gpu) = crate::dock_genie_gpu::GenieGpu::new(mon, &img, win_screen, icon_screen, dir, s) {
-                let _ = gpu.frame();
+                let _ = gpu.frame(0.0);
                 return Ok(Self {
                     gpu: Some(gpu),
                     gfx: None,
@@ -516,7 +523,7 @@ impl DockGenie {
     /// so the caller drops `DockGenie` immediately (zero idle cost).
     pub fn tick_and_paint(&mut self, dt: f32, shared: Option<SharedD3d>) -> bool {
         if let Some(gpu) = self.gpu.as_mut() {
-            return match gpu.frame() {
+            return match gpu.frame(dt as f64) {
                 crate::dock_genie_gpu::Step::Moving => true,
                 crate::dock_genie_gpu::Step::Landed => {
                     if let Some(target) = self.restore_target.take() {

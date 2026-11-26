@@ -11,17 +11,14 @@ use crate::gfx::{Image, SharedD3d};
 use crate::window::MonitorInfo;
 use halo_core::geom::Rect;
 use std::sync::OnceLock;
-use std::time::Instant;
 use windows::core::{s, w, Interface, Result, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, E_FAIL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::DirectComposition::*;
-use windows::Win32::Graphics::Dwm::{DwmGetCompositionTimingInfo, DWM_TIMING_INFO};
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Rows of the strip mesh: each strip is two affine triangles, so fewer rows show as kinks in the curve.
@@ -30,7 +27,7 @@ const FMT: DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
 const SAMPLES: u32 = 4;
 const CLASS: PCWSTR = w!("Halo.DockGenieGpu");
 /// Snappy macOS-paced durations (driven at full display refresh rate, e.g. 120/144/240 Hz).
-pub const MINIMIZE_SECS: f64 = 0.42;
+pub const MINIMIZE_SECS: f64 = 0.36;
 pub const RESTORE_SECS: f64 = 0.36;
 /// After a restore lands: ~1-2 frames for DWM to composite the live window behind the overlay,
 /// then a crisp cross-dissolve so handoff feels instantaneous with zero pause or pop.
@@ -62,7 +59,8 @@ float4 ps(P p) : SV_TARGET {
     float2 px = p.uv * win;
     float2 half_ = win * 0.5;
     float d = box(px - half_, half_, radius);
-    float inside = saturate(0.5 - d / max(fwidth(d), 1e-4));
+    float aa = clamp(fwidth(d), 1e-4, max(radius * 0.5, 2.0));
+    float inside = saturate(0.5 - d / aa);
     float3 c = tex.Sample(smp, saturate(p.uv)).rgb;
     float sh = 0.0;
     if (shadow > 0.0) {
@@ -167,12 +165,12 @@ fn smoother(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
-/// Genie: first the sides bend into a funnel towards the icon (squeeze), then every row slides down and piles
-/// up at the icon's bottom edge (slide). p = 0 is the window, p = 1 is fully inside the icon.
+/// Genie: the sides bend into a funnel towards the icon (squeeze) while every row slides down and piles
+/// up at the icon's bottom edge (slide) immediately without initial stall. p = 0 is window, p = 1 is icon.
 /// Returns (left, right, y) per row edge, screen pixels.
 pub fn shape(win: R, icon: R, p: f64) -> Vec<(f64, f64, f64)> {
-    let squeeze = smooth(p / 0.42);
-    let slide = smoother((p - 0.16) / 0.84);
+    let squeeze = smooth(p / 0.38);
+    let slide = smoother((p - 0.05) / 0.95);
     shape_with(win, icon, squeeze, slide)
 }
 
@@ -207,26 +205,6 @@ fn shape_with(win: R, icon: R, squeeze: f64, slide: f64) -> Vec<(f64, f64, f64)>
             (l, r, y)
         })
         .collect()
-}
-
-/// The display refresh a frame presented now shows at, and the refresh period, in seconds on the QPC clock.
-/// Animation time taken from it moves in whole refresh steps, so the motion stays even however late in the
-/// loop the frame is drawn. None when DWM gives no timing.
-fn next_vblank() -> Option<(f64, f64)> {
-    unsafe {
-        let mut ti = DWM_TIMING_INFO { cbSize: std::mem::size_of::<DWM_TIMING_INFO>() as u32, ..Default::default() };
-        DwmGetCompositionTimingInfo(HWND::default(), &mut ti).ok()?;
-        let (mut now, mut freq) = (0i64, 0i64);
-        QueryPerformanceCounter(&mut now).ok()?;
-        QueryPerformanceFrequency(&mut freq).ok()?;
-        let (vb, per) = (ti.qpcVBlank as f64, ti.qpcRefreshPeriod as f64);
-        if per <= 0.0 || freq <= 0 || vb <= 0.0 {
-            return None;
-        }
-        let k = ((now as f64 - vb) / per).floor().max(0.0);
-        let f = freq as f64;
-        Some(((vb + (k + 1.0) * per) / f, per / f))
-    }
 }
 
 /// What a frame did.
@@ -282,9 +260,8 @@ pub struct GenieGpu {
     look: Look,
     dir: GenieDir,
     duration: f64,
-    start: Option<Instant>,
-    vsync: Option<(f64, f64)>,
-    landed: Option<Instant>,
+    elapsed: f64,
+    landed_elapsed: Option<f64>,
     shown: bool,
 }
 
@@ -371,9 +348,8 @@ impl GenieGpu {
                     look,
                     dir,
                     duration: if dir == GenieDir::Restore { RESTORE_SECS } else { MINIMIZE_SECS },
-                    start: None,
-                    vsync: None,
-                    landed: None,
+                    elapsed: 0.0,
+                    landed_elapsed: None,
                     shown: false,
                 }),
                 Err(e) => {
@@ -582,34 +558,12 @@ impl GenieGpu {
         ))
     }
 
-    /// Seconds since the first frame, in whole display refreshes when DWM gives timing.
-    fn elapsed(&mut self) -> f64 {
-        let Some(start) = self.start else {
-            self.start = Some(Instant::now());
-            self.vsync = next_vblank().map(|(v, _)| (v, v));
-            return 0.0;
-        };
-        match self.vsync {
-            Some((first, last)) => match next_vblank() {
-                Some((v, per)) => {
-                    // never repeat or reverse a refresh step, even if DWM's clock hiccups
-                    let v = if v < last + per * 0.5 { last + per } else { v };
-                    self.vsync = Some((first, v));
-                    v - first
-                }
-                None => {
-                    self.vsync = None;
-                    start.elapsed().as_secs_f64()
-                }
-            },
-            None => start.elapsed().as_secs_f64(),
-        }
-    }
-
-    /// Advance and draw one frame.
-    pub fn frame(&mut self) -> Step {
-        if let Some(l) = self.landed {
-            let fade = l.elapsed().as_secs_f64() - RESTORE_PAINT;
+    /// Advance by `dt` seconds from the vblank-locked FrameClock and draw one frame.
+    pub fn frame(&mut self, dt: f64) -> Step {
+        let step = dt.clamp(0.0, 0.05);
+        if let Some(fade_elapsed) = self.landed_elapsed.as_mut() {
+            *fade_elapsed += step;
+            let fade = *fade_elapsed - RESTORE_PAINT;
             if fade >= RESTORE_FADE {
                 return Step::Done;
             }
@@ -617,15 +571,21 @@ impl GenieGpu {
             let rows = shape(self.win.grow(self.look.margin as f64), self.icon, 0.0);
             return if self.draw(&rows, alpha as f32).is_ok() { Step::Moving } else { Step::Done };
         }
-        let t = (self.elapsed() / self.duration).min(1.0);
+        self.elapsed += step;
+        let t = (self.elapsed / self.duration).min(1.0);
+        let alpha = match self.dir {
+            GenieDir::Minimize if t > 0.82 => 1.0 - smooth((t - 0.82) / 0.18),
+            GenieDir::Restore if t < 0.10 => smooth(t / 0.10),
+            _ => 1.0,
+        };
         let rows = shape_for(self.win.grow(self.look.margin as f64), self.icon, t, self.dir);
-        if self.draw(&rows, 1.0).is_err() {
+        if self.draw(&rows, alpha as f32).is_err() {
             return Step::Done;
         }
         if t < 1.0 {
             Step::Moving
         } else if self.dir == GenieDir::Restore {
-            self.landed = Some(Instant::now());
+            self.landed_elapsed = Some(0.0);
             Step::Landed
         } else {
             Step::Done
@@ -701,6 +661,7 @@ impl GenieGpu {
         if !self.shown {
             self.shown = true;
             unsafe {
+                let _ = self._dcomp.Commit();
                 let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             }
         }
@@ -749,5 +710,13 @@ mod tests {
         assert!((landed[0].2 - win.y).abs() < 1e-6);
         assert!((landed[0].0 - win.x).abs() < 1e-6);
         assert!((landed[0].1 - win.right()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn minimize_moves_immediately_after_launch() {
+        let win = R { x: 100.0, y: 100.0, w: 800.0, h: 600.0 };
+        let icon = R { x: 480.0, y: 1000.0, w: 48.0, h: 48.0 };
+        let early = shape(win, icon, 0.12);
+        assert!(early[0].2 > win.y, "top edge should already glide downward at p=0.12 without initial freeze");
     }
 }
