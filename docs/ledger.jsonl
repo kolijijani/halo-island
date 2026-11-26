@@ -179,3 +179,6 @@
 {"id": "dock-polish-4-tray-hidden-icons-and-clic", "ev": "open", "title": "dock polish 4 tray hidden icons and clickable live status", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795690974}
 {"id": "dock-polish-4-tray-hidden-icons-and-clic", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-4-tray-hidden-icons-and-clic", "who": "ag", "ts": 1795690984}
 {"id": "dock-polish-4-tray-hidden-icons-and-clic", "ev": "done", "owner": "ag", "who": "ag", "commit": "aeaa223", "note": "Include NIS_HIDDEN & fallback icons in CcView::Tray, live Wi-Fi/BT/brightness/battery data, clickable Display/Volume/Battery/AI status icons", "ts": 1795691451}
+{"id": "dock-polish-5-auto-close-control-center-", "ev": "open", "title": "dock polish 5 auto close control center on outside click", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795691506}
+{"id": "dock-polish-5-auto-close-control-center-", "ev": "doing", "owner": "ag", "branch": "ag/dock-polish-5-auto-close-control-center-", "who": "ag", "ts": 1795691508}
+{"id": "dock-polish-5-auto-close-control-center-", "ev": "done", "owner": "ag", "who": "ag", "commit": "436fa3e", "note": "auto-close Control Center and dock popovers on outside click and foreground changes", "ts": 1795692046}
