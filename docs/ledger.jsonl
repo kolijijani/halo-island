@@ -145,3 +145,8 @@
 {"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "open", "title": "Dock Phase 18: System Tray Host Shell_TrayWnd proxy when taskbar hidden", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795676851}
 {"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-18-system-tray-host-shell-tra", "who": "ag", "ts": 1795676851}
 {"id": "dock-phase-18-system-tray-host-shell-tra", "ev": "done", "owner": "ag", "who": "ag", "commit": "6ef55e1", "note": "Added Shell_TrayWnd proxy tray_host service, dock ^ chevron pill, CcView::Tray 5x4 notification icon grid, WM_COPYDATA NIM_ADD/MODIFY/DELETE/SETVERSION + GetRect, and mouse/context-menu forwarding", "ts": 1795677437}
+{"id": "dock-phase-19-desktop-widgets-2x2-liquid", "ev": "open", "title": "Dock Phase 19: Desktop Widgets 2x2 Liquid Glass tiles on wallpaper", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795677636}
+{"id": "dock-phase-19-desktop-widgets-2x2-liquid", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-19-desktop-widgets-2x2-liquid", "who": "ag", "ts": 1795677636}
+{"id": "dock-phase-19-desktop-widgets-2x2-liquid", "ev": "done", "owner": "ag", "who": "ag", "commit": "659aed6c9b494c27b76eb293b76fff39d6d94ded", "note": "Desktop 2x2 Liquid Glass widgets tiles: clock, date, battery, system; draggable, corner snapping, 0% CPU rest", "ts": 1795681240}
+{"id": "dock-phase-20-final-parity-audit-polish", "ev": "open", "title": "Dock Phase 20: Final parity audit & polish", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795681363}
+{"id": "dock-phase-20-final-parity-audit-polish", "ev": "doing", "owner": "ag", "branch": "ag/dock-phase-20-final-parity-audit-polish", "who": "ag", "ts": 1795681373}

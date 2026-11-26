@@ -115,6 +115,7 @@ pub enum WidgetsAction {
 pub struct DockWidgets {
     pub hwnd: HWND,
     gfx: Option<Gfx>,
+    #[allow(dead_code)]
     dpi: u32,
     light: bool,
     look: &'static Look,

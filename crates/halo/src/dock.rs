@@ -831,10 +831,6 @@ impl Dock {
         true
     }
 
-    pub fn active_look(&self) -> &'static Look {
-        self.look
-    }
-
     /// Start or stop the live DXGI screen copy behind the dock when Liquid Glass is active.
     pub fn sync_glass(
         &mut self,
