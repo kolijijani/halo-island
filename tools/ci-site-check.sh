@@ -80,9 +80,10 @@ gate() {
     elif [ -z "$latest" ]; then
         echo "::warning::Couldn't read the latest release, so the page isn't checked against it."
     elif newer "$page" "$latest"; then
-        deploy=false
-        echo "::notice file=$PAGE::Holding the page: it describes $page and the latest release is $latest. The ci run for v$page puts it live once that release is published."
-        summary "**Held.** The page describes $page, but the latest release is $latest. The \`ci\` run for v$page puts it live once that release is published."
+        # Website previews may precede the app release; the signed feed still
+        # describes a published GitHub release, never the page's version.
+        echo "::notice file=$PAGE::Deploying preview $page; downloads and update feed remain on published release $latest."
+        summary "Deploying preview $page; downloads and update feed remain on published release $latest."
     elif newer "$latest" "$page"; then
         echo "::warning file=$PAGE::The page still describes $page, but $latest is out. Update it for $latest (see AGENTS.md)."
         summary "Deploying, but the page still describes $page while $latest is out. Update it for $latest (see AGENTS.md)."

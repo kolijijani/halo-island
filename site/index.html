@@ -608,7 +608,7 @@
         <button class="snd-btn on" id="motBtn" type="button" title="Motion: On (Click to reduce animations)" aria-label="Toggle motion">⚡</button>
         <button class="snd-btn" id="themeBtn" type="button" title="Theme: Dark (Click to switch Light mode)" aria-label="Switch Dark or Light mode">🌙</button>
       </div>
-      <a class="nav-dl" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span></a>
+      <a class="nav-dl" href="https://github.com/kolijijani/halo-island/releases/latest" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span></a>
     </div>
   </div>
   <div class="scroll-prog" id="scrollProg" aria-hidden="true"></div>
@@ -620,7 +620,7 @@
     <h1>Your Windows desktop, <span>quietly alive</span>.</h1>
     <p>Watch the live interactive v<span data-release-copy="version">0.3.0</span> reel, drag your own wallpaper onto the monitor, or click anywhere to take control — Top Island, 1:1 Liquid Glass Bottom Dock, 120fps Genie, Control Center, Launchpad, and 2×2 Widgets at 0% CPU.</p>
     <div class="cta-row">
-      <a class="btn-main" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span> for Windows (<span data-release="size">10.0 MB</span>)</a>
+      <a class="btn-main" href="https://github.com/kolijijani/halo-island/releases/latest" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span> for Windows (<span data-release="size">10.0 MB</span>)</a>
       <span class="btn-sub">macOS <b>Coming soon</b></span>
     </div>
     <div class="meta-line">
@@ -1189,7 +1189,7 @@
         <h2>Download Halo Island v<span data-release-copy="version">0.3.0</span></h2>
         <p class="sub" style="margin-inline:auto">Free, open-source core under MIT. Signed update feed keeps you current automatically.</p>
         <div class="cta-row" style="margin-top:22px">
-          <a class="btn-main" href="https://github.com/kolijijani/halo-island/releases/latest/download/Halo-Island-Setup.exe" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span> Halo-Island-Setup.exe (<span data-release-copy="size">10.0 MB</span>)</a>
+          <a class="btn-main" href="https://github.com/kolijijani/halo-island/releases/latest" data-download="bar" data-nospy><span class="dl-word" data-download-label>Download</span> Halo-Island-Setup.exe (<span data-release-copy="size">10.0 MB</span>)</a>
           <span class="btn-sub">macOS <b>Coming soon</b></span>
         </div>
         <div class="t10-strip">
@@ -2001,7 +2001,9 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (rel) {
         if (!rel || !/^v\d/.test(rel.tag_name || '')) return;
-        var setup = (rel.assets || []).filter(function (a) { return a.name === 'Halo-Island-Setup.exe'; })[0];
+        var version = rel.tag_name.slice(1);
+        var setup = (rel.assets || []).filter(function (a) { return a.name === 'Halo-Island-Setup-' + version + '.exe'; })[0];
+        if (setup) document.querySelectorAll('[data-download]').forEach(function (el) { el.href = setup.browser_download_url; });
         fill('version', function (el) { el.textContent = rel.tag_name.slice(1); });
         if (setup) fill('size', function (el) { el.textContent = (setup.size / 1e6).toFixed(1) + ' MB'; });
         if (rel.html_url) fill('notes', function (el) { el.href = rel.html_url; });
