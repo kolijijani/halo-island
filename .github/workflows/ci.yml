@@ -114,7 +114,14 @@ jobs:
       # a deflate body Windows can refuse (WinINet 12175), which showed as
       # "Can't reach it" while Edge read the same URL fine (0.2.54).
       - name: Weather from the live Open-Meteo
-        run: cargo test -p halo --release the_live_weather_comes_in -- --ignored --nocapture
+        shell: pwsh
+        run: |
+          1..3 | ForEach-Object {
+            cargo test -p halo --release the_live_weather_comes_in -- --ignored --nocapture
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($_ -lt 3) { Start-Sleep -Seconds 5 }
+          }
+          exit $LASTEXITCODE
 
       # Windows reads the Bluetooth watchers' filters only when they start,
       # and one it refused would mean no Bluetooth pop-ups at all. The runner
