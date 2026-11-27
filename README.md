@@ -4,7 +4,7 @@
 
 <p align="center">of Halo Island for Windows, from GitHub since 14 Nov 2026<br>Latest release, 0.2.55: <b>9</b> · Last 7 days: <b>16</b> · <b>0</b> stars on GitHub</p>
 
-<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.55 9, 0.2.54 10, 0.2.53 6, 0.2.52 3, 0.2.51 3, 0.2.50 3, 0.2.40 5; and per day, for the last 13 days"></p>
+<p align="center"><img src="downloads.svg" width="820" alt="Bar chart of downloads per release: 0.2.55 9, 0.2.54 10, 0.2.53 6, 0.2.52 3, 0.2.51 3, 0.2.50 3, 0.2.40 5; and per day, for the last 14 days"></p>
 
 ## Per release
 
@@ -23,7 +23,8 @@
 
 | Day | Downloads |
 | --- | --: |
-| Today | 1 |
+| Today | 0 |
+| 26 Nov 2026 | 1 |
 | 25 Nov 2026 | 4 |
 | 24 Nov 2026 | 1 |
 | 23 Nov 2026 | 7 |
@@ -53,4 +54,4 @@
 
 </details>
 
-<sub>Updated 26 Nov 2026, 13:14 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
+<sub>Updated 27 Nov 2026, 04:35 UTC by [Download stats](https://github.com/kolijijani/halo-island/actions/workflows/metrics.yml), every hour · Data: [downloads](data/downloads.csv), [CI downloads](data/ci-downloads.csv), [stars](data/repo.csv), [summary.json](summary.json)</sub>
