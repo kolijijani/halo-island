@@ -411,6 +411,10 @@ The README's feature pictures are drawn from those same screenshots by `tools/ma
 
 Early, but in daily use on Windows 11. Most rough edges are in places a test machine can't fully exercise: specific media players, Bluetooth devices, and multi-monitor setups. Issues and pull requests are welcome. Please attach `%LOCALAPPDATA%\Halo\halo.log` when something misbehaves.
 
+## Contributions
+
+- **Antigravity** — all development work for **v0.2.55**, including features, bug fixes, testing and release preparation.
+
 ## Credits
 
 - Synced lyrics come from [LRCLIB](https://lrclib.net), a free and open lyrics database. Halo Island fetches them only while a song plays and caches them on your PC.
