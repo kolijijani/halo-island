@@ -203,3 +203,4 @@
 {"id": "tray-sharpen-hidden-tray-icons-64px-rast", "ev": "done", "owner": "ag", "who": "ag", "commit": "827c9ad", "note": "Rasterized tray HICONs at 64px in tray_host.rs and rendered hidden tray icons pixel-snapped with image_hq in dock.rs", "ts": 1795699042}
 {"id": "website-redesign", "ev": "open", "title": "Website redesign", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795704731}
 {"id": "website-redesign", "ev": "doing", "owner": "ag", "branch": "ag/website-redesign", "who": "ag", "ts": 1795704743}
+{"id": "website-redesign", "ev": "done", "owner": "ag", "who": "ag", "commit": "080e6b7", "note": "Windows v0.3.0 landing page redesign, soft pink+black dark/light theme, live assets", "ts": 1795766022}
