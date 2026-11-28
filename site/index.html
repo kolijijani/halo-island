@@ -93,7 +93,7 @@
   body{
     background:radial-gradient(980px 460px at 50% -6%,var(--ambient),transparent 65%),var(--bg);
     color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.6;
-    -webkit-font-smoothing:antialiased;overflow-x:hidden;transition:background .45s ease;
+    -webkit-font-smoothing:antialiased;overflow-x:clip;transition:background .45s ease;
   }
   a{color:inherit}
   h1,h2,h3,h4,.brand{font-family:var(--display)}
@@ -607,7 +607,41 @@
   .play-btn{height:32px;padding:0 16px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font:700 12px/1 var(--ui);white-space:nowrap}
   .pc-item img{height:116px;width:100%;object-fit:contain}
 
-  @media(max-width:860px){.mid-row,.peek-cat,.cat-bubble{display:none}.screen{min-height:360px}.ba-wrap{height:280px}.portal-compare,.t10-strip{grid-template-columns:1fr}}
+  /* Sticky Scrollytelling Showcase */
+  .story-sec{position:relative;padding:24px 0 0}
+  .story-track{position:relative;height:360vh}
+  .story-sticky{position:sticky;top:64px;height:calc(100vh - 64px);min-height:560px;display:flex;align-items:center}
+  .story-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.18fr);gap:44px;align-items:center}
+  .story-meta{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .story-num{font:700 12px/1 var(--display);letter-spacing:.14em;color:var(--ember);text-transform:uppercase}
+  .story-bar{flex:1;max-width:160px;height:3px;border-radius:999px;background:var(--line);overflow:hidden}
+  .story-bar i{display:block;height:100%;width:25%;border-radius:999px;background:var(--aura);transition:width .35s var(--spring)}
+  .story-copy{position:relative;min-height:235px}
+  .story-step{position:absolute;inset:0;opacity:0;transform:translateY(16px);pointer-events:none;transition:opacity .45s var(--spring),transform .45s var(--spring)}
+  .story-step.active{opacity:1;transform:translateY(0);pointer-events:auto}
+  .story-kicker{display:inline-flex;align-items:center;gap:8px;font:700 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin-bottom:12px}
+  .story-step h2{font-size:clamp(28px,3.2vw,42px);line-height:1.12;letter-spacing:-.025em;color:var(--ink);margin-bottom:14px}
+  .story-step p{font-size:15.5px;line-height:1.65;color:var(--muted);max-width:44ch}
+  .story-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .story-dot{height:32px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font:600 12px/1 var(--ui);cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .22s ease}
+  .story-dot:hover{color:var(--ink);border-color:rgba(244,143,177,.42)}
+  .story-dot.active{background:rgba(244,143,177,.16);border-color:var(--ember);color:var(--cream)}
+  .story-stage{position:relative;aspect-ratio:16/10;border-radius:24px;overflow:hidden;border:1px solid var(--line);background:#0c0a12 url(assets/wall/morning.jpg) center/cover no-repeat;box-shadow:0 28px 70px rgba(0,0,0,.45),0 0 0 1px rgba(244,143,177,.12)}
+  .story-stage::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 10%,rgba(244,143,177,.14),transparent 60%),linear-gradient(180deg,rgba(8,7,12,.18),rgba(8,7,12,.52));pointer-events:none}
+  .story-vis{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:26px;opacity:0;transform:scale(.96) translateY(8px);pointer-events:none;transition:opacity .48s var(--spring),transform .48s var(--spring)}
+  .story-vis.active{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}
+  .story-vis.top-pin{justify-content:flex-start;padding-top:18px}
+  .story-vis img{max-width:86%;max-height:76%;width:auto;height:auto;border-radius:18px;box-shadow:0 20px 50px rgba(0,0,0,.55);object-fit:contain}
+  .story-badge{position:absolute;left:18px;bottom:16px;z-index:3;display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:999px;background:rgba(14,12,18,.78);border:1px solid rgba(255,214,230,.2);color:#ffe8f0;font:600 11.5px/1 var(--ui);backdrop-filter:blur(12px)}
+  .story-badge i{width:7px;height:7px;border-radius:50%;background:#f48fb1;box-shadow:0 0 10px #f48fb1}
+  .story-hint{position:absolute;right:18px;bottom:16px;z-index:3;font:600 11.5px/1 var(--ui);color:rgba(255,232,240,.78);background:rgba(14,12,18,.62);border:1px solid rgba(255,214,230,.14);height:30px;padding:0 12px;border-radius:999px;display:inline-flex;align-items:center;backdrop-filter:blur(10px)}
+  .story-dock-bar{margin-top:auto;display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:18px;background:rgba(20,16,26,.68);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(16px);box-shadow:0 12px 32px rgba(0,0,0,.45)}
+  .story-dock-bar span{width:28px;height:28px;border-radius:8px;display:block;box-shadow:0 4px 10px rgba(0,0,0,.35)}
+  html[data-theme="light"] .story-dot{background:#fff;border-color:rgba(22,17,24,.14)}
+  html[data-theme="light"] .story-dot.active{background:rgba(217,91,135,.13);border-color:rgba(217,91,135,.55);color:var(--accent-soft)}
+  html[data-theme="light"] .story-stage{box-shadow:0 24px 60px rgba(22,17,24,.22),0 0 0 1px rgba(217,91,135,.18)}
+
+  @media(max-width:860px){.mid-row,.peek-cat,.cat-bubble{display:none}.screen{min-height:360px}.ba-wrap{height:280px}.portal-compare,.t10-strip{grid-template-columns:1fr}.story-track{height:auto}.story-sticky{position:static;height:auto;min-height:0;padding:36px 0}.story-grid{grid-template-columns:1fr;gap:24px}.story-copy{min-height:190px}}
   @media(max-width:760px){.mob-bar{display:flex}body{padding-bottom:74px}}
 </style>
 </head>
@@ -823,6 +857,78 @@
       <button class="kcap" data-k="1-8"><kbd>1–8</kbd> Jump Chapter</button>
       <button class="kcap" data-k="/"><kbd>/</kbd> Quick Search</button>
       <button class="kcap" data-k="Escape"><kbd>Esc</kbd> Close Overlays</button>
+    </div>
+  </section>
+
+  <!-- ================= Sticky Scrollytelling Showcase ================= -->
+  <section id="story" class="story-sec" aria-label="How Halo Island works">
+    <div class="story-track" id="storyTrack">
+      <div class="story-sticky">
+        <div class="wrap">
+          <div class="story-grid">
+            <div class="story-left">
+              <div class="story-meta">
+                <span class="story-num" id="storyNum">01 / 04</span>
+                <span class="story-bar"><i id="storyBar"></i></span>
+              </div>
+              <div class="story-copy">
+                <article class="story-step active" data-step="0">
+                  <span class="story-kicker">01 · The Living Island</span>
+                  <h2>Hides in plain sight. Wakes on hover.</h2>
+                  <p>Pinned quietly to the top edge of your display. Glance at the clock or Halo the cat, hover once to expand, and keep your desktop completely uncluttered at 0% idle CPU.</p>
+                </article>
+                <article class="story-step" data-step="1">
+                  <span class="story-kicker">02 · Live Media</span>
+                  <h2>Synced lyrics &amp; album glow, one glance away.</h2>
+                  <p>Works with Spotify, YouTube Music, and any Windows media session. Live artwork aura, real-time synced lyrics, and playback controls appear without leaving your active window.</p>
+                </article>
+                <article class="story-step" data-step="2">
+                  <span class="story-kicker">03 · Deep Focus</span>
+                  <h2>Focus timer &amp; ambient calm built right in.</h2>
+                  <p>Start a Pomodoro sprint straight from the notch. A compact countdown pill stays gently visible while you work, with zero browser tabs or heavy Electron apps eating RAM.</p>
+                </article>
+                <article class="story-step" data-step="3">
+                  <span class="story-kicker">04 · Liquid Glass Dock</span>
+                  <h2>120fps glass dock &amp; desktop widgets, native to Windows.</h2>
+                  <p>Spring-physics icon magnification, GPU Genie minimize, Control Center, Launchpad, and 2×2 Desktop Widgets — built in pure Rust, Direct2D, and Direct3D 11.</p>
+                </article>
+              </div>
+              <div class="story-pills" id="storyPills" role="tablist" aria-label="Showcase steps">
+                <button class="story-dot active" type="button" data-step="0">01 Island</button>
+                <button class="story-dot" type="button" data-step="1">02 Media</button>
+                <button class="story-dot" type="button" data-step="2">03 Focus</button>
+                <button class="story-dot" type="button" data-step="3">04 Dock</button>
+              </div>
+            </div>
+            <div class="story-stage" aria-live="polite">
+              <div class="story-vis top-pin active" data-step="0">
+                <img src="assets/live/classic/idle-eyes.webp" alt="Halo Island resting cleanly at the top of the screen" loading="lazy">
+                <span class="story-badge"><i></i>0.0% CPU · Idle Notch</span>
+              </div>
+              <div class="story-vis" data-step="1">
+                <img src="assets/live/classic/page-media.webp" alt="Halo Island Media view with synced lyrics and controls" loading="lazy">
+                <span class="story-badge"><i></i>Synced Lyrics · Live Media</span>
+              </div>
+              <div class="story-vis" data-step="2">
+                <img src="assets/live/classic/page-focus.webp" alt="Halo Island Focus timer view" loading="lazy">
+                <span class="story-badge"><i></i>Focus Sprint · 25:00</span>
+              </div>
+              <div class="story-vis" data-step="3">
+                <img src="assets/live/classic/page-widgets.webp" alt="Halo Island 2x2 Widgets and Liquid Glass Dock" loading="lazy">
+                <div class="story-dock-bar" aria-hidden="true">
+                  <span style="background:linear-gradient(135deg,#ff9a3c,#ff5e1a)"></span>
+                  <span style="background:linear-gradient(135deg,#4facfe,#0072ff)"></span>
+                  <span style="background:linear-gradient(135deg,#38ef7d,#11998e);transform:scale(1.18) translateY(-3px)"></span>
+                  <span style="background:linear-gradient(135deg,#f857a6,#ff5858)"></span>
+                  <span style="background:linear-gradient(135deg,#a18cd1,#6a5af9)"></span>
+                </div>
+                <span class="story-badge"><i></i>120 FPS · Direct3D 11 Dock</span>
+              </div>
+              <span class="story-hint" id="storyHint">Scroll to explore ↓</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -2281,6 +2387,47 @@
   // Sync mode-switch pill when setMode runs via keyboard/timer
   const _origSetMode = setMode;
   setMode = function(m){ _origSetMode(m); requestAnimationFrame(() => syncPill($('#modeSwitch'))); };
+
+  // Sticky Scrollytelling Showcase (01-04 static frame swap on scroll)
+  const storyTrack = $('#storyTrack');
+  if (storyTrack) {
+    const sSteps = $$('.story-step', storyTrack);
+    const sVis = $$('.story-vis', storyTrack);
+    const sDots = $$('.story-dot', storyTrack);
+    const sNum = $('#storyNum'), sBar = $('#storyBar'), sHint = $('#storyHint');
+    let curStory = 0, storyTick = false;
+    function setStory(idx){
+      const i = Math.max(0, Math.min(sSteps.length - 1, idx));
+      if (i === curStory && sSteps[i].classList.contains('active')) return;
+      curStory = i;
+      sSteps.forEach((el, k) => el.classList.toggle('active', k === i));
+      sVis.forEach((el, k) => el.classList.toggle('active', k === i));
+      sDots.forEach((el, k) => el.classList.toggle('active', k === i));
+      if (sNum) sNum.textContent = '0' + (i + 1) + ' / 0' + sSteps.length;
+      if (sBar) sBar.style.width = (((i + 1) / sSteps.length) * 100) + '%';
+      if (sHint) sHint.textContent = i === sSteps.length - 1 ? 'Keep scrolling ↓' : 'Scroll to explore ↓';
+    }
+    function syncStoryScroll(){
+      storyTick = false;
+      if (window.innerWidth <= 860) return;
+      const rect = storyTrack.getBoundingClientRect();
+      const span = Math.max(1, storyTrack.offsetHeight - window.innerHeight);
+      const p = Math.max(0, Math.min(0.999, (-rect.top) / span));
+      setStory(Math.floor(p * sSteps.length));
+    }
+    window.addEventListener('scroll', () => {
+      if (!storyTick) { storyTick = true; requestAnimationFrame(syncStoryScroll); }
+    }, { passive: true });
+    sDots.forEach((btn, i) => btn.addEventListener('click', () => {
+      playTone('click');
+      if (window.innerWidth <= 860) { setStory(i); return; }
+      const top = storyTrack.getBoundingClientRect().top + window.scrollY;
+      const span = Math.max(1, storyTrack.offsetHeight - window.innerHeight);
+      window.scrollTo({ top: top + (i / sSteps.length) * span + 10, behavior: 'smooth' });
+      setStory(i);
+    }));
+    syncStoryScroll();
+  }
 
   root.setAttribute('data-ready', '');
 })();
