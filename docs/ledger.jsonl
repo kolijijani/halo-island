@@ -205,3 +205,6 @@
 {"id": "website-redesign", "ev": "doing", "owner": "ag", "branch": "ag/website-redesign", "who": "ag", "ts": 1795704743}
 {"id": "website-redesign", "ev": "done", "owner": "ag", "who": "ag", "commit": "080e6b7", "note": "Windows v0.3.0 landing page redesign, soft pink+black dark/light theme, live assets", "ts": 1795766022}
 {"id": "release-next-version-verify-before-tag", "ev": "doing", "owner": "qc", "branch": "qc/pr4-token-repair", "who": "qc", "ts": 1795774886}
+{"id": "add-sticky-scrollytelling-showcase-secti", "ev": "open", "title": "Add sticky scrollytelling showcase section to website", "owner": "", "who": "ag", "ref": "", "note": "", "ts": 1795855303}
+{"id": "add-sticky-scrollytelling-showcase-secti", "ev": "doing", "owner": "ag", "branch": "ag/add-sticky-scrollytelling-showcase-secti", "who": "ag", "ts": 1795855357}
+{"id": "add-sticky-scrollytelling-showcase-secti", "ev": "done", "owner": "ag", "who": "ag", "commit": "44bc37c", "note": "Added 4-step sticky scrollytelling showcase section (Island, Media, Focus, Dock) to site/index.html", "ts": 1795855413}
